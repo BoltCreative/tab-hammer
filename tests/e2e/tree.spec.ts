@@ -1,4 +1,4 @@
-import { expect, test, VIEW_PATH } from './fixtures';
+import { expect, test } from './fixtures';
 
 type Setup = { winA: number; winB: number; groupedTabIds: [number, number]; lonelyTabId: number };
 
@@ -26,18 +26,26 @@ async function buildLayout(sw: import('@playwright/test').Worker): Promise<Setup
 }
 
 test('opening twice focuses the existing Tab Hammer window instead of making another', async ({
-  context,
   sw,
   view,
 }) => {
+  // Read Chrome's own window list and the service worker's stored id, rather than Playwright's
+  // page list, which registers new pages asynchronously and could miss a second window.
+  const popupState = () =>
+    sw.evaluate(async () => ({
+      popupIds: (await chrome.windows.getAll({ windowTypes: ['popup'] })).map((w) => w.id),
+      viewWindowId: (await chrome.storage.session.get('viewWindowId')).viewWindowId as unknown,
+    }));
+  const before = await popupState();
+  const viewWindowId = await view.evaluate(async () => (await chrome.windows.getCurrent()).id);
+  expect(before).toEqual({ popupIds: [viewWindowId], viewWindowId });
+
   await sw.evaluate(() =>
     (
       globalThis as unknown as { tabHammer: { openOrFocus: () => Promise<void> } }
     ).tabHammer.openOrFocus(),
   );
-  const viewPages = context.pages().filter((p) => p.url().includes(VIEW_PATH));
-  expect(viewPages).toHaveLength(1);
-  expect(viewPages[0]).toBe(view);
+  expect(await popupState()).toEqual(before);
 });
 
 test('renders window cards with a group row and indented tabs, excluding itself', async ({

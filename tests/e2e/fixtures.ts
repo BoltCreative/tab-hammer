@@ -8,9 +8,9 @@ import {
 import path from 'node:path';
 
 const DIST = path.resolve(import.meta.dirname, '../../dist');
-export const VIEW_PATH = 'src/view/index.html';
+const VIEW_PATH = 'src/view/index.html';
 
-type Fixtures = { context: BrowserContext; sw: Worker; extensionId: string; view: Page };
+type Fixtures = { context: BrowserContext; sw: Worker; view: Page };
 
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
@@ -27,9 +27,6 @@ export const test = base.extend<Fixtures>({
   sw: async ({ context }, use) => {
     const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
     await use(sw);
-  },
-  extensionId: async ({ sw }, use) => {
-    await use(new URL(sw.url()).host);
   },
   view: async ({ context, sw }, use) => {
     // Open the view exactly as the toolbar click does, then attach to that page.
