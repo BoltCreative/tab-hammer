@@ -20,6 +20,10 @@ export default defineConfig(
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser, ...globals.webextensions, ...globals.node } },
+  },
+  {
+    // React code lives only in src/. Elsewhere (e.g. Playwright fixtures) `use` is not a React hook.
+    files: ['src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: { ...reactHooks.configs.recommended.rules },
   },

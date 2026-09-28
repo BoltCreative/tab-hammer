@@ -14,3 +14,25 @@ After `git worktree add`, run `npm install` at the worktree root. A fresh worktr
 
 - Design specs: `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
 - Implementation plans: `docs/superpowers/plans/YYYY-MM-DD-<topic>.md`
+
+## Completion gates
+
+Pick the gate by change class. Report the gate name and result when declaring work complete.
+
+| Gate            | Command        | When                                                                                                                |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Docs-only diff  | (none)         | Every changed path is `.md`.                                                                                        |
+| Any code change | `npm run gate` | typecheck + lint + format check + unit (Vitest) + build + e2e (Playwright, real Chromium with the built extension). |
+
+Run it once on the final commit. The e2e suite launches its own throwaway Chromium profile; it never touches the user's Chrome.
+
+The e2e suite runs headless (new-headless Chromium). Headless Chromium ignores window focus changes, so window focus is asserted via recorded `chrome.windows.update` calls rather than by observing which window is focused. It must stay headless: the user works on this machine while gates run, and headed windows steal their workspace.
+
+## Architecture in one breath
+
+A service worker only opens or focuses the Tab Hammer popup window. The view page reads Chrome's live windows, tabs, and groups (`src/view/chrome/chromeSource.ts`, the only view module that touches `chrome.*`). It feeds them through two pure, unit-tested modules: `src/model/buildTree.ts` (raw data → window/group/tab view model) and `src/model/selection.ts` (multi-select reducer). Then it renders React components. Chrome window and tab IDs are not stable across restarts, so persistence (post-MVP) must introduce Tab Hammer's own node IDs.
+
+## Tests
+
+- Unit: `src/model/__tests__/`. Pure logic only.
+- E2E: `tests/e2e/`. The fixture opens the view through the service worker's `tabHammer.openOrFocus` test hook, the same code path as the toolbar click.
