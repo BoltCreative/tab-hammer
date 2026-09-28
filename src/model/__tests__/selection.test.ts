@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptySelection, selectionReducer as r, type SelectionState } from '../selection';
+import { visibleRowKeys, type CollapseState } from '../visibleRows';
+import type { WindowNode } from '../types';
 
 const keys = (s: SelectionState) => [...s.selected].sort();
 const visible = ['w:1', 't:1', 't:2', 't:3', 'w:2', 't:4'];
@@ -50,5 +52,71 @@ describe('selectionReducer', () => {
   it('prune returns the same object when nothing changed', () => {
     const s = r(emptySelection, { type: 'click', key: 't:1' });
     expect(r(s, { type: 'prune', existing: new Set(['t:1']) })).toBe(s);
+  });
+});
+
+describe('range selection across a collapsed node', () => {
+  it('range across a collapsed group selects only visible rows, not hidden tabs', () => {
+    const t = (id: number) => ({
+      kind: 'tab' as const,
+      key: `t:${id}`,
+      tabId: id,
+      windowId: 1,
+      title: '',
+      url: '',
+      active: false,
+      discarded: false,
+    });
+
+    const tree: WindowNode[] = [
+      {
+        kind: 'window',
+        key: 'w:1',
+        windowId: 1,
+        label: 'Window 1',
+        focused: false,
+        tabCount: 3,
+        children: [
+          {
+            kind: 'group',
+            key: 'g:5:1',
+            groupId: 5,
+            title: 'G',
+            color: 'blue',
+            chromeCollapsed: true,
+            tabs: [t(1), t(2)],
+          },
+          t(3),
+        ],
+      },
+      {
+        kind: 'window',
+        key: 'w:2',
+        windowId: 2,
+        label: 'Window 2',
+        focused: false,
+        tabCount: 1,
+        children: [t(4)],
+      },
+    ];
+
+    const c: CollapseState = {
+      collapsedWindows: new Set(),
+      groupOverrides: new Map(),
+    };
+    const visible = visibleRowKeys(tree, c);
+    // visible should be: ['w:1', 'g:5:1', 't:3', 'w:2', 't:4']
+
+    // Click on window header, shift-range to a tab after the collapsed group
+    const s = r(r(emptySelection, { type: 'click', key: 'w:1' }), {
+      type: 'range',
+      key: 't:4',
+      visible,
+    });
+
+    // Should include window headers and visible tabs, but NOT hidden tabs t:1, t:2
+    expect(keys(s)).toEqual(['g:5:1', 't:3', 't:4', 'w:1', 'w:2']);
+    expect(s.selected.has('t:1')).toBe(false);
+    expect(s.selected.has('t:2')).toBe(false);
   });
 });
