@@ -109,6 +109,10 @@ main {
   letter-spacing: 0.03em;
   color: var(--group-color);
 }
+.group-header .count,
+.group-header .twisty {
+  color: var(--group-color);
+}
 .group-dot {
   width: 8px;
   height: 8px;

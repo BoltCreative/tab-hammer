@@ -24,6 +24,7 @@ export function GroupRow({
     <div style={style}>
       <div
         className="row group-header"
+        role="treeitem"
         data-key={group.key}
         data-kind="group"
         aria-selected={selected.has(group.key)}

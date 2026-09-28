@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type MouseEvent,
+} from 'react';
 import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
-import type { RawSnapshot, TabNode } from '../model/types';
+import type { TabNode, WindowNode } from '../model/types';
 import {
   allRowKeys,
-  isGroupCollapsed,
+  discardStaleOverrides,
+  toggleGroup,
   visibleRowKeys,
   type CollapseState,
 } from '../model/visibleRows';
@@ -13,15 +22,25 @@ import { selectionActionFor } from './components/rowClick';
 import { WindowCard } from './components/WindowCard';
 
 export function App() {
-  const [snap, setSnap] = useState<RawSnapshot | null>(null);
+  const [tree, setTree] = useState<WindowNode[]>([]);
   const [selection, dispatch] = useReducer(selectionReducer, emptySelection);
   const [collapse, setCollapse] = useState<CollapseState>({
     collapsedWindows: new Set(),
     groupOverrides: new Map(),
   });
 
+  // Snapshots can resolve out of order; only the most recently requested one may land.
+  const latestRequest = useRef(0);
   const refresh = useCallback(() => {
-    void snapshot().then(setSnap);
+    const request = ++latestRequest.current;
+    snapshot()
+      .then((s) => {
+        if (request !== latestRequest.current) return;
+        const next = buildTree(s);
+        setTree(next);
+        setCollapse((c) => discardStaleOverrides(next, c));
+      })
+      .catch((err: unknown) => console.error('Tab Hammer: reading Chrome state failed', err));
   }, []);
 
   useEffect(() => {
@@ -29,7 +48,6 @@ export function App() {
     return subscribe(refresh);
   }, [refresh]);
 
-  const tree = useMemo(() => (snap ? buildTree(snap) : []), [snap]);
   const visible = useMemo(() => visibleRowKeys(tree, collapse), [tree, collapse]);
 
   useEffect(() => {
@@ -53,15 +71,13 @@ export function App() {
       setCollapse((c) => {
         const group = tree.flatMap((w) => w.children).find((x) => x.key === key);
         if (!group || group.kind !== 'group') return c;
-        const next = new Map(c.groupOverrides);
-        next.set(key, !isGroupCollapsed(group, c));
-        return { ...c, groupOverrides: next };
+        return toggleGroup(group, c);
       }),
     [tree],
   );
 
   return (
-    <main>
+    <main role="tree" aria-multiselectable="true">
       {tree.map((w) => (
         <WindowCard
           key={w.key}

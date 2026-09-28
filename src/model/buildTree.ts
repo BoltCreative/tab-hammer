@@ -29,6 +29,7 @@ export function buildTree(snapshot: RawSnapshot): WindowNode[] {
       const tabs = (tabsByWindow.get(w.id) ?? []).slice().sort((a, b) => a.index - b.index);
       const children: (GroupNode | TabNode)[] = [];
       let run: GroupNode | null = null;
+      const runsPerGroup = new Map<number, number>();
       for (const t of tabs) {
         const g = t.groupId === -1 ? undefined : groups.get(t.groupId);
         if (!g) {
@@ -37,9 +38,11 @@ export function buildTree(snapshot: RawSnapshot): WindowNode[] {
           continue;
         }
         if (!run || run.groupId !== g.id) {
+          const n = (runsPerGroup.get(g.id) ?? 0) + 1;
+          runsPerGroup.set(g.id, n);
           run = {
             kind: 'group',
-            key: `g:${g.id}:${t.id}`,
+            key: n === 1 ? `g:${g.id}` : `g:${g.id}#${n}`,
             groupId: g.id,
             title: g.title || 'Untitled group',
             color: g.color,
@@ -55,7 +58,7 @@ export function buildTree(snapshot: RawSnapshot): WindowNode[] {
         key: `w:${w.id}`,
         windowId: w.id,
         label: `Window ${i + 1}`,
-        focused: w.focused,
+        focused: w.id === snapshot.lastFocusedWindowId,
         tabCount: tabs.length,
         children,
       };

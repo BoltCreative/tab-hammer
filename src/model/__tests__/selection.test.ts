@@ -79,7 +79,7 @@ describe('range selection across a collapsed node', () => {
         children: [
           {
             kind: 'group',
-            key: 'g:5:1',
+            key: 'g:5',
             groupId: 5,
             title: 'G',
             color: 'blue',
@@ -105,7 +105,7 @@ describe('range selection across a collapsed node', () => {
       groupOverrides: new Map(),
     };
     const visible = visibleRowKeys(tree, c);
-    // visible should be: ['w:1', 'g:5:1', 't:3', 'w:2', 't:4']
+    // visible should be: ['w:1', 'g:5', 't:3', 'w:2', 't:4']
 
     // Click on window header, shift-range to a tab after the collapsed group
     const s = r(r(emptySelection, { type: 'click', key: 'w:1' }), {
@@ -115,7 +115,7 @@ describe('range selection across a collapsed node', () => {
     });
 
     // Should include window headers and visible tabs, but NOT hidden tabs t:1, t:2
-    expect(keys(s)).toEqual(['g:5:1', 't:3', 't:4', 'w:1', 'w:2']);
+    expect(keys(s)).toEqual(['g:5', 't:3', 't:4', 'w:1', 'w:2']);
     expect(s.selected.has('t:1')).toBe(false);
     expect(s.selected.has('t:2')).toBe(false);
   });

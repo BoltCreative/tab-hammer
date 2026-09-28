@@ -3,7 +3,6 @@ export type GroupColor =
 
 export interface RawWindow {
   id: number;
-  focused: boolean;
 }
 
 export interface RawTab {
@@ -31,6 +30,8 @@ export interface RawSnapshot {
   tabs: RawTab[];
   groups: RawGroup[];
   selfWindowId: number | null; // Tab Hammer's own window, excluded from the tree
+  // The most recently focused window other than Tab Hammer's own (null if unknown).
+  lastFocusedWindowId: number | null;
 }
 
 export interface TabNode {
@@ -46,7 +47,9 @@ export interface TabNode {
 
 export interface GroupNode {
   kind: 'group';
-  key: string; // `g:${groupId}:${firstTabId}`, unique even for split runs
+  // `g:${groupId}` for a group's first run in its window; later split runs of the same group
+  // get `g:${groupId}#${n}` (n = 2, 3, …). Stable while the group's tabs close or move.
+  key: string;
   groupId: number;
   title: string;
   color: GroupColor;
@@ -59,7 +62,7 @@ export interface WindowNode {
   key: string; // `w:${windowId}`
   windowId: number;
   label: string;
-  focused: boolean;
+  focused: boolean; // the last-focused window other than Tab Hammer
   tabCount: number;
   children: (GroupNode | TabNode)[];
 }

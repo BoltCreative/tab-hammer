@@ -1,9 +1,36 @@
 import type { GroupColor, RawSnapshot } from '../../model/types';
 
-let selfWindowId: number | null = null;
+let selfWindowIdPromise: Promise<number | null> | null = null;
+function getSelfWindowId(): Promise<number | null> {
+  selfWindowIdPromise ??= chrome.windows.getCurrent().then((w) => w.id ?? null);
+  return selfWindowIdPromise;
+}
+
+// Tab Hammer's own window is focused whenever it is in use, so "focused" means the most
+// recently focused window other than Tab Hammer. Seeded once from Chrome, then kept current
+// by onFocusChanged (see trackFocus).
+let lastFocusedWindowId: number | null = null;
+let lastFocusedSeed: Promise<void> | null = null;
+function seedLastFocused(): Promise<void> {
+  lastFocusedSeed ??= chrome.windows
+    .getLastFocused({ windowTypes: ['normal'] })
+    .then((w) => {
+      lastFocusedWindowId ??= w.id ?? null;
+    })
+    .catch(() => {
+      // No normal window exists yet; onFocusChanged fills it in later.
+    });
+  return lastFocusedSeed;
+}
+
+async function trackFocus(windowId: number): Promise<void> {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  if (windowId === (await getSelfWindowId())) return;
+  lastFocusedWindowId = windowId;
+}
 
 export async function snapshot(): Promise<RawSnapshot> {
-  if (selfWindowId === null) selfWindowId = (await chrome.windows.getCurrent()).id ?? null;
+  const [selfWindowId] = await Promise.all([getSelfWindowId(), seedLastFocused()]);
   const [windows, tabs, groups] = await Promise.all([
     chrome.windows.getAll(),
     chrome.tabs.query({}),
@@ -11,7 +38,8 @@ export async function snapshot(): Promise<RawSnapshot> {
   ]);
   return {
     selfWindowId,
-    windows: windows.flatMap((w) => (w.id === undefined ? [] : [{ id: w.id, focused: w.focused }])),
+    lastFocusedWindowId,
+    windows: windows.flatMap((w) => (w.id === undefined ? [] : [{ id: w.id }])),
     tabs: tabs.flatMap((t) =>
       t.id === undefined
         ? []
@@ -52,6 +80,9 @@ export function subscribe(onChange: () => void): () => void {
       onChange();
     });
   };
+  // Registered before `fire` so the focus is updated before the snapshot that follows.
+  const onFocusChanged = (windowId: number) => void trackFocus(windowId);
+  chrome.windows.onFocusChanged.addListener(onFocusChanged);
   const events: AnyEvent[] = [
     chrome.tabs.onCreated,
     chrome.tabs.onRemoved,
@@ -70,7 +101,10 @@ export function subscribe(onChange: () => void): () => void {
     chrome.tabGroups.onMoved,
   ] as unknown as AnyEvent[];
   for (const e of events) e.addListener(fire);
-  return () => events.forEach((e) => e.removeListener(fire));
+  return () => {
+    chrome.windows.onFocusChanged.removeListener(onFocusChanged);
+    events.forEach((e) => e.removeListener(fire));
+  };
 }
 
 export async function activateTab(tabId: number, windowId: number): Promise<void> {

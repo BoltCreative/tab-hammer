@@ -26,11 +26,11 @@ A Manifest V3 Chrome extension that opens its own window and shows every open Ch
 ### Look: dark window cards
 
 - Dark theme throughout.
-- Each Chrome window is a card. The header shows `Window N`, the tab count, and "focused" if that window currently has focus. The focused window's card gets an accent border.
+- Each Chrome window is a card. The header shows `Window N`, the tab count, and "focused" on the window that was most recently focused other than Tab Hammer itself (Tab Hammer's own window has focus whenever it is in use, so plain "currently focused" would almost never show). That window's card gets an accent border.
 - Windows are listed in Chrome's `windows.getAll` order. `N` is the 1-based position in that list.
 - Inside a card, tabs are listed in Chrome's tab order. Each row shows the favicon (with a neutral placeholder if there is none) and the title (the URL if there is no title), truncated with an ellipsis.
 - Each Chrome tab group gets a header row: a disclosure arrow, a color dot, the group title (or "Untitled group"), and the tab count, all in the group's Chrome color. The group's tabs are indented beneath it with a left rule in the group color.
-- Group collapsed/expanded state mirrors Chrome's `collapsed` flag. Clicking the arrow in Tab Hammer toggles the display only; it does not change Chrome's group.
+- Group collapsed/expanded state mirrors Chrome's `collapsed` flag. Clicking the arrow in Tab Hammer toggles the display only; it does not change Chrome's group. That local choice holds until Chrome's own `collapsed` flag for the group changes; then it is discarded and the view mirrors Chrome again.
 - Window cards can be collapsed and expanded with a disclosure arrow in the header. This is display-only.
 - Each window's active tab is highlighted. Discarded (sleeping) tabs are dimmed.
 
@@ -66,8 +66,8 @@ toolbar click ──► service worker ──► open or focus the Tab Hammer po
 ```
 
 - **Service worker** (`src/background/`): only handles `action.onClicked`. It stores the Tab Hammer window ID in `chrome.storage.session` so it can focus the existing window, or create one if that window is gone. It keeps no other state, so being terminated after about 30s idle is harmless.
-- **chromeSource** (`src/view/chrome/`): the only module that touches `chrome.*` from the page. It exposes `snapshot()` → `{ windows, tabs, groups }` and `subscribe(onChange)`, plus `activateTab(tabId, windowId)` and `focusWindow(windowId)`.
-- **buildTree** (`src/model/`): a pure function from the raw snapshot plus the Tab Hammer window ID to `WindowNode[]`. `WindowNode` holds `children: (GroupNode | TabNode)[]`; `GroupNode` holds `tabs: TabNode[]`. It groups consecutive tabs by `groupId`. Chrome keeps group tabs contiguous, but buildTree must not assume that: if tabs of the same group are split apart, each run gets its own `GroupNode`. It excludes the Tab Hammer window and flags the focused window, active tabs, and discarded tabs. Nodes carry Chrome IDs for now. When persistence arrives, it will introduce Tab Hammer's own stable node IDs, because Chrome's window and tab IDs change across restarts.
+- **chromeSource** (`src/view/chrome/`): the only module that touches `chrome.*` from the page. It exposes `snapshot()` → `{ windows, tabs, groups, selfWindowId, lastFocusedWindowId }` and `subscribe(onChange)`, plus `activateTab(tabId, windowId)` and `focusWindow(windowId)`.
+- **buildTree** (`src/model/`): a pure function from the raw snapshot plus the Tab Hammer window ID to `WindowNode[]`. `WindowNode` holds `children: (GroupNode | TabNode)[]`; `GroupNode` holds `tabs: TabNode[]`. It groups consecutive tabs by `groupId`. Chrome keeps group tabs contiguous, but buildTree must not assume that: if tabs of the same group are split apart, each run gets its own `GroupNode`. A group's first run is keyed `g:<groupId>` and later runs `g:<groupId>#2`, `#3`, …, so the key survives the group's first tab closing or moving. It excludes the Tab Hammer window and flags the last-focused window (tracked by chromeSource from `windows.getLastFocused` and `windows.onFocusChanged`, ignoring Tab Hammer's own window), active tabs, and discarded tabs. Nodes carry Chrome IDs for now. When persistence arrives, it will introduce Tab Hammer's own stable node IDs, because Chrome's window and tab IDs change across restarts.
 - **selection** (`src/model/`): a pure reducer over the flattened list of visible row keys (for example `w:12`, `g:5`, `t:301`). It handles `click`, `toggle`, `range`, and `prune(existingKeys)`, and ranges only span rows that are visible (not inside collapsed nodes).
 - **Components** (`src/view/components/`): WindowCard, GroupRow, TabRow, each well under 200 lines. Styling uses CSS custom properties for the dark palette and maps Chrome's group colors (`grey, blue, red, yellow, green, pink, purple, cyan, orange`) to fixed hex values that read well on dark.
 

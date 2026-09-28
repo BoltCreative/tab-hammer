@@ -22,6 +22,7 @@ export function WindowCard(p: Props) {
     <section data-testid="window-card" className={win.focused ? 'card focused' : 'card'}>
       <div
         className="row window-header"
+        role="treeitem"
         data-key={win.key}
         data-kind="window"
         aria-selected={p.selected.has(win.key)}
@@ -34,6 +35,7 @@ export function WindowCard(p: Props) {
             e.stopPropagation();
             p.onToggleWindow(win.key);
           }}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
           {collapsed ? '▸' : '▾'}
         </span>

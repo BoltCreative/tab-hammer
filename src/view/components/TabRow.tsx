@@ -10,13 +10,16 @@ interface Props {
 }
 
 export function TabRow({ tab, selected, onSelect, onActivate }: Props) {
-  const [iconFailed, setIconFailed] = useState(false);
+  // Remember which URL's favicon failed, so a navigation to a new URL retries.
+  const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
+  const iconFailed = failedIconUrl === tab.url;
   const cls = ['row', 'tab', tab.active && 'active', tab.discarded && 'discarded']
     .filter(Boolean)
     .join(' ');
   return (
     <div
       className={cls}
+      role="treeitem"
       data-key={tab.key}
       data-kind="tab"
       aria-selected={selected}
@@ -29,7 +32,7 @@ export function TabRow({ tab, selected, onSelect, onActivate }: Props) {
           className="favicon"
           src={faviconUrl(tab.url)}
           alt=""
-          onError={() => setIconFailed(true)}
+          onError={() => setFailedIconUrl(tab.url)}
         />
       ) : (
         <span className="favicon placeholder" />
