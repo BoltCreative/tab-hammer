@@ -4,9 +4,9 @@
   "schema": 2,
   "name": "tab-hammer",
   "repos": {
-    "tab-hammer": { "path": "." }
+    "tab-hammer": { "path": "." },
   },
   "defaults": {
-    "tab-hammer": "root"
-  }
+    "tab-hammer": "root",
+  },
 }
