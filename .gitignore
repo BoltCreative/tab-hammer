@@ -1,0 +1,21 @@
+.idea/
+.worktrees/
+.superpowers/
+.scratch/
+scratchpad/
+node_modules/
+dist/
+test-results/
+playwright-report/
+.env
+.claude/worktrees/
+.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+
+# Skullet config — committed definitions, gitignored per-machine state
+.skullet/*.local.*
+.skullet/service-registry.jsonc
+.skullet/nexuses.jsonc
+.skullet/last_activated
+.skullet/wirings/
+.skullet/registries/

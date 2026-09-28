@@ -1,0 +1,12 @@
+// tab-hammer as a single-repo nexus. `path: "."` resolves against this file's
+// directory, so it is correct in every checkout and worktree.
+{
+  "schema": 2,
+  "name": "tab-hammer",
+  "repos": {
+    "tab-hammer": { "path": "." }
+  },
+  "defaults": {
+    "tab-hammer": "root"
+  }
+}
