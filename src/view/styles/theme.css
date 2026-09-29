@@ -87,6 +87,7 @@ main {
 /* Every window's active tab gets a faint row tint; selection (blue) wins over it. */
 .tab.active {
   color: var(--text-active);
+  font-weight: 700;
 }
 .tab.active:not([aria-selected='true']) {
   background: var(--row-active);
