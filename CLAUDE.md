@@ -34,5 +34,5 @@ A service worker opens or focuses the Tab Hammer popup window, and screenshots e
 
 ## Tests
 
-- Unit: `src/**/__tests__/` (model, capture scheduler, preview policy, card placement). Pure logic only.
+- Unit: `src/**/__tests__/` (model, capture scheduling and per-window capture with an injected `chrome`, preview policy, hover card logic). Pure logic only.
 - E2E: `tests/e2e/`. The fixture opens the view through the service worker's `tabHammer.openOrFocus` test hook, the same code path as the toolbar click. Chrome refuses to screenshot `data:` pages, so preview tests serve http pages through Playwright's `context.route`.
