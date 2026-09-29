@@ -11,7 +11,7 @@
   --row-selected: #2b3a5c;
   --row-active: #2a2c31;
   --row-active-focused: #30333a;
-  --text-steel: #6f9fcf; /* steel blue, lifted for contrast on the dark card */
+  --text-tab: #a1bad4; /* steel blue softened toward the base gray */
   --group-grey: #bdc1c6;
   --group-blue: #8ab4f8;
   --group-red: #f28b82;
@@ -82,24 +82,26 @@ main {
 .window-header {
   font-size: 12px;
   font-weight: 500;
-  color: var(--text-steel);
+  color: var(--text);
 }
-/* Every window's active tab gets a faint row tint; selection (blue) wins over it. */
-.tab.active {
-  color: var(--text-steel);
+.card.focused .window-header {
+  color: var(--text-focused);
   font-weight: 700;
 }
+/* In every window: the active tab is bold white, the rest are steel blue. */
+.tab {
+  color: var(--text-tab);
+}
+.tab.active {
+  color: var(--text-focused);
+  font-weight: 700;
+}
+/* Faint row tint on the active tab, a step stronger in the focused window; selection (blue) wins. */
 .tab.active:not([aria-selected='true']) {
   background: var(--row-active);
 }
 .card.focused .tab.active:not([aria-selected='true']) {
   background: var(--row-active-focused);
-}
-/* The window you were last in, and its active tab, read brighter and bolder than the rest. */
-.card.focused .window-header,
-.card.focused .tab.active {
-  color: var(--text-focused);
-  font-weight: 700;
 }
 .tab.discarded {
   color: var(--text-muted);
