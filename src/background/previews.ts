@@ -13,6 +13,7 @@ import { SWAP_KEY, isSwapRecord } from '../shared/captureSwap';
 import { isCaptureTabRequest, type CaptureTabReply } from '../shared/messages';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { prunePreviews, putPreview } from '../shared/previewStore';
+import { createBrowserSession } from './browserSession';
 import { createCaptureQueue } from './captureQueue';
 import { createCaptureScheduler } from './captureScheduler';
 import {
@@ -66,16 +67,13 @@ async function recordUnder(
   await chrome.storage.session.set({ [key]: withOutcome(map, id, entry) });
 }
 
-// chrome.storage.session is emptied when the browser restarts, so an ID kept there marks the
-// browser session (tab and window IDs are only meaningful within one).
-const SESSION_KEY = 'browserSession';
-async function sessionId(): Promise<string> {
-  const { [SESSION_KEY]: id } = await chrome.storage.session.get(SESSION_KEY);
-  if (typeof id === 'string') return id;
-  const fresh = crypto.randomUUID();
-  await chrome.storage.session.set({ [SESSION_KEY]: fresh });
-  return fresh;
-}
+const browserSession = createBrowserSession(
+  {
+    get: (key) => chrome.storage.local.get(key),
+    set: (items) => chrome.storage.local.set(items),
+  },
+  () => crypto.randomUUID(),
+);
 const record = (windowId: number, outcome: CaptureOutcome) =>
   recordUnder(OUTCOMES_KEY, windowId, outcome);
 
@@ -152,7 +150,7 @@ const captureTab = createTabCapturer({
     return map && typeof map === 'object' ? (map as OutcomeMap)[tabId] : undefined;
   },
   record: (tabId, outcome, url) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome, url),
-  sessionId,
+  sessionId: () => browserSession.current(),
 });
 
 /**
@@ -169,11 +167,16 @@ async function cleanUpAfterCrash(): Promise<void> {
       .map((t) => chrome.debugger.detach({ tabId: t.tabId }).catch(() => {})),
   );
 }
+// Runs once per service worker lifetime, before its first capture. It is also started early by
+// onInstalled (the extension was reloaded or updated) and onStartup (the browser launched: that
+// one first renews the browser session, so a record from before the restart is dropped). It isn't
+// started at load, where it could read the old session before onStartup renews it.
 let cleanedUp: Promise<void> | undefined;
+const cleanUpOnce = () => (cleanedUp ??= cleanUpAfterCrash());
 
 const tabQueue = createCaptureQueue<number, CaptureOutcome>({
   run: async (tabId, signal) => {
-    await (cleanedUp ??= cleanUpAfterCrash());
+    await cleanUpOnce();
     return captureTab.capture(tabId, signal);
   },
   dropped: 'skipped:superseded',
@@ -216,8 +219,12 @@ export function registerPreviewCapture(): void {
   );
   // Previews outlive tabs (a page may be open elsewhere or reopened later), so nothing is deleted
   // when a tab closes; age and size limits keep the store bounded instead.
-  chrome.runtime.onStartup.addListener(() => quietly(prunePreviews()));
-  quietly((cleanedUp ??= cleanUpAfterCrash()));
+  chrome.runtime.onStartup.addListener(() => {
+    quietly(prunePreviews());
+    cleanedUp = browserSession.renew().then(cleanUpAfterCrash, cleanUpAfterCrash);
+    quietly(cleanedUp);
+  });
+  chrome.runtime.onInstalled.addListener(() => quietly(cleanUpOnce()));
 
   // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
