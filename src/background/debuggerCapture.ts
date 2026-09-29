@@ -41,14 +41,18 @@ export interface OffscreenDeps {
   save: (url: string, shot: Shot & { capturedAt: number }) => Promise<void>;
   /** The tab's latest recorded on-demand outcome, for the failure cooldown. */
   previousOutcome: (tabId: number) => Promise<OutcomeEntry | undefined>;
-  /** Records the attempt's outcome for the tab's hover card. Failures are ignored. */
-  record: (tabId: number, outcome: CaptureOutcome) => Promise<void>;
+  /** Records the attempt's outcome (and the URL it was for) for the tab's hover card. */
+  record: (tabId: number, outcome: CaptureOutcome, url: string | undefined) => Promise<void>;
+  /** An ID for this browser session (it changes when the browser restarts). */
+  sessionId: () => Promise<string>;
   timeoutMs?: number;
   now?: () => number;
 }
 
 export const SCREENSHOT_TIMEOUT_MS = 5000;
-/** After a failed capture, re-hovering the tab within this long reuses the failure. */
+/** A swap record older than this is never acted on (see stillValid). */
+export const SWAP_RECOVERY_MAX_AGE_MS = 2 * 60 * 1000;
+/** After a failed capture, re-hovering the tab (on the same URL) within this long reuses it. */
 export const FAILURE_COOLDOWN_MS = 60_000;
 
 /** The capture options proven to work for background tabs (fromSurface: false is refused). */
@@ -102,26 +106,39 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
 
   /**
    * Undoes a swap without fighting the user: the target is reactivated only if the stand-in (or
-   * the temporary tab) is still the active tab, and the temporary tab is removed only if it is
-   * still an unused about:blank tab. If the user switched to it or navigated it, it stays.
+   * the temporary tab) is still the active tab. Only the recorded temporary tab is ever removed,
+   * and only while it is still an unused about:blank tab; if the user switched to it or navigated
+   * it, it stays.
    */
   const undoSwap = async (rec: SwapRecord) => {
     const tabs = await deps.tabsInWindow(rec.windowId).catch((): TabInfo[] => []);
-    const isTemp = (t: TabInfo) =>
-      rec.blankId !== undefined ? t.id === rec.blankId : !rec.knownTabIds.includes(t.id!);
-    const unused = (t: TabInfo) => isTemp(t) && t.url === 'about:blank';
+    const blank = tabs.find(
+      (t) => rec.blankId !== undefined && t.id === rec.blankId && t.url === 'about:blank',
+    );
     const active = tabs.find((t) => t.active);
     let reactivated = false;
-    if (active && (active.id === rec.standInId || unused(active))) {
+    if (active && (active.id === rec.standInId || active === blank)) {
       reactivated = await deps.activate(rec.targetId).then(
         () => true,
         () => false,
       );
     }
-    for (const t of tabs.filter(unused)) {
-      if (!t.active || reactivated) await deps.removeTab(t.id!).catch(() => {});
-    }
+    if (blank && (!blank.active || reactivated)) await deps.removeTab(blank.id!).catch(() => {});
     await deps.saveSwap(undefined).catch(() => {});
+  };
+
+  /**
+   * Whether a record left by a dead service worker still describes this browser's tabs. Tab and
+   * window IDs are reused after a browser restart, so a record from another browser session, an
+   * old one, or one whose tabs are gone is dropped without acting on it.
+   */
+  const stillValid = async (rec: SwapRecord) => {
+    if (now() - rec.at > SWAP_RECOVERY_MAX_AGE_MS) return false;
+    if (rec.session !== (await deps.sessionId())) return false;
+    const ids = (await deps.tabsInWindow(rec.windowId).catch((): TabInfo[] => [])).map((t) => t.id);
+    return [rec.targetId, rec.standInId, rec.blankId].every(
+      (id) => id === undefined || ids.includes(id),
+    );
   };
 
   /**
@@ -137,6 +154,7 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     ]);
     const standIn = pickStandIn(tab, tabs, collapsed);
     const rec: SwapRecord = {
+      session: await deps.sessionId(),
       windowId: tab.windowId,
       targetId: tab.id,
       standInId: standIn?.id,
@@ -158,9 +176,14 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     return undo;
   };
 
-  const attempt = async (tabId: number, signal?: AbortSignal): Promise<CaptureOutcome> => {
+  const attempt = async (
+    tabId: number,
+    seen: { url?: string },
+    signal?: AbortSignal,
+  ): Promise<CaptureOutcome> => {
     if (!(await deps.hasPermission())) return 'skipped:no-permission';
     const tab = await deps.getTab(tabId);
+    seen.url = tab.url;
     if (tab.id === undefined) return 'skipped:no-tab';
     if (tab.incognito) return 'skipped:incognito';
     // Attaching the debugger to a discarded (sleeping) tab would reload it.
@@ -176,6 +199,10 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     if (tab.active && !minimized) return deps.captureVisible(tab.windowId);
 
     const target = { ...tab, id: tab.id };
+    // One swap at a time: a run the queue gave up on may still be mid-swap. An old record is
+    // abandoned (its undo failed), not pending.
+    const pending = tab.active ? await deps.loadSwap().catch(() => undefined) : undefined;
+    if (pending && now() - pending.at <= SWAP_RECOVERY_MAX_AGE_MS) return 'skipped:swap-pending';
     let data: string;
     const undo = tab.active ? await swapOut(target) : undefined;
     try {
@@ -220,19 +247,24 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     async capture(tabId, signal) {
       // Re-hovering a tab that just failed (e.g. DevTools is attached to it) reuses the failure
       // instead of attaching again.
+      // A tab that navigated since gets a fresh try.
       const prev = await deps.previousOutcome(tabId).catch(() => undefined);
       if (prev?.outcome.startsWith('error:') && now() - prev.at < FAILURE_COOLDOWN_MS) {
-        return prev.outcome;
+        const current = await deps.getTab(tabId).catch(() => undefined);
+        if (current && current.url === prev.url) return prev.outcome;
       }
-      const outcome = await attempt(tabId, signal).catch(
+      const seen: { url?: string } = {};
+      const outcome = await attempt(tabId, seen, signal).catch(
         (err): CaptureOutcome => `error:${message(err)}`,
       );
-      await deps.record(tabId, outcome).catch(() => {});
+      await deps.record(tabId, outcome, seen.url).catch(() => {});
       return outcome;
     },
     async recover() {
       const rec = await deps.loadSwap().catch(() => undefined);
-      if (rec) await undoSwap(rec);
+      if (!rec) return;
+      if (await stillValid(rec)) await undoSwap(rec);
+      else await deps.saveSwap(undefined).catch(() => {});
     },
   };
 }

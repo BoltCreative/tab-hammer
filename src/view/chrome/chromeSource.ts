@@ -1,5 +1,5 @@
 import type { GroupColor, RawSnapshot } from '../../model/types';
-import { SWAP_KEY, hiddenBySwap, isSwapRecord } from '../../shared/captureSwap';
+import { SWAP_KEY, SWAP_MAX_AGE_MS, hiddenBySwap, isSwapRecord } from '../../shared/captureSwap';
 
 let selfWindowIdPromise: Promise<number | null> | null = null;
 function getSelfWindowId(): Promise<number | null> {
@@ -108,12 +108,27 @@ export function subscribe(onChange: () => void): () => void {
     chrome.tabGroups.onMoved,
   ] as unknown as AnyEvent[];
   for (const e of events) e.addListener(fire);
-  // A swap ending can reveal a tab it hid (one the user kept).
-  const onStorage = (changes: object, area: string) => {
-    if (area === 'local' && SWAP_KEY in changes) fire();
+  // A swap ending can reveal a tab it hid (one the user kept), and so can its record going stale
+  // (left over from a crash), which no Chrome event announces.
+  let staleTimer: ReturnType<typeof setTimeout> | undefined;
+  const watchSwap = (record: unknown) => {
+    clearTimeout(staleTimer);
+    if (!isSwapRecord(record)) return;
+    const wait = Math.max(0, record.at + SWAP_MAX_AGE_MS + 1 - Date.now());
+    staleTimer = setTimeout(fire, wait);
+  };
+  const onStorage = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+    if (area !== 'local' || !(SWAP_KEY in changes)) return;
+    watchSwap(changes[SWAP_KEY]!.newValue);
+    fire();
   };
   chrome.storage.onChanged.addListener(onStorage);
+  void chrome.storage.local
+    .get(SWAP_KEY)
+    .then((stored) => watchSwap(stored[SWAP_KEY]))
+    .catch(() => {});
   return () => {
+    clearTimeout(staleTimer);
     chrome.storage.onChanged.removeListener(onStorage);
     chrome.windows.onFocusChanged.removeListener(onFocusChanged);
     events.forEach((e) => e.removeListener(fire));

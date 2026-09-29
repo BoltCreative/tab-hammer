@@ -3,6 +3,7 @@
 // start, and so the view can hide the temporary tab instead of closing the hover card over it.
 
 export interface SwapRecord {
+  session: string; // the browser session it was made in; IDs are reused after a restart
   windowId: number;
   targetId: number; // the tab being captured, active before the swap
   standInId?: number; // the tab activated in its place, if one was
@@ -21,6 +22,7 @@ export function isSwapRecord(v: unknown): v is SwapRecord {
   return (
     typeof r === 'object' &&
     r !== null &&
+    typeof r.session === 'string' &&
     typeof r.windowId === 'number' &&
     typeof r.targetId === 'number' &&
     Array.isArray(r.knownTabIds) &&

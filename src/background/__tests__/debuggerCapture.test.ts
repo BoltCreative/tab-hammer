@@ -3,12 +3,14 @@ import type { SwapRecord } from '../../shared/captureSwap';
 import {
   FAILURE_COOLDOWN_MS,
   SCREENSHOT_TIMEOUT_MS,
+  SWAP_RECOVERY_MAX_AGE_MS,
   createTabCapturer,
   type OffscreenDeps,
 } from '../debuggerCapture';
 
 const WINDOW = 7;
 const NOW = 1_000_000;
+const SESSION = 'session-1';
 const TARGET = {
   id: 70,
   windowId: WINDOW,
@@ -41,6 +43,8 @@ function setup(
     win?: object;
     others?: Tab[];
     collapsed?: number[];
+    /** A swap record left in storage, e.g. by a service worker that died. */
+    stored?: SwapRecord;
     over?: Partial<OffscreenDeps>;
   } = {},
 ) {
@@ -57,6 +61,7 @@ function setup(
     tabs = tabs.map((t) => ({ ...t, active: t.id === id }));
   };
   const swaps: (SwapRecord | undefined)[] = [];
+  let stored = opts.stored;
   const record = vi.fn<OffscreenDeps['record']>(async () => {});
   const save = vi.fn<OffscreenDeps['save']>(async () => {});
   const deps: OffscreenDeps = {
@@ -85,10 +90,12 @@ function setup(
       tabs = tabs.filter((t) => t.id !== id);
     }),
     saveSwap: async (rec) => {
-      swaps.push(rec && { ...rec });
+      stored = rec && { ...rec };
+      swaps.push(stored);
       calls.push(rec ? 'saveSwap' : 'clearSwap');
     },
-    loadSwap: async () => undefined,
+    loadSwap: async () => stored,
+    sessionId: async () => SESSION,
     attach: log('attach', async () => {}),
     detach: log('detach', async () => {}),
     screenshot: log('screenshot', async () => 'AAAA'),
@@ -111,6 +118,12 @@ function setup(
     outcome,
     tabs: () => tabs,
     userActivates: activate,
+    addTab: (t: Tab) => {
+      tabs = [...tabs, t];
+    },
+    removeTab: (id: number) => {
+      tabs = tabs.filter((t) => t.id !== id);
+    },
     userNavigates: (id: number, url: string) => {
       tabs = tabs.map((t) => (t.id === id ? { ...t, url } : t));
     },
@@ -120,6 +133,13 @@ function setup(
 }
 
 const DATA_URL = 'data:image/jpeg;base64,AAAA';
+const leftover: SwapRecord = {
+  session: SESSION,
+  windowId: WINDOW,
+  targetId: 70,
+  knownTabIds: [70],
+  at: NOW - 1000,
+};
 
 afterEach(() => vi.useRealTimers());
 
@@ -252,9 +272,13 @@ describe('createTabCapturer', () => {
   });
 
   describe('after a failed capture', () => {
-    const failed = (at: number) => ({
+    const failed = (at: number, url = TARGET.url) => ({
       over: {
-        previousOutcome: async () => ({ at, outcome: 'error:attach: Another debugger' as const }),
+        previousOutcome: async () => ({
+          at,
+          url,
+          outcome: 'error:attach: Another debugger' as const,
+        }),
       },
     });
 
@@ -263,6 +287,18 @@ describe('createTabCapturer', () => {
       await expect(capture()).resolves.toBe('error:attach: Another debugger');
       expect(calls).toEqual([]);
       expect(record).not.toHaveBeenCalled();
+    });
+
+    it('tries again if the tab has navigated since', async () => {
+      const { capture, calls } = setup(failed(NOW, 'https://example.com/before'));
+      await expect(capture()).resolves.toBe('saved');
+      expect(calls[0]).toBe('attach(70)');
+    });
+
+    it('records the URL each outcome was for', async () => {
+      const { capture, record } = setup();
+      await capture();
+      expect(record).toHaveBeenCalledWith(TARGET.id, 'saved', TARGET.url);
     });
 
     it('tries again once the minute is up', async () => {
@@ -297,6 +333,7 @@ describe('createTabCapturer', () => {
         `save(${TARGET.url},[object Object])`,
       ]);
       expect(swaps[0]).toEqual({
+        session: SESSION,
         windowId: WINDOW,
         targetId: 70,
         standInId: 73,
@@ -329,7 +366,57 @@ describe('createTabCapturer', () => {
       const others = [tab(71, 3, { discarded: true }), tab(72, 1, { groupId: 5 })];
       const { capture, calls } = setup({ ...minimized, others, collapsed: [5] });
       await capture();
-      expect(calls.slice(0, 2)).toEqual(['saveSwap', `createBlankTab(${WINDOW})`]);
+      expect(calls).toEqual([
+        'saveSwap',
+        `createBlankTab(${WINDOW})`,
+        'saveSwap',
+        'attach(70)',
+        'screenshot(70)',
+        'detach(70)',
+        'activate(70)',
+        'removeTab(500)',
+        'clearSwap',
+        `downscale(${DATA_URL})`,
+        `save(${TARGET.url},[object Object])`,
+      ]);
+    });
+
+    it('removes nothing when undoing a stand-in swap, even a blank tab that appeared meanwhile', async () => {
+      const env = setup({ ...minimized, others: [tab(71, 1)] });
+      env.deps.screenshot = async () => {
+        env.addTab(tab(600, 5, { url: 'about:blank' })); // e.g. the user opened one
+        return 'AAAA';
+      };
+      await env.capture();
+      expect(env.calls).toEqual([
+        'saveSwap',
+        'activate(71)',
+        'attach(70)',
+        'detach(70)',
+        'activate(70)',
+        'clearSwap',
+        `downscale(${DATA_URL})`,
+        `save(${TARGET.url},[object Object])`,
+      ]);
+      expect(env.tabs().map((t) => t.id)).toEqual([70, 71, 600]);
+    });
+
+    it('never starts a swap while an earlier one is still pending undo', async () => {
+      const pending = { ...leftover, at: NOW - 1000 };
+      const { capture, calls, outcome } = setup({
+        ...minimized,
+        others: [tab(71, 1)],
+        stored: pending,
+      });
+      await expect(capture()).resolves.toBe('skipped:swap-pending');
+      expect(outcome()).toBe('skipped:swap-pending');
+      expect(calls).toEqual([]);
+    });
+
+    it('treats a long-abandoned swap record as not pending', async () => {
+      const old = { ...leftover, at: NOW - SWAP_RECOVERY_MAX_AGE_MS - 1 };
+      const { capture } = setup({ ...minimized, others: [tab(71, 1)], stored: old });
+      await expect(capture()).resolves.toBe('saved');
     });
 
     it('undoes the swap even when the capture fails', async () => {
@@ -386,8 +473,16 @@ describe('createTabCapturer', () => {
         return 'AAAA';
       };
       await env.capture();
-      expect(env.calls).not.toContain('removeTab(500)');
-      expect(env.calls).not.toContain('activate(70)');
+      expect(env.calls).toEqual([
+        'saveSwap',
+        `createBlankTab(${WINDOW})`,
+        'saveSwap',
+        'attach(70)',
+        'detach(70)',
+        'clearSwap',
+        `downscale(${DATA_URL})`,
+        `save(${TARGET.url},[object Object])`,
+      ]);
       expect(env.tabs().map((t) => [t.id, t.active])).toEqual([
         [70, false],
         [500, true],
@@ -396,33 +491,53 @@ describe('createTabCapturer', () => {
   });
 
   describe('recover (a service worker died mid-swap)', () => {
+    const blankSwap = { ...leftover, blankId: 500 };
+
     it('reactivates the target and removes the temporary tab it left behind', async () => {
-      const env = setup({ others: [tab(500, 3, { url: 'about:blank', active: true })] });
-      env.deps.loadSwap = async () => ({
-        windowId: WINDOW,
-        targetId: 70,
-        knownTabIds: [70],
-        at: 0,
+      const env = setup({
+        others: [tab(500, 3, { url: 'about:blank', active: true })],
+        stored: blankSwap,
       });
       await env.recover();
       expect(env.calls).toEqual(['activate(70)', 'removeTab(500)', 'clearSwap']);
     });
 
-    it('leaves a window alone that the user has since moved on in', async () => {
+    it('reactivates the target after a stand-in swap, and removes nothing', async () => {
       const env = setup({
-        others: [tab(71, 1, { active: true }), tab(500, 3, { url: 'about:blank' })],
-      });
-      env.deps.loadSwap = async () => ({
-        windowId: WINDOW,
-        targetId: 70,
-        blankId: 500,
-        knownTabIds: [70, 71],
-        at: 0,
+        others: [tab(71, 1, { active: true }), tab(600, 3, { url: 'about:blank' })],
+        stored: { ...leftover, standInId: 71, knownTabIds: [70, 71] },
       });
       await env.recover();
-      // 71 wasn't the stand-in (there was none), so the target stays in the background; the
-      // unused blank tab still goes.
+      expect(env.calls).toEqual(['activate(70)', 'clearSwap']);
+    });
+
+    it('leaves the active tab alone if the user has since moved on, but removes the unused blank', async () => {
+      const env = setup({
+        others: [tab(71, 1, { active: true }), tab(500, 3, { url: 'about:blank' })],
+        stored: { ...blankSwap, knownTabIds: [70, 71] },
+      });
+      await env.recover();
       expect(env.calls).toEqual(['removeTab(500)', 'clearSwap']);
+    });
+
+    type Env = ReturnType<typeof setup>;
+    it.each<[string, Partial<SwapRecord>, (env: Env) => void]>([
+      ['older than two minutes', { at: NOW - SWAP_RECOVERY_MAX_AGE_MS - 1 }, () => {}],
+      [
+        'from another browser session (IDs are reused after a restart)',
+        { session: 'old' },
+        () => {},
+      ],
+      ['whose target is gone', {}, (env) => env.removeTab(70)],
+      ['whose temporary tab is gone', {}, (env) => env.removeTab(500)],
+    ])('drops a record %s without touching any tab', async (_name, change, prepare) => {
+      const env = setup({
+        others: [tab(500, 3, { url: 'about:blank', active: true })],
+        stored: { ...blankSwap, ...change },
+      });
+      prepare(env);
+      await env.recover();
+      expect(env.calls).toEqual(['clearSwap']);
     });
 
     it('does nothing without a leftover swap', async () => {

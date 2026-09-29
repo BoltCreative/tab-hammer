@@ -54,10 +54,27 @@ async function save(url: string, shot: Shot & { capturedAt: number }): Promise<v
 
 // Window captures run one at a time (the scheduler serializes them), and so do tab captures (the
 // queue does), and each kind has its own key, so these read-modify-writes can't race.
-async function recordUnder(key: string, id: number, outcome: CaptureOutcome): Promise<void> {
+async function recordUnder(
+  key: string,
+  id: number,
+  outcome: CaptureOutcome,
+  url?: string,
+): Promise<void> {
   const { [key]: prev } = await chrome.storage.session.get(key);
   const map = prev && typeof prev === 'object' ? (prev as OutcomeMap) : {};
-  await chrome.storage.session.set({ [key]: withOutcome(map, id, { at: Date.now(), outcome }) });
+  const entry = url === undefined ? { at: Date.now(), outcome } : { at: Date.now(), outcome, url };
+  await chrome.storage.session.set({ [key]: withOutcome(map, id, entry) });
+}
+
+// chrome.storage.session is emptied when the browser restarts, so an ID kept there marks the
+// browser session (tab and window IDs are only meaningful within one).
+const SESSION_KEY = 'browserSession';
+async function sessionId(): Promise<string> {
+  const { [SESSION_KEY]: id } = await chrome.storage.session.get(SESSION_KEY);
+  if (typeof id === 'string') return id;
+  const fresh = crypto.randomUUID();
+  await chrome.storage.session.set({ [SESSION_KEY]: fresh });
+  return fresh;
 }
 const record = (windowId: number, outcome: CaptureOutcome) =>
   recordUnder(OUTCOMES_KEY, windowId, outcome);
@@ -134,7 +151,8 @@ const captureTab = createTabCapturer({
     const { [TAB_OUTCOMES_KEY]: map } = await chrome.storage.session.get(TAB_OUTCOMES_KEY);
     return map && typeof map === 'object' ? (map as OutcomeMap)[tabId] : undefined;
   },
-  record: (tabId, outcome) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome),
+  record: (tabId, outcome, url) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome, url),
+  sessionId,
 });
 
 /**

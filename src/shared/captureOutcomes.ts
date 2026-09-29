@@ -8,6 +8,7 @@ export type CaptureOutcome = 'saved' | `skipped:${string}` | `error:${string}`;
 export interface OutcomeEntry {
   at: number; // ms since epoch
   outcome: CaptureOutcome;
+  url?: string; // the page it was for (on-demand tab outcomes)
 }
 
 /** Keyed by window ID (OUTCOMES_KEY) or tab ID (TAB_OUTCOMES_KEY). */

@@ -3,7 +3,13 @@ import { SWAP_MAX_AGE_MS, hiddenBySwap, type SwapRecord } from '../captureSwap';
 
 describe('hiddenBySwap', () => {
   const NOW = 1_000_000;
-  const rec: SwapRecord = { windowId: 7, targetId: 70, knownTabIds: [70, 71], at: NOW };
+  const rec: SwapRecord = {
+    session: 's',
+    windowId: 7,
+    targetId: 70,
+    knownTabIds: [70, 71],
+    at: NOW,
+  };
 
   it.each([
     [
