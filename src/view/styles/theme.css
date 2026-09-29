@@ -22,6 +22,10 @@
   --group-purple: #c58af9;
   --group-cyan: #78d9ec;
   --group-orange: #fcad70;
+  --banner-bg: #3a2f1a;
+  --banner-border: #5c4a26;
+  --banner-button-bg: #4a3b1f;
+  --banner-button-bg-hover: #5c4a26;
   color-scheme: dark;
 }
 * {
@@ -193,4 +197,30 @@ main {
 .hover-card-meta {
   color: var(--text-muted);
   font-size: 11px;
+}
+.permission-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--banner-bg);
+  border-bottom: 1px solid var(--banner-border);
+  color: var(--text-strong);
+  font-size: 12px;
+}
+.permission-banner span {
+  flex: 1;
+}
+.permission-banner button {
+  flex: none;
+  background: var(--banner-button-bg);
+  color: var(--text-strong);
+  border: 1px solid var(--banner-border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.permission-banner button:hover {
+  background: var(--banner-button-bg-hover);
 }

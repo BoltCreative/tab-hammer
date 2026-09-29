@@ -37,6 +37,7 @@ async function save(url: string, shot: Shot & { capturedAt: number }): Promise<v
 }
 
 const captureWindow = createWindowCapturer({
+  hasPermission: () => chrome.permissions.contains({ origins: ['<all_urls>'] }),
   getWindow: (windowId) => chrome.windows.get(windowId),
   viewWindowId: async () => {
     const { viewWindowId } = await chrome.storage.session.get('viewWindowId');

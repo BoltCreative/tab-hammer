@@ -23,6 +23,7 @@ import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
 import { useHoverCard } from './hover/useHoverCard';
+import { PreviewPermissionBanner } from './permission/PreviewPermissionBanner';
 
 export function App() {
   const [tree, setTree] = useState<WindowNode[]>([]);
@@ -93,22 +94,25 @@ export function App() {
   );
 
   return (
-    <main role="tree" aria-multiselectable="true">
-      {tree.map((w) => (
-        <WindowCard
-          key={w.key}
-          win={w}
-          collapse={collapse}
-          selected={selection.selected}
-          onToggleWindow={onToggleWindow}
-          onToggleGroup={onToggleGroup}
-          onSelect={onSelect}
-          onActivate={onActivate}
-          onFocusWindow={onFocusWindow}
-          hover={hover}
-        />
-      ))}
-      {hovered && hoveredTab && <HoverCard tab={hoveredTab} row={hovered.row} />}
-    </main>
+    <>
+      <PreviewPermissionBanner />
+      <main role="tree" aria-multiselectable="true">
+        {tree.map((w) => (
+          <WindowCard
+            key={w.key}
+            win={w}
+            collapse={collapse}
+            selected={selection.selected}
+            onToggleWindow={onToggleWindow}
+            onToggleGroup={onToggleGroup}
+            onSelect={onSelect}
+            onActivate={onActivate}
+            onFocusWindow={onFocusWindow}
+            hover={hover}
+          />
+        ))}
+        {hovered && hoveredTab && <HoverCard tab={hoveredTab} row={hovered.row} />}
+      </main>
+    </>
   );
 }

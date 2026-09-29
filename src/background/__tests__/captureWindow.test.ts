@@ -13,6 +13,7 @@ const QUOTA = new Error('This request exceeds the MAX_CAPTURE_VISIBLE_TAB_CALLS_
 
 function setup(over: Partial<CaptureDeps> = {}, win: object = {}) {
   const deps = {
+    hasPermission: vi.fn(async () => true),
     getWindow: vi.fn(async () => ({
       type: 'normal' as const,
       state: 'normal' as const,
@@ -42,6 +43,14 @@ describe('createWindowCapturer', () => {
       width: 640,
       height: 360,
     });
+  });
+
+  it('never captures without the all-urls permission, and skips before touching the window', async () => {
+    const { deps, capture } = setup({ hasPermission: vi.fn(async () => false) });
+    await capture(WINDOW);
+    expect(deps.getWindow).not.toHaveBeenCalled();
+    expect(deps.captureVisibleTab).not.toHaveBeenCalled();
+    expect(deps.save).not.toHaveBeenCalled();
   });
 
   it.each([

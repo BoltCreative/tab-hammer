@@ -52,6 +52,10 @@ test('renders window cards with a group row and indented tabs, excluding itself'
   sw,
   view,
 }) => {
+  // The e2e fixture loads the extension with --load-extension, which grants its manifest's
+  // host_permissions outright, so the "allow previews" banner never appears here.
+  await expect(view.getByTestId('permission-banner')).toHaveCount(0);
+
   const s = await buildLayout(sw);
   const cardA = view.locator('section[data-testid="window-card"]', {
     has: view.locator(`[data-key="w:${s.winA}"]`),

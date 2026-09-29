@@ -11,6 +11,10 @@ export interface Shot {
 }
 
 export interface CaptureDeps {
+  // Chrome may leave the <all_urls> host permission ungranted after an unpacked reload, or the
+  // user can withhold it at any time; checked first so a missing grant never spends the capture
+  // rate budget on a call that would just fail.
+  hasPermission: () => Promise<boolean>;
   getWindow: (windowId: number) => Promise<WindowInfo>;
   viewWindowId: () => Promise<number | undefined>; // Tab Hammer's own window
   activeTab: (windowId: number) => Promise<TabInfo | undefined>;
@@ -30,6 +34,7 @@ export function createWindowCapturer(deps: CaptureDeps): (windowId: number) => P
   const retrying = new Set<number>(); // windows whose next capture is a quota-error retry
 
   return async (windowId) => {
+    if (!(await deps.hasPermission())) return;
     const isRetry = retrying.delete(windowId);
     const win = await deps.getWindow(windowId);
     // Never capture or store incognito pages: previews persist on disk across sessions.
