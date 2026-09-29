@@ -56,19 +56,19 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
   );
 
   const card = view.getByTestId('hover-card');
+  const shot = card.locator('.hover-card-shot');
   const row = (tabId: number) => view.locator(`[data-key="t:${tabId}"]`);
   const expectShot = async () => {
     await expect(card).toBeVisible();
-    await expect(card.locator('img')).toHaveJSProperty('complete', true);
-    expect(await card.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(
-      640,
-    );
+    await expect(shot).toHaveJSProperty('complete', true);
+    expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
   };
 
   await row(ids.tabId).hover();
   await expectShot();
   await expect(card).toContainText(shotUrl);
   await expect(card).toContainText('Last viewed');
+  const shotBox = await card.boundingBox();
 
   await row(twinId).hover();
   await expect(card).toContainText(`${shotUrl}#section`);
@@ -76,11 +76,17 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
 
   await row(neverId).hover();
   await expect(card).toContainText('about:blank');
-  await expect(card.locator('img')).toHaveCount(0);
-  // A tab without a preview says what the window's latest capture attempt did.
+  await expect(shot).toHaveCount(0);
+  // A tab without a preview says what the window's latest capture attempt did, and gets a muted
+  // favicon placeholder instead of a screenshot in the preview area.
   await expect(card).toContainText('No preview yet · last capture: saved');
+  await expect(card.locator('.hover-card-preview-favicon')).toBeVisible();
   await expect(row(neverId)).toHaveAttribute('aria-describedby', 'tab-hover-card');
   await expect(card).toHaveAttribute('id', 'tab-hover-card');
+  // The fixed-size preview area keeps the card the same height with a screenshot as with the
+  // no-preview placeholder — the reported jarring resize no longer happens.
+  const noPreviewBox = await card.boundingBox();
+  expect(noPreviewBox?.height).toBe(shotBox?.height);
 
   // The card never gets in the way of selection, and a click closes it.
   await row(neverId).click();
@@ -118,10 +124,17 @@ test('hovering a background tab that was never shown captures it on demand', asy
 
   await view.locator(`[data-key="t:${tabId}"]`).hover();
   const card = view.getByTestId('hover-card');
+  const shot = card.locator('.hover-card-shot');
   await expect(card).toContainText(hiddenUrl);
-  await expect(card.locator('img')).toHaveJSProperty('complete', true);
-  expect(await card.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
+  // The card (and its fixed-size preview area) is placed as soon as it's visible, before the
+  // on-demand capture resolves — its height doesn't depend on the screenshot landing.
+  await expect(card).toBeVisible();
+  const boxBeforeShot = await card.boundingBox();
+  await expect(shot).toHaveJSProperty('complete', true);
+  expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
   await expect(card).not.toContainText('Capturing');
+  // No layout jump once the screenshot lands.
+  expect((await card.boundingBox())?.height).toBe(boxBeforeShot?.height);
   expect(await hasPreview(sw, hiddenUrl)).toBe(true);
   // The tab stayed in the background; the capture didn't switch to it.
   expect(await sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, tabId)).toBe(false);
@@ -177,7 +190,7 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
   const row = view.locator(`[data-key="t:${blankId}"]`);
   const card = view.getByTestId('hover-card');
   await row.hover();
-  await expect(card.locator('img')).toHaveCount(1);
+  await expect(card.locator('.hover-card-shot')).toHaveCount(1);
 
   await view.getByRole('button', { name: 'Clear previews' }).click();
   await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
@@ -192,5 +205,5 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
 
   await row.hover();
   await expect(card).toContainText('No preview yet');
-  await expect(card.locator('img')).toHaveCount(0);
+  await expect(card.locator('.hover-card-shot')).toHaveCount(0);
 });

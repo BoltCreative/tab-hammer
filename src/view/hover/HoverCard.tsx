@@ -3,6 +3,7 @@ import type { TabNode } from '../../model/types';
 import { describeNoPreview } from '../../shared/captureOutcomes';
 import { wantsOnDemandCapture } from '../../shared/previewPolicy';
 import { getPreview, type Preview } from '../../shared/previewStore';
+import { faviconUrl } from '../chrome/favicon';
 import {
   isTabLoaded,
   latestCaptureOutcome,
@@ -102,18 +103,17 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
   const note = ready ? loaded.note : null;
   const capturing = ready ? loaded.capturing : false;
 
-  // Place it once its height is known. The image's width/height attributes fix its aspect ratio
-  // before it loads, so this measurement is final.
+  // The preview area is a fixed-aspect box in every state, so the card's height never depends on
+  // which state (pending lookup, loading/capturing, image, or empty) is showing. Placement only
+  // needs to react to the hovered row or the scroll container moving, not to preview state.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const bounds = list.current?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
     el.style.top = `${placeCardTop(row, el.offsetHeight, bounds)}px`;
     el.style.visibility = 'visible';
-  }, [row, ready, image, list]);
+  }, [row, list]);
 
-  // Wait for the store lookup so the card doesn't open text-only and then grow.
-  if (!ready) return null;
   return (
     <div
       ref={ref}
@@ -122,32 +122,59 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
       role="tooltip"
       data-testid="hover-card"
     >
-      {image && (
-        <img
-          className="hover-card-shot"
-          src={image.src}
-          width={image.width}
-          height={image.height}
-          alt=""
-        />
-      )}
+      <HoverCardPreview ready={ready} image={image} capturing={capturing} note={note} tab={tab} />
       <div className="hover-card-text">
         <div className="hover-card-title">{tab.title}</div>
         <div className="hover-card-url">{tab.url}</div>
         {tab.lastAccessed !== undefined && (
           <div className="hover-card-meta">Last viewed {relativeTime(tab.lastAccessed)}</div>
         )}
-        {capturing && (
-          <div className="hover-card-note">
-            {capturing === 'loading' ? 'Loading page…' : 'Capturing preview…'}
-          </div>
-        )}
-        {note && (
-          <div className="hover-card-note" title={note}>
-            {note}
-          </div>
-        )}
       </div>
+    </div>
+  );
+}
+
+interface PreviewProps {
+  ready: boolean;
+  image: Loaded['image'];
+  capturing: Loaded['capturing'];
+  note: string | null;
+  tab: TabNode;
+}
+
+/**
+ * The card's always-present, fixed-aspect (16:10) preview area, so the card is the same height
+ * whether it's mid-lookup, waiting on an on-demand capture, showing a screenshot, or showing no
+ * preview at all. A screenshot crossfades in (CSS animation on mount); loading states show a
+ * CSS-only spinner that goes static under prefers-reduced-motion; no-preview/failed/skipped shows
+ * the tab's favicon, muted, plus the outcome text.
+ */
+function HoverCardPreview({ ready, image, capturing, note, tab }: PreviewProps) {
+  if (image && !capturing) {
+    return (
+      <div className="hover-card-preview">
+        <img key={image.src} className="hover-card-shot" src={image.src} alt="" />
+      </div>
+    );
+  }
+  if (!ready || capturing) {
+    const label =
+      capturing === 'loading'
+        ? 'Loading page…'
+        : capturing === 'capturing'
+          ? 'Capturing preview…'
+          : null;
+    return (
+      <div className="hover-card-preview hover-card-preview-loading">
+        <span className="hover-card-spinner" aria-hidden="true" />
+        {label && <span className="hover-card-preview-status">{label}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="hover-card-preview hover-card-preview-empty">
+      {tab.url && <img className="hover-card-preview-favicon" src={faviconUrl(tab.url)} alt="" />}
+      {note && <span className="hover-card-preview-status">{note}</span>}
     </div>
   );
 }
