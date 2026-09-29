@@ -1,7 +1,7 @@
 // Captures one window's visible tab into the preview store. Chrome and the store are injected so
 // the skip rules and the after-capture checks are unit-testable.
 import type { CaptureOutcome } from '../shared/captureOutcomes';
-import { isCapturableUrl } from './captureScheduler';
+import { isCapturableUrl } from '../shared/previewPolicy';
 
 type WindowInfo = Pick<chrome.windows.Window, 'type' | 'state' | 'incognito'>;
 type TabInfo = Pick<chrome.tabs.Tab, 'id' | 'url' | 'status' | 'incognito'>;
@@ -49,9 +49,11 @@ export function createActivationGenerations() {
 // Chrome's error when captureVisibleTab is called more than twice a second.
 const QUOTA_ERROR = 'MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND';
 
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+export const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-export function createWindowCapturer(deps: CaptureDeps): (windowId: number) => Promise<void> {
+export function createWindowCapturer(
+  deps: CaptureDeps,
+): (windowId: number) => Promise<CaptureOutcome> {
   const now = deps.now ?? Date.now;
   const retrying = new Set<number>(); // windows whose next capture is a quota-error retry
 
@@ -107,5 +109,6 @@ export function createWindowCapturer(deps: CaptureDeps): (windowId: number) => P
   return async (windowId) => {
     const outcome = await attempt(windowId).catch((err): CaptureOutcome => `error:${message(err)}`);
     await deps.record(windowId, outcome).catch(() => {});
+    return outcome;
   };
 }

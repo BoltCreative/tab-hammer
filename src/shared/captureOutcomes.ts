@@ -1,4 +1,5 @@
-// The outcome of the latest preview capture attempt per window, kept in chrome.storage.session by
+// The outcome of the latest preview capture attempt per window (captures of a window's visible
+// tab) and per tab (on-demand captures from the hover card), kept in chrome.storage.session by
 // the service worker so the hover card can say why a tab has no preview without DevTools.
 
 /** 'saved', `skipped:<reason>` (a rule declined the capture), or `error:<stage>: <message>`. */
@@ -9,21 +10,22 @@ export interface OutcomeEntry {
   outcome: CaptureOutcome;
 }
 
-/** Keyed by window ID. */
+/** Keyed by window ID (OUTCOMES_KEY) or tab ID (TAB_OUTCOMES_KEY). */
 export type OutcomeMap = Record<string, OutcomeEntry>;
 
 export const OUTCOMES_KEY = 'captureOutcomes';
+export const TAB_OUTCOMES_KEY = 'tabCaptureOutcomes';
 export const MAX_OUTCOMES = 20;
 const MAX_MESSAGE = 200;
 
-/** Returns `map` with the window's latest outcome replaced, keeping only the newest `max` windows. */
+/** Returns `map` with one window's (or tab's) outcome replaced, keeping only the newest `max`. */
 export function withOutcome(
   map: OutcomeMap,
-  windowId: number,
+  id: number,
   entry: OutcomeEntry,
   max = MAX_OUTCOMES,
 ): OutcomeMap {
-  const next = { ...map, [windowId]: { ...entry, outcome: clip(entry.outcome) } };
+  const next = { ...map, [id]: { ...entry, outcome: clip(entry.outcome) } };
   const newest = Object.entries<OutcomeEntry>(next)
     .sort(([, a], [, b]) => b.at - a.at)
     .slice(0, max);
@@ -34,6 +36,15 @@ function clip(outcome: CaptureOutcome): CaptureOutcome {
   return outcome.length > MAX_MESSAGE
     ? (`${outcome.slice(0, MAX_MESSAGE)}…` as CaptureOutcome)
     : outcome;
+}
+
+/** The more recent of two entries (e.g. a tab's own outcome and its window's). */
+export function newerOutcome(
+  a: OutcomeEntry | undefined,
+  b: OutcomeEntry | undefined,
+): OutcomeEntry | undefined {
+  if (!a || !b) return a ?? b;
+  return b.at > a.at ? b : a;
 }
 
 /** The hover card's one-line note for a tab with no preview. */

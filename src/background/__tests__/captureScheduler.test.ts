@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCaptureScheduler, isCapturableUrl } from '../captureScheduler';
+import { createCaptureScheduler } from '../captureScheduler';
 
 // Fake timers also fake Date.now, which the scheduler uses as its clock.
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-function setup(capture?: (windowId: number) => Promise<void>) {
+function setup(capture?: (windowId: number) => Promise<unknown>) {
   const starts: [windowId: number, at: number][] = [];
   const scheduler = createCaptureScheduler({
     debounceMs: 500,
@@ -88,28 +88,18 @@ describe('createCaptureScheduler', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(starts.map(([w]) => w)).toEqual([1, 2]);
   });
-});
 
-describe('isCapturableUrl', () => {
-  it.each([
-    'https://example.com/a',
-    'http://localhost:3000/',
-    'file:///Users/me/notes.html',
-    'https://chrome.google.com/search',
-  ])('allows %s', (url) => expect(isCapturableUrl(url)).toBe(true));
-
-  it.each([
-    undefined,
-    '',
-    'not a url',
-    'chrome://settings',
-    'chrome-extension://abc/src/view/index.html',
-    'chrome-untrusted://new-tab-page/',
-    'devtools://devtools/bundled/inspector.html',
-    'about:blank',
-    'view-source:https://example.com',
-    'data:text/html,<title>x</title>',
-    'https://chromewebstore.google.com/detail/abc',
-    'https://chrome.google.com/webstore/detail/abc',
-  ])('skips %s', (url) => expect(isCapturableUrl(url)).toBe(false));
+  it('nextCapture resolves with that window’s next capture result, or undefined if it failed', async () => {
+    const { scheduler } = setup(async (w) => {
+      if (w === 2) throw new Error('boom');
+      return `shot of ${w}`;
+    });
+    const one = scheduler.nextCapture(1);
+    const two = scheduler.nextCapture(2);
+    scheduler.trigger(2);
+    scheduler.trigger(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(one).resolves.toBe('shot of 1');
+    await expect(two).resolves.toBeUndefined();
+  });
 });

@@ -134,7 +134,7 @@ describe('createWindowCapturer', () => {
     ['save', { save: vi.fn().mockRejectedValue(new Error('quota exceeded')) }],
   ])('records a %s failure instead of losing it', async (stage, over) => {
     const { capture, outcome } = setup(over);
-    await expect(capture(WINDOW)).resolves.toBeUndefined();
+    await expect(capture(WINDOW)).resolves.toMatch(new RegExp(`^error:${stage}: `));
     expect(outcome()).toMatch(new RegExp(`^error:${stage}: `));
   });
 

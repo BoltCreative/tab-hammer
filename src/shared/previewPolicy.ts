@@ -34,3 +34,41 @@ export function pickEvictions(
   const oldestFirst = fresh.slice().sort((a, b) => a.capturedAt - b.capturedAt);
   return [...expired, ...oldestFirst.slice(0, overflow).map((e) => e.key)];
 }
+
+const CAPTURABLE_SCHEMES = new Set(['http:', 'https:', 'file:']);
+
+/**
+ * Whether Chrome will let an extension screenshot a page at this URL. chrome://, extension pages,
+ * about:, view-source:, devtools, data: URLs (refused even with <all_urls>) and the Chrome Web
+ * Store are all skipped, so they don't spend the capture rate budget.
+ */
+export function isCapturableUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (!CAPTURABLE_SCHEMES.has(parsed.protocol)) return false;
+  if (parsed.hostname === 'chromewebstore.google.com') return false;
+  return !(parsed.hostname === 'chrome.google.com' && parsed.pathname.startsWith('/webstore'));
+}
+
+/** A preview older than this is refreshed on demand when its hover card opens. */
+export const STALE_PREVIEW_MS = 10 * 60 * 1000;
+
+/**
+ * Whether opening the hover card should ask the service worker for a fresh shot of the tab: it
+ * has no preview, or only an old one, and its page is one Chrome lets an extension capture.
+ * Discarded (sleeping) tabs are left alone, since attaching the debugger would reload them.
+ * The preview is looked up by the tab's current URL, so one of another page never counts.
+ */
+export function wantsOnDemandCapture(
+  tab: { url: string; discarded: boolean },
+  capturedAt: number | undefined,
+  now: number,
+): boolean {
+  if (tab.discarded || !isCapturableUrl(tab.url)) return false;
+  return capturedAt === undefined || now - capturedAt > STALE_PREVIEW_MS;
+}
