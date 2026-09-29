@@ -10,12 +10,13 @@
     "test": "vitest run",
     "dev": "vite",
     "build": "vite build",
+    "build:e2e": "vite build --outDir dist-e2e --emptyOutDir",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
-    "gate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build && npm run test:e2e"
+    "gate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build:e2e && npm run test:e2e"
   },
   "keywords": [],
   "author": "",

@@ -8,6 +8,7 @@ export default defineConfig(
   {
     ignores: [
       'dist/',
+      'dist-e2e/',
       'node_modules/',
       'test-results/',
       'playwright-report/',
