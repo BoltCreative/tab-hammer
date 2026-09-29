@@ -23,7 +23,7 @@ import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
 import { useHoverCard } from './hover/useHoverCard';
-import { PreviewPermissionBanner } from './permission/PreviewPermissionBanner';
+import { AppHeader } from './header/AppHeader';
 
 export function App() {
   const [tree, setTree] = useState<WindowNode[]>([]);
@@ -57,7 +57,10 @@ export function App() {
     (key: string) => hoverSignature(tree, visible, key),
     [tree, visible],
   );
-  const [hovered, hover] = useHoverCard(signatureOf);
+  // Only the outline list scrolls; the header above it stays fixed.
+  const listRef = useRef<HTMLElement>(null);
+  const [hovered, hover] = useHoverCard(signatureOf, listRef);
+  const [previewEpoch, setPreviewEpoch] = useState(0);
   const hoveredTab = useMemo(
     () =>
       hovered &&
@@ -94,9 +97,9 @@ export function App() {
   );
 
   return (
-    <>
-      <PreviewPermissionBanner />
-      <main role="tree" aria-multiselectable="true">
+    <div className="app">
+      <AppHeader onPreviewsCleared={() => setPreviewEpoch((n) => n + 1)} />
+      <main ref={listRef} className="outline" role="tree" aria-multiselectable="true">
         {tree.map((w) => (
           <WindowCard
             key={w.key}
@@ -111,8 +114,10 @@ export function App() {
             hover={hover}
           />
         ))}
-        {hovered && hoveredTab && <HoverCard tab={hoveredTab} row={hovered.row} />}
       </main>
-    </>
+      {hovered && hoveredTab && (
+        <HoverCard tab={hoveredTab} row={hovered.row} list={listRef} previewEpoch={previewEpoch} />
+      )}
+    </div>
   );
 }

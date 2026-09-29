@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { TabNode } from '../../model/types';
 import { describeNoPreview } from '../../shared/captureOutcomes';
 import { wantsOnDemandCapture } from '../../shared/previewPolicy';
@@ -11,6 +11,10 @@ import { placeCardTop } from './placeCard';
 interface Props {
   tab: TabNode;
   row: { top: number; bottom: number };
+  /** The scrolling outline list; the card stays inside it, never over the fixed header. */
+  list: RefObject<HTMLElement | null>;
+  /** Bumped when every preview was cleared, so the card looks its tab up again. */
+  previewEpoch: number;
 }
 
 interface Loaded {
@@ -25,7 +29,7 @@ interface Loaded {
  * no screenshot, or only an old one, it asks the service worker to capture the tab now and swaps
  * the new shot in when it lands.
  */
-export function HoverCard({ tab, row }: Props) {
+export function HoverCard({ tab, row, list, previewEpoch }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const { tabId, url, windowId, discarded } = tab;
@@ -70,7 +74,7 @@ export function HoverCard({ tab, row }: Props) {
       cancelled = true;
       objectUrls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [tabId, url, windowId, discarded]);
+  }, [tabId, url, windowId, discarded, previewEpoch]);
 
   const ready = loaded?.url === tab.url;
   const image = ready ? loaded.image : null;
@@ -82,9 +86,10 @@ export function HoverCard({ tab, row }: Props) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    el.style.top = `${placeCardTop(row, el.offsetHeight, window.innerHeight)}px`;
+    const bounds = list.current?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+    el.style.top = `${placeCardTop(row, el.offsetHeight, bounds)}px`;
     el.style.visibility = 'visible';
-  }, [row, ready, image]);
+  }, [row, ready, image, list]);
 
   // Wait for the store lookup so the card doesn't open text-only and then grow.
   if (!ready) return null;

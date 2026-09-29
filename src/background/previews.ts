@@ -10,9 +10,13 @@ import {
   type OutcomeMap,
 } from '../shared/captureOutcomes';
 import { SWAP_KEY, isSwapRecord } from '../shared/captureSwap';
-import { isCaptureTabRequest, type CaptureTabReply } from '../shared/messages';
+import {
+  isCaptureTabRequest,
+  isClearPreviewsRequest,
+  type CaptureTabReply,
+} from '../shared/messages';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
-import { prunePreviews, putPreview } from '../shared/previewStore';
+import { clearPreviews, prunePreviews, putPreview } from '../shared/previewStore';
 import { createBrowserSession } from './browserSession';
 import { createCaptureQueue } from './captureQueue';
 import { createCaptureScheduler } from './captureScheduler';
@@ -212,6 +216,15 @@ const tabQueue = createCaptureQueue<number, CaptureOutcome>({
   runTimeoutMs: 20_000,
 });
 
+/**
+ * The view's "Clear previews" debug button: every stored preview, and every recorded outcome
+ * (which also ends all failure cooldowns, since those are read from the tab outcomes).
+ */
+async function clearAll(): Promise<void> {
+  await clearPreviews();
+  await chrome.storage.session.remove([OUTCOMES_KEY, TAB_OUTCOMES_KEY]);
+}
+
 const quietly = (p: Promise<unknown>) => void p.catch(() => {});
 
 /** Registers the capture listeners. Must run synchronously at service worker top level. */
@@ -253,6 +266,13 @@ export function registerPreviewCapture(): void {
 
   // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
+    if (isClearPreviewsRequest(msg)) {
+      void clearAll().then(
+        () => sendResponse({ ok: true }),
+        () => sendResponse({ ok: false }),
+      );
+      return true;
+    }
     if (!isCaptureTabRequest(msg)) return false;
     void tabQueue
       .request(msg.tabId)

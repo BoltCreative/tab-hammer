@@ -95,3 +95,11 @@ export function prunePreviews(now = Date.now()): Promise<void> {
     return () => undefined;
   });
 }
+
+/** Deletes every stored preview (a debug tool). The database stays open and usable. */
+export function clearPreviews(): Promise<void> {
+  return run('readwrite', (s) => {
+    s.clear();
+    return () => undefined;
+  });
+}

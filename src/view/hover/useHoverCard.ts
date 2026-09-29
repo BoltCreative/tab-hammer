@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 
 export const HOVER_DELAY_MS = 400;
 export const HOVER_CARD_ID = 'tab-hover-card';
@@ -17,12 +25,14 @@ export interface HoverHandlers {
 
 /**
  * Hover-intent state for the tab preview card: opens after the pointer rests on a tab row for
- * HOVER_DELAY_MS; closes on leaving the row, any scroll, any mouse button press (so clicks,
+ * HOVER_DELAY_MS; closes on leaving the row, a scroll of the outline list (`scrollRoot`; the
+ * header above it doesn't scroll), any mouse button press (so clicks,
  * modifier-clicks, and double-clicks behave exactly as without the card), window blur, or when
  * `signatureOf(key)` changes (the tree changed under the card).
  */
 export function useHoverCard(
   signatureOf: (key: string) => string | undefined,
+  scrollRoot: RefObject<HTMLElement | null>,
 ): [HoverTarget | null, HoverHandlers] {
   const [target, setTarget] = useState<HoverTarget | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -52,17 +62,19 @@ export function useHoverCard(
   );
 
   useEffect(() => {
-    // Capture phase so a scroll of any element, or a press that a row stops, still closes it.
-    window.addEventListener('scroll', close, true);
+    // Capture phase so a scroll of anything inside the list, or a press that a row stops, still
+    // closes it.
+    const list = scrollRoot.current;
+    list?.addEventListener('scroll', close, true);
     window.addEventListener('mousedown', close, true);
     window.addEventListener('blur', close);
     return () => {
-      window.removeEventListener('scroll', close, true);
+      list?.removeEventListener('scroll', close, true);
       window.removeEventListener('mousedown', close, true);
       window.removeEventListener('blur', close);
       clearTimeout(timer.current);
     };
-  }, [close]);
+  }, [close, scrollRoot]);
 
   // A card whose tree changed underneath it stays closed until the pointer enters a row again.
   const open = target && signatureOf(target.key) === target.signature ? target : null;

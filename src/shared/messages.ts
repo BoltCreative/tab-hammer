@@ -22,3 +22,15 @@ export function isCaptureTabRequest(msg: unknown): msg is CaptureTabRequest {
     typeof (msg as { tabId?: unknown }).tabId === 'number'
   );
 }
+
+/** View → service worker: delete every stored preview and capture outcome (a debug tool). */
+export const CLEAR_PREVIEWS = 'tabHammer.clearPreviews' as const;
+export interface ClearPreviewsRequest {
+  type: typeof CLEAR_PREVIEWS;
+}
+
+export function isClearPreviewsRequest(msg: unknown): msg is ClearPreviewsRequest {
+  return (
+    typeof msg === 'object' && msg !== null && (msg as { type?: unknown }).type === CLEAR_PREVIEWS
+  );
+}

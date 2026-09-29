@@ -41,7 +41,50 @@ body {
     sans-serif;
   user-select: none;
 }
-main {
+html,
+body,
+#root {
+  height: 100%;
+}
+/* A fixed header over the outline: only the list scrolls. Toolbar buttons go in the header. */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.app-header {
+  flex: none;
+  border-bottom: 1px solid var(--card-border);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 3px 10px;
+}
+.toolbar-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.toolbar-button {
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.toolbar-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--row-hover);
+}
+main.outline {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 10px;
   display: flex;
   flex-direction: column;

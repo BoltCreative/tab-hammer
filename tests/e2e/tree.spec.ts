@@ -128,3 +128,21 @@ test('double-click a tab activates it and focuses its window', async ({ sw, view
     )
     .toContainEqual([s.winA, { focused: true }]);
 });
+
+test('the header stays put while only the outline list scrolls', async ({ sw, view }) => {
+  await sw.evaluate(async () => {
+    const urls = Array.from({ length: 40 }, (_, i) => `data:text/html,<title>T${i}</title>`);
+    await chrome.windows.create({ url: urls });
+  });
+  const list = view.locator('main.outline');
+  await expect(view.locator('[role="treeitem"], .row').nth(40)).toBeAttached();
+  const header = view.locator('header.app-header');
+  const headerTop = async () => (await header.boundingBox())!.y;
+  expect(await headerTop()).toBe(0);
+
+  await list.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect(await view.evaluate(() => window.scrollY)).toBe(0);
+  expect(await headerTop()).toBe(0);
+  await expect(view.getByRole('button', { name: 'Clear previews' })).toBeInViewport();
+});

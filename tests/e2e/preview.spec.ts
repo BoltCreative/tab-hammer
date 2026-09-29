@@ -126,3 +126,71 @@ test('hovering a background tab that was never shown captures it on demand', asy
   // The tab stayed in the background; the capture didn't switch to it.
   expect(await sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, tabId)).toBe(false);
 });
+
+test('Clear previews deletes every stored preview', async ({ context, sw, view }) => {
+  await servePages(context);
+  const url = `${ORIGIN}/clearme`;
+  const windowId = await sw.evaluate(
+    async (u) => (await chrome.windows.create({ url: u }))!.id!,
+    url,
+  );
+  await expect.poll(() => hasPreview(sw, url)).toBe(true);
+  // The card for a page Chrome won't capture never triggers an on-demand capture, so it shows
+  // exactly what is stored: seed a preview for it straight into the store (the view shares the
+  // extension's origin).
+  const blankId = await sw.evaluate(
+    async (windowId) =>
+      (await chrome.tabs.create({ windowId, url: 'about:blank', active: false })).id!,
+    windowId,
+  );
+  await view.evaluate(async () => {
+    const canvas = new OffscreenCanvas(640, 360);
+    canvas.getContext('2d')!.fillRect(0, 0, 640, 360);
+    const image = await canvas.convertToBlob({ type: 'image/jpeg' });
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('tab-hammer-previews', 1);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const tx = db.transaction('previews', 'readwrite');
+    tx.objectStore('previews').put({
+      key: 'about:blank',
+      capturedAt: Date.now(),
+      image,
+      width: 640,
+      height: 360,
+    });
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await expect
+    .poll(() =>
+      sw.evaluate(async (id) => {
+        const { captureOutcomes } = await chrome.storage.session.get('captureOutcomes');
+        return (captureOutcomes as Record<string, { outcome: string }> | undefined)?.[id]?.outcome;
+      }, windowId),
+    )
+    .toBe('saved');
+  const row = view.locator(`[data-key="t:${blankId}"]`);
+  const card = view.getByTestId('hover-card');
+  await row.hover();
+  await expect(card.locator('img')).toHaveCount(1);
+
+  await view.getByRole('button', { name: 'Clear previews' }).click();
+  await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
+  expect(await hasPreview(sw, url)).toBe(false);
+  // The window's 'saved' outcome is gone too (other windows may record new ones meanwhile).
+  expect(
+    await sw.evaluate(async (id) => {
+      const { captureOutcomes } = await chrome.storage.session.get('captureOutcomes');
+      return (captureOutcomes as Record<string, unknown> | undefined)?.[id];
+    }, windowId),
+  ).toBeUndefined();
+
+  await row.hover();
+  await expect(card).toContainText('No preview yet');
+  await expect(card.locator('img')).toHaveCount(0);
+});

@@ -8,7 +8,13 @@ import {
   type OutcomeEntry,
   type OutcomeMap,
 } from '../../shared/captureOutcomes';
-import { CAPTURE_TAB, type CaptureTabReply, type CaptureTabRequest } from '../../shared/messages';
+import {
+  CAPTURE_TAB,
+  CLEAR_PREVIEWS,
+  type CaptureTabReply,
+  type CaptureTabRequest,
+  type ClearPreviewsRequest,
+} from '../../shared/messages';
 
 /**
  * The latest capture attempt that concerns this tab: its own on-demand one if it has one (it is
@@ -31,4 +37,12 @@ export async function requestTabCapture(tabId: number): Promise<CaptureOutcome> 
     tabId,
   } satisfies CaptureTabRequest)) as CaptureTabReply | undefined;
   return reply?.outcome ?? 'error:no reply from the service worker';
+}
+
+/** Asks the service worker to delete every preview and capture outcome; resolves when done. */
+export async function clearAllPreviews(): Promise<void> {
+  const reply = (await chrome.runtime.sendMessage({
+    type: CLEAR_PREVIEWS,
+  } satisfies ClearPreviewsRequest)) as { ok?: boolean } | undefined;
+  if (!reply?.ok) throw new Error('clearing previews failed');
 }
