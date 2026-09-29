@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCaptureQueue } from '../captureQueue';
 
 /** A queue whose runs finish only when the test says so. */
@@ -21,6 +21,7 @@ function setup(maxWaiting = 3) {
     dropped: 'dropped',
     failed: () => 'failed',
     maxWaiting,
+    runTimeoutMs: 60_000,
   });
   const finish = async (key: number, result = `shot ${key}`) => {
     finishers.get(key)!(result);
@@ -29,6 +30,8 @@ function setup(maxWaiting = 3) {
   };
   return { queue, started, finish, maxActive: () => maxActive };
 }
+
+afterEach(() => vi.useRealTimers());
 
 describe('createCaptureQueue', () => {
   it('runs one capture at a time, in request order', async () => {
@@ -77,8 +80,30 @@ describe('createCaptureQueue', () => {
       dropped: 'dropped',
       failed: (err) => `failed: ${(err as Error).message}`,
       maxWaiting: 3,
+      runTimeoutMs: 60_000,
     });
     await expect(queue.request(1)).resolves.toBe('failed: boom');
     await expect(queue.request(2)).resolves.toBe('ok');
+  });
+
+  it('gives up on a hung run, aborts its signal, and moves on', async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const queue = createCaptureQueue<number, string>({
+      run: (key, signal) => {
+        signals.push(signal);
+        return key === 1 ? new Promise<string>(() => {}) : Promise.resolve('ok');
+      },
+      dropped: 'dropped',
+      failed: (err) => `failed: ${(err as Error).message}`,
+      maxWaiting: 3,
+      runTimeoutMs: 15_000,
+    });
+    const hung = queue.request(1);
+    const next = queue.request(2);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await expect(hung).resolves.toBe('failed: gave up after 15000ms');
+    await expect(next).resolves.toBe('ok');
+    expect(signals.map((s) => s.aborted)).toEqual([true, false]);
   });
 });

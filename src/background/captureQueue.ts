@@ -1,6 +1,8 @@
 // Runs on-demand tab captures one at a time. Hovering down a list of tabs fires a request per
 // card, so requests for a tab already waiting or in flight share its result, and when too many
-// pile up the oldest waiting ones are dropped: the user has moved on from those cards.
+// pile up the oldest waiting ones are dropped: the user has moved on from those cards. A run that
+// hangs (a Chrome call that never settles) is given up on after runTimeoutMs, so it can't jam the
+// queue; its signal is aborted so it can clean up when it does wake.
 
 export interface CaptureQueue<K, R> {
   /** Resolves with the capture's result, or with `dropped` if the request was pushed out. */
@@ -8,12 +10,13 @@ export interface CaptureQueue<K, R> {
 }
 
 export function createCaptureQueue<K, R>(opts: {
-  run: (key: K) => Promise<R>;
+  run: (key: K, signal: AbortSignal) => Promise<R>;
   /** Result for a request dropped before it ran, and for a run that rejected. */
   dropped: R;
   failed: (err: unknown) => R;
   /** Most requests allowed to wait (not counting the one running). */
   maxWaiting: number;
+  runTimeoutMs: number;
 }): CaptureQueue<K, R> {
   interface Entry {
     key: K;
@@ -27,14 +30,20 @@ export function createCaptureQueue<K, R>(opts: {
     if (running || waiting.length === 0) return;
     const entry = waiting.shift()!;
     running = entry;
-    opts
-      .run(entry.key)
-      .catch(opts.failed)
-      .then((result) => {
-        running = null;
-        entry.resolve(result);
-        pump();
-      });
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<R>((resolve) => {
+      timer = setTimeout(() => {
+        abort.abort();
+        resolve(opts.failed(new Error(`gave up after ${opts.runTimeoutMs}ms`)));
+      }, opts.runTimeoutMs);
+    });
+    Promise.race([opts.run(entry.key, abort.signal).catch(opts.failed), gaveUp]).then((result) => {
+      clearTimeout(timer);
+      running = null;
+      entry.resolve(result);
+      pump();
+    });
   };
 
   return {

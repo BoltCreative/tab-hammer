@@ -4,14 +4,16 @@
 import {
   OUTCOMES_KEY,
   TAB_OUTCOMES_KEY,
-  newerOutcome,
   type CaptureOutcome,
   type OutcomeEntry,
   type OutcomeMap,
 } from '../../shared/captureOutcomes';
 import { CAPTURE_TAB, type CaptureTabReply, type CaptureTabRequest } from '../../shared/messages';
 
-/** The latest capture attempt that concerns this tab: its own on-demand one or its window's. */
+/**
+ * The latest capture attempt that concerns this tab: its own on-demand one if it has one (it is
+ * about this very tab), else its window's.
+ */
 export async function latestCaptureOutcome(
   windowId: number,
   tabId: number,
@@ -19,7 +21,7 @@ export async function latestCaptureOutcome(
   const stored = await chrome.storage.session.get([OUTCOMES_KEY, TAB_OUTCOMES_KEY]);
   const pick = (map: unknown, id: number) =>
     map && typeof map === 'object' ? (map as OutcomeMap)[id] : undefined;
-  return newerOutcome(pick(stored[TAB_OUTCOMES_KEY], tabId), pick(stored[OUTCOMES_KEY], windowId));
+  return pick(stored[TAB_OUTCOMES_KEY], tabId) ?? pick(stored[OUTCOMES_KEY], windowId);
 }
 
 /** Asks the service worker to screenshot the tab now; resolves when it is done. */

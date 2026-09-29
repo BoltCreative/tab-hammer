@@ -9,6 +9,7 @@ import {
   type CaptureOutcome,
   type OutcomeMap,
 } from '../shared/captureOutcomes';
+import { SWAP_KEY, isSwapRecord } from '../shared/captureSwap';
 import { isCaptureTabRequest, type CaptureTabReply } from '../shared/messages';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { prunePreviews, putPreview } from '../shared/previewStore';
@@ -97,10 +98,20 @@ const captureTab = createTabCapturer({
   getWindow: (windowId) => chrome.windows.get(windowId),
   viewWindowId,
   tabsInWindow: (windowId) => chrome.tabs.query({ windowId }),
+  collapsedGroups: async (windowId) =>
+    (await chrome.tabGroups.query({ windowId, collapsed: true })).map((g) => g.id),
   activate: async (tabId) => void (await chrome.tabs.update(tabId, { active: true })),
   createBlankTab: async (windowId) =>
     (await chrome.tabs.create({ windowId, url: 'about:blank', active: true })).id!,
   removeTab: (tabId) => chrome.tabs.remove(tabId),
+  saveSwap: (record) =>
+    record
+      ? chrome.storage.local.set({ [SWAP_KEY]: record })
+      : chrome.storage.local.remove(SWAP_KEY),
+  loadSwap: async () => {
+    const { [SWAP_KEY]: record } = await chrome.storage.local.get(SWAP_KEY);
+    return isSwapRecord(record) ? record : undefined;
+  },
   attach: (tabId) => chrome.debugger.attach({ tabId }, '1.3'),
   detach: (tabId) => chrome.debugger.detach({ tabId }),
   screenshot: async (tabId) => {
@@ -119,15 +130,40 @@ const captureTab = createTabCapturer({
   },
   downscale,
   save,
+  previousOutcome: async (tabId) => {
+    const { [TAB_OUTCOMES_KEY]: map } = await chrome.storage.session.get(TAB_OUTCOMES_KEY);
+    return map && typeof map === 'object' ? (map as OutcomeMap)[tabId] : undefined;
+  },
   record: (tabId, outcome) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome),
 });
 
+/**
+ * A previous service worker may have died mid-capture: finish undoing its minimized-window swap,
+ * and detach any debugger session it left behind (detach only ends our own sessions, never
+ * DevTools'; tabs we aren't attached to just reject).
+ */
+async function cleanUpAfterCrash(): Promise<void> {
+  await captureTab.recover().catch(() => {});
+  const targets = await chrome.debugger.getTargets().catch(() => []);
+  await Promise.all(
+    targets
+      .filter((t) => t.attached && t.tabId !== undefined)
+      .map((t) => chrome.debugger.detach({ tabId: t.tabId }).catch(() => {})),
+  );
+}
+let cleanedUp: Promise<void> | undefined;
+
 const tabQueue = createCaptureQueue<number, CaptureOutcome>({
-  run: captureTab,
+  run: async (tabId, signal) => {
+    await (cleanedUp ??= cleanUpAfterCrash());
+    return captureTab.capture(tabId, signal);
+  },
   dropped: 'skipped:superseded',
   failed: (err) => `error:${message(err)}`,
   // Only the last few hovered cards are still worth capturing.
   maxWaiting: 3,
+  // Well past a normal run (a 5s screenshot limit plus a few tab calls).
+  runTimeoutMs: 15_000,
 });
 
 const quietly = (p: Promise<unknown>) => void p.catch(() => {});
@@ -163,6 +199,7 @@ export function registerPreviewCapture(): void {
   // Previews outlive tabs (a page may be open elsewhere or reopened later), so nothing is deleted
   // when a tab closes; age and size limits keep the store bounded instead.
   chrome.runtime.onStartup.addListener(() => quietly(prunePreviews()));
+  quietly((cleanedUp ??= cleanUpAfterCrash()));
 
   // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {

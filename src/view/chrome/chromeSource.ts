@@ -1,4 +1,5 @@
 import type { GroupColor, RawSnapshot } from '../../model/types';
+import { SWAP_KEY, hiddenBySwap, isSwapRecord } from '../../shared/captureSwap';
 
 let selfWindowIdPromise: Promise<number | null> | null = null;
 function getSelfWindowId(): Promise<number | null> {
@@ -31,17 +32,22 @@ async function trackFocus(windowId: number): Promise<void> {
 
 export async function snapshot(): Promise<RawSnapshot> {
   const [selfWindowId] = await Promise.all([getSelfWindowId(), seedLastFocused()]);
-  const [windows, tabs, groups] = await Promise.all([
+  const [windows, tabs, groups, stored] = await Promise.all([
     chrome.windows.getAll(),
     chrome.tabs.query({}),
     chrome.tabGroups.query({}),
+    chrome.storage.local.get(SWAP_KEY).catch(() => ({}) as Record<string, unknown>),
   ]);
+  // The temporary tab of a preview capture's minimized-window swap is left out, so the tree (and
+  // the hover card open over it) doesn't change while it exists.
+  const swap = isSwapRecord(stored[SWAP_KEY]) ? stored[SWAP_KEY] : undefined;
+  const now = Date.now();
   return {
     selfWindowId,
     lastFocusedWindowId,
     windows: windows.flatMap((w) => (w.id === undefined ? [] : [{ id: w.id }])),
     tabs: tabs.flatMap((t) =>
-      t.id === undefined
+      t.id === undefined || hiddenBySwap(swap, { id: t.id, windowId: t.windowId }, now)
         ? []
         : [
             {
@@ -102,7 +108,13 @@ export function subscribe(onChange: () => void): () => void {
     chrome.tabGroups.onMoved,
   ] as unknown as AnyEvent[];
   for (const e of events) e.addListener(fire);
+  // A swap ending can reveal a tab it hid (one the user kept).
+  const onStorage = (changes: object, area: string) => {
+    if (area === 'local' && SWAP_KEY in changes) fire();
+  };
+  chrome.storage.onChanged.addListener(onStorage);
   return () => {
+    chrome.storage.onChanged.removeListener(onStorage);
     chrome.windows.onFocusChanged.removeListener(onFocusChanged);
     events.forEach((e) => e.removeListener(fire));
   };

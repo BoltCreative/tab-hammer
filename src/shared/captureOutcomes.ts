@@ -38,15 +38,6 @@ function clip(outcome: CaptureOutcome): CaptureOutcome {
     : outcome;
 }
 
-/** The more recent of two entries (e.g. a tab's own outcome and its window's). */
-export function newerOutcome(
-  a: OutcomeEntry | undefined,
-  b: OutcomeEntry | undefined,
-): OutcomeEntry | undefined {
-  if (!a || !b) return a ?? b;
-  return b.at > a.at ? b : a;
-}
-
 /** The hover card's one-line note for a tab with no preview. */
 export function describeNoPreview(entry: OutcomeEntry | undefined): string {
   if (!entry) return 'No preview yet · no capture attempted in this window';
