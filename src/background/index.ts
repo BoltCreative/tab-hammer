@@ -1,3 +1,6 @@
+import { getPreview } from '../shared/previewStore';
+import { registerPreviewCapture } from './previews';
+
 export const VIEW_PATH = 'src/view/index.html';
 
 async function openOrFocus(): Promise<void> {
@@ -22,8 +25,15 @@ async function openOrFocus(): Promise<void> {
 chrome.action.onClicked.addListener(() => {
   void openOrFocus();
 });
+registerPreviewCapture();
 
-// Test hook: Playwright can't click the toolbar icon, so E2E calls this directly.
-(globalThis as unknown as { tabHammer: { openOrFocus: () => Promise<void> } }).tabHammer = {
+// Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and
+// waits on hasPreview for a background capture to land in the store.
+export interface TestHooks {
+  openOrFocus: () => Promise<void>;
+  hasPreview: (url: string) => Promise<boolean>;
+}
+(globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
   openOrFocus,
+  hasPreview: async (url) => (await getPreview(url)) !== undefined,
 };

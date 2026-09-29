@@ -6,6 +6,8 @@ export default defineManifest({
   version: '0.1.0',
   description: 'Every window, group, and tab as a live outline in its own window.',
   permissions: ['tabs', 'tabGroups', 'storage', 'favicon'],
+  // captureVisibleTab (hover previews) needs host access to the page being captured.
+  host_permissions: ['<all_urls>'],
   background: { service_worker: 'src/background/index.ts', type: 'module' },
   action: { default_title: 'Open Tab Hammer' },
 });
