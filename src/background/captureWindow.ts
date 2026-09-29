@@ -70,7 +70,7 @@ export function createWindowCapturer(
     const tab = await deps.activeTab(windowId);
     if (tab?.id === undefined) return 'skipped:no-tab';
     if (tab.incognito) return 'skipped:incognito';
-    if (tab.status !== 'complete') return 'skipped:not-complete';
+    if (tab.status !== 'complete') return 'skipped:not-loaded-yet';
     if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
 
     const generation = deps.generation(windowId);

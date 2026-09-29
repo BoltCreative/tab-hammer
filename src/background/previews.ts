@@ -67,6 +67,29 @@ async function recordUnder(
   await chrome.storage.session.set({ [key]: withOutcome(map, id, entry) });
 }
 
+function waitForComplete(tabId: number, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (complete: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve(complete);
+    };
+    const onUpdated = (id: number, change: { status?: string }) => {
+      if (id === tabId && change.status === 'complete') finish(true);
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    const timer = setTimeout(() => finish(false), ms);
+    // It may have finished before the listener was added.
+    chrome.tabs.get(tabId).then(
+      (t) => t.status === 'complete' && finish(true),
+      () => finish(false),
+    );
+  });
+}
+
 const browserSession = createBrowserSession(
   {
     get: (key) => chrome.storage.local.get(key),
@@ -151,6 +174,7 @@ const captureTab = createTabCapturer({
   },
   record: (tabId, outcome, url) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome, url),
   sessionId: () => browserSession.current(),
+  waitForComplete,
 });
 
 /**
@@ -183,8 +207,9 @@ const tabQueue = createCaptureQueue<number, CaptureOutcome>({
   failed: (err) => `error:${message(err)}`,
   // Only the last few hovered cards are still worth capturing.
   maxWaiting: 3,
-  // Well past a normal run (a 5s screenshot limit plus a few tab calls).
-  runTimeoutMs: 15_000,
+  // Well past a normal run: up to 8s waiting for the tab to load, a 5s screenshot limit, and a few
+  // tab calls.
+  runTimeoutMs: 20_000,
 });
 
 const quietly = (p: Promise<unknown>) => void p.catch(() => {});

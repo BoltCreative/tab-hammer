@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SwapRecord } from '../../shared/captureSwap';
 import {
   FAILURE_COOLDOWN_MS,
+  LOAD_TIMEOUT_MS,
   SCREENSHOT_TIMEOUT_MS,
   SWAP_RECOVERY_MAX_AGE_MS,
   createTabCapturer,
@@ -99,6 +100,7 @@ function setup(
     attach: log('attach', async () => {}),
     detach: log('detach', async () => {}),
     screenshot: log('screenshot', async () => 'AAAA'),
+    waitForComplete: log('waitForComplete', async () => true),
     captureVisible: log('captureVisible', async () => 'saved' as const),
     downscale: log('downscale', async () => ({ image: new Blob(['x']), width: 640, height: 360 })),
     save: log('save', save),
@@ -199,6 +201,44 @@ describe('createTabCapturer', () => {
     expect(calls).toEqual(['attach(70)', 'detach(70)']);
   });
 
+  it.each(['unloaded', 'loading'] as const)(
+    'loads a %s tab (e.g. lazily restored after a browser restart) once attached, then captures it',
+    async (status) => {
+      const { capture, calls, outcome } = setup({ target: { status } });
+      await expect(capture()).resolves.toBe('saved');
+      expect(outcome()).toBe('saved');
+      expect(calls).toEqual([
+        'attach(70)',
+        `waitForComplete(70,${LOAD_TIMEOUT_MS})`,
+        'screenshot(70)',
+        'detach(70)',
+        `downscale(${DATA_URL})`,
+        `save(${TARGET.url},[object Object])`,
+      ]);
+    },
+  );
+
+  it('still tries one screenshot when the tab doesn’t finish loading in time', async () => {
+    const env = setup({ target: { status: 'unloaded' } });
+    const { capture, calls, outcome } = env;
+    env.deps.waitForComplete = async (id, ms) => {
+      calls.push(`waitForComplete(${id},${ms})`);
+      return false; // timed out
+    };
+    env.deps.screenshot = async (id) => {
+      calls.push(`screenshot(${id})`);
+      throw new Error('Internal error');
+    };
+    await capture();
+    expect(outcome()).toBe('error:capture: Internal error');
+    expect(calls).toEqual([
+      'attach(70)',
+      `waitForComplete(70,${LOAD_TIMEOUT_MS})`,
+      'screenshot(70)',
+      'detach(70)',
+    ]);
+  });
+
   it('records an attach failure (another debugger is attached) without detaching', async () => {
     const { capture, calls, outcome } = setup({
       over: {
@@ -234,7 +274,6 @@ describe('createTabCapturer', () => {
     ],
     ['an incognito tab', { target: { incognito: true } }, 'skipped:incognito'],
     ['a tab in an incognito window', { win: { incognito: true } }, 'skipped:incognito'],
-    ['a tab still loading', { target: { status: 'loading' as const } }, 'skipped:not-complete'],
     ['a chrome:// page', { target: { url: 'chrome://settings' } }, 'skipped:not-capturable-url'],
     [
       'a Web Store page',

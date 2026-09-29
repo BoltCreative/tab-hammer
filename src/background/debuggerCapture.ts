@@ -45,11 +45,19 @@ export interface OffscreenDeps {
   record: (tabId: number, outcome: CaptureOutcome, url: string | undefined) => Promise<void>;
   /** An ID for this browser session (it changes when the browser restarts). */
   sessionId: () => Promise<string>;
+  /**
+   * Resolves true once the tab's status is 'complete' (checking its current status too), or
+   * false after `ms`.
+   */
+  waitForComplete: (tabId: number, ms: number) => Promise<boolean>;
   timeoutMs?: number;
+  loadTimeoutMs?: number;
   now?: () => number;
 }
 
 export const SCREENSHOT_TIMEOUT_MS = 5000;
+/** How long a capture waits for a not-yet-loaded tab to finish loading once attached. */
+export const LOAD_TIMEOUT_MS = 8000;
 /** A swap record older than this is never acted on (see stillValid). */
 export const SWAP_RECOVERY_MAX_AGE_MS = 2 * 60 * 1000;
 /** After a failed capture, re-hovering the tab (on the same URL) within this long reuses it. */
@@ -103,6 +111,7 @@ export interface TabCapturer {
 export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
   const now = deps.now ?? Date.now;
   const timeoutMs = deps.timeoutMs ?? SCREENSHOT_TIMEOUT_MS;
+  const loadTimeoutMs = deps.loadTimeoutMs ?? LOAD_TIMEOUT_MS;
 
   /**
    * Undoes a swap without fighting the user: the target is reactivated only if the stand-in (or
@@ -188,7 +197,9 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     if (tab.incognito) return 'skipped:incognito';
     // Attaching the debugger to a discarded (sleeping) tab would reload it.
     if (tab.discarded) return 'skipped:discarded';
-    if (tab.status !== 'complete') return 'skipped:not-complete';
+    // Unlike captureVisibleTab, tabs still loading (or never loaded: after a browser restart most
+    // tabs are restored lazily, as 'unloaded') are fine: attaching makes Chrome load them, and the
+    // capture waits for that below. They then stay loaded.
     if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
     const win = await deps.getWindow(tab.windowId);
     if (win.incognito) return 'skipped:incognito';
@@ -215,6 +226,9 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
       try {
         // The queue gave up on this run while attach hung; detach (below) right away.
         if (signal?.aborted) return 'error:attach: gave up waiting';
+        // On a load timeout, still try one screenshot: a slow page may have painted enough.
+        if (tab.status !== 'complete') await deps.waitForComplete(tabId, loadTimeoutMs);
+        if (signal?.aborted) return 'error:capture: gave up waiting';
         data = await withTimeout(deps.screenshot(tabId), timeoutMs);
       } catch (err) {
         return `error:capture: ${message(err)}`;
