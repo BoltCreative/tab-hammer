@@ -20,7 +20,7 @@ const hasPreview = (sw: Worker, url: string) =>
     url,
   );
 
-test('hovering a tab shows its captured preview; a never-seen page gets a text-only card', async ({
+test('hovering a tab shows its captured preview; an uncapturable page gets a text-only card', async ({
   context,
   sw,
   view,
@@ -44,15 +44,15 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
     )
     .toBe('saved');
 
-  // Background tabs are never visible, so never captured: one on the same page (previews are
-  // keyed by URL, fragment ignored, so it shares the shot) and one on a page never shown.
+  // Two background tabs: one on the same page (previews are keyed by URL, fragment ignored, so it
+  // shares the shot) and one on a page Chrome won't let extensions capture.
   const [twinId, neverId] = await sw.evaluate(
     async ({ windowId, twin, never }) => {
       const a = await chrome.tabs.create({ windowId, url: twin, active: false });
       const b = await chrome.tabs.create({ windowId, url: never, active: false });
       return [a.id!, b.id!];
     },
-    { windowId: ids.windowId, twin: `${shotUrl}#section`, never: `${ORIGIN}/never` },
+    { windowId: ids.windowId, twin: `${shotUrl}#section`, never: 'about:blank' },
   );
 
   const card = view.getByTestId('hover-card');
@@ -75,7 +75,7 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
   await expectShot();
 
   await row(neverId).hover();
-  await expect(card).toContainText(`${ORIGIN}/never`);
+  await expect(card).toContainText('about:blank');
   await expect(card.locator('img')).toHaveCount(0);
   // A tab without a preview says what the window's latest capture attempt did.
   await expect(card).toContainText('No preview yet · last capture: saved');
@@ -96,4 +96,33 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
   await expect(row(twinId)).toContainText('moved');
   await expect(card).toHaveCount(0);
   await expect(row(twinId)).not.toHaveAttribute('aria-describedby');
+});
+
+test('hovering a background tab that was never shown captures it on demand', async ({
+  context,
+  sw,
+  view,
+}) => {
+  await servePages(context);
+  const hiddenUrl = `${ORIGIN}/hidden`;
+  const tabId = await sw.evaluate(async (url) => {
+    const win = await chrome.windows.create({ url: 'about:blank' });
+    const tab = await chrome.tabs.create({ windowId: win!.id!, url, active: false });
+    return tab.id!;
+  }, hiddenUrl);
+  // Captures skip pages still loading, so hover once it has loaded.
+  await expect
+    .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).status, tabId))
+    .toBe('complete');
+  expect(await hasPreview(sw, hiddenUrl)).toBe(false);
+
+  await view.locator(`[data-key="t:${tabId}"]`).hover();
+  const card = view.getByTestId('hover-card');
+  await expect(card).toContainText(hiddenUrl);
+  await expect(card.locator('img')).toHaveJSProperty('complete', true);
+  expect(await card.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
+  await expect(card).not.toContainText('Capturing');
+  expect(await hasPreview(sw, hiddenUrl)).toBe(true);
+  // The tab stayed in the background; the capture didn't switch to it.
+  expect(await sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, tabId)).toBe(false);
 });

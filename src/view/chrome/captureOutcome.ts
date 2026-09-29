@@ -1,8 +1,32 @@
-// Reads the service worker's record of each window's latest preview capture attempt (see
-// ../../shared/captureOutcomes.ts), so the hover card can say why a tab has no preview.
-import { OUTCOMES_KEY, type OutcomeEntry, type OutcomeMap } from '../../shared/captureOutcomes';
+// Talks to the service worker about preview captures: reads its record of the latest attempt for
+// a tab and its window (see ../../shared/captureOutcomes.ts), so the hover card can say why a tab
+// has no preview, and asks it to capture a tab on demand.
+import {
+  OUTCOMES_KEY,
+  TAB_OUTCOMES_KEY,
+  newerOutcome,
+  type CaptureOutcome,
+  type OutcomeEntry,
+  type OutcomeMap,
+} from '../../shared/captureOutcomes';
+import { CAPTURE_TAB, type CaptureTabReply, type CaptureTabRequest } from '../../shared/messages';
 
-export async function latestCaptureOutcome(windowId: number): Promise<OutcomeEntry | undefined> {
-  const { [OUTCOMES_KEY]: map } = await chrome.storage.session.get(OUTCOMES_KEY);
-  return map && typeof map === 'object' ? (map as OutcomeMap)[windowId] : undefined;
+/** The latest capture attempt that concerns this tab: its own on-demand one or its window's. */
+export async function latestCaptureOutcome(
+  windowId: number,
+  tabId: number,
+): Promise<OutcomeEntry | undefined> {
+  const stored = await chrome.storage.session.get([OUTCOMES_KEY, TAB_OUTCOMES_KEY]);
+  const pick = (map: unknown, id: number) =>
+    map && typeof map === 'object' ? (map as OutcomeMap)[id] : undefined;
+  return newerOutcome(pick(stored[TAB_OUTCOMES_KEY], tabId), pick(stored[OUTCOMES_KEY], windowId));
+}
+
+/** Asks the service worker to screenshot the tab now; resolves when it is done. */
+export async function requestTabCapture(tabId: number): Promise<CaptureOutcome> {
+  const reply = (await chrome.runtime.sendMessage({
+    type: CAPTURE_TAB,
+    tabId,
+  } satisfies CaptureTabRequest)) as CaptureTabReply | undefined;
+  return reply?.outcome ?? 'error:no reply from the service worker';
 }
