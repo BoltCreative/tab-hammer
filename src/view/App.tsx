@@ -51,7 +51,11 @@ export function App() {
     return subscribe(refresh);
   }, [refresh]);
 
-  const signatureOf = useCallback((key: string) => hoverSignature(tree, key), [tree]);
+  const visible = useMemo(() => visibleRowKeys(tree, collapse), [tree, collapse]);
+  const signatureOf = useCallback(
+    (key: string) => hoverSignature(tree, visible, key),
+    [tree, visible],
+  );
   const [hovered, hover] = useHoverCard(signatureOf);
   const hoveredTab = useMemo(
     () =>
@@ -61,8 +65,6 @@ export function App() {
         .find((t) => t.key === hovered.key),
     [tree, hovered],
   );
-
-  const visible = useMemo(() => visibleRowKeys(tree, collapse), [tree, collapse]);
 
   useEffect(() => {
     dispatch({ type: 'prune', existing: allRowKeys(tree) });

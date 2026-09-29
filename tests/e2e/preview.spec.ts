@@ -79,6 +79,9 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
   await row(twinId).hover();
   await expect(card).toContainText(`${shotUrl}#section`);
   await sw.evaluate((id) => chrome.tabs.update(id, { url: 'http://tabhammer.test/moved' }), twinId);
+  // Wait for the view to show the navigation first: the card also unmounts briefly while it looks
+  // up a preview, so asserting its absence alone could pass without the close-on-change rule.
+  await expect(row(twinId)).toContainText('moved');
   await expect(card).toHaveCount(0);
   await expect(row(twinId)).not.toHaveAttribute('aria-describedby');
 });
