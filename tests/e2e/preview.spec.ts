@@ -51,7 +51,7 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
     await expect(card).toBeVisible();
     await expect(card.locator('img')).toHaveJSProperty('complete', true);
     expect(await card.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(
-      320,
+      640,
     );
   };
 
@@ -67,9 +67,18 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
   await row(neverId).hover();
   await expect(card).toContainText(`${ORIGIN}/never`);
   await expect(card.locator('img')).toHaveCount(0);
+  await expect(row(neverId)).toHaveAttribute('aria-describedby', 'tab-hover-card');
+  await expect(card).toHaveAttribute('id', 'tab-hover-card');
 
   // The card never gets in the way of selection, and a click closes it.
   await row(neverId).click();
   await expect(row(neverId)).toHaveAttribute('aria-selected', 'true');
   await expect(card).toHaveCount(0);
+
+  // The card closes when the tree changes under it (here the hovered tab navigates).
+  await row(twinId).hover();
+  await expect(card).toContainText(`${shotUrl}#section`);
+  await sw.evaluate((id) => chrome.tabs.update(id, { url: 'http://tabhammer.test/moved' }), twinId);
+  await expect(card).toHaveCount(0);
+  await expect(row(twinId)).not.toHaveAttribute('aria-describedby');
 });

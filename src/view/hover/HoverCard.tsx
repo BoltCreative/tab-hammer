@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TabNode } from '../../model/types';
 import { getPreview } from '../../shared/previewStore';
 import { relativeTime } from './relativeTime';
+import { HOVER_CARD_ID } from './useHoverCard';
 import { placeCardTop } from './placeCard';
 
 interface Props {
@@ -53,7 +54,13 @@ export function HoverCard({ tab, row }: Props) {
   // Wait for the store lookup so the card doesn't open text-only and then grow.
   if (!ready) return null;
   return (
-    <div ref={ref} className="hover-card" role="tooltip" data-testid="hover-card">
+    <div
+      ref={ref}
+      id={HOVER_CARD_ID}
+      className="hover-card"
+      role="tooltip"
+      data-testid="hover-card"
+    >
       {image && (
         <img
           className="hover-card-shot"

@@ -21,6 +21,7 @@ import { activateTab, focusWindow, snapshot, subscribe } from './chrome/chromeSo
 import { selectionActionFor } from './components/rowClick';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
+import { hoverSignature } from './hover/hoverSignature';
 import { useHoverCard } from './hover/useHoverCard';
 
 export function App() {
@@ -50,8 +51,8 @@ export function App() {
     return subscribe(refresh);
   }, [refresh]);
 
-  const [hovered, hover] = useHoverCard();
-  // Look the tab up in the live tree so the card follows title changes and vanishes if it closes.
+  const signatureOf = useCallback((key: string) => hoverSignature(tree, key), [tree]);
+  const [hovered, hover] = useHoverCard(signatureOf);
   const hoveredTab = useMemo(
     () =>
       hovered &&

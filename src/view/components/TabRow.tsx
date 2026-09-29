@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import type { TabNode } from '../../model/types';
 import { faviconUrl } from '../chrome/favicon';
-import type { HoverHandlers } from '../hover/useHoverCard';
+import { HOVER_CARD_ID, type HoverHandlers } from '../hover/useHoverCard';
 
 interface Props {
   tab: TabNode;
@@ -25,6 +25,9 @@ export function TabRow({ tab, selected, onSelect, onActivate, hover }: Props) {
       data-key={tab.key}
       data-kind="tab"
       aria-selected={selected}
+      // The URL is no longer a native tooltip (the hover card replaced it), so name it here.
+      aria-label={tab.url && tab.url !== tab.title ? `${tab.title}, ${tab.url}` : tab.title}
+      aria-describedby={hover.openKey === tab.key ? HOVER_CARD_ID : undefined}
       onClick={(e) => onSelect(e, tab.key)}
       onDoubleClick={() => onActivate(tab)}
       onMouseEnter={(e) => hover.onRowEnter(tab.key, e.currentTarget)}
