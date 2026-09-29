@@ -40,9 +40,7 @@ export function WindowCard(p: Props) {
           {collapsed ? '▸' : '▾'}
         </span>
         <span className="title">{win.label}</span>
-        <span className="count">
-          {win.tabCount} tabs{win.focused ? ' · focused' : ''}
-        </span>
+        <span className="count">{win.tabCount} tabs</span>
       </div>
       {!collapsed &&
         win.children.map((c) =>

@@ -26,7 +26,7 @@ A Manifest V3 Chrome extension that opens its own window and shows every open Ch
 ### Look: dark window cards
 
 - Dark theme throughout.
-- Each Chrome window is a card. The header shows `Window N`, the tab count, and "focused" on the window that was most recently focused other than Tab Hammer itself (Tab Hammer's own window has focus whenever it is in use, so plain "currently focused" would almost never show). That window's card gets an accent border.
+- Each Chrome window is a card. The header shows `Window N` and the tab count. The window that was most recently focused other than Tab Hammer itself (Tab Hammer's own window has focus whenever it is in use) is marked by bright, bold text on its header and on its active tab, plus an accent border on its card. Other windows' headers use regular text.
 - Windows are listed in Chrome's `windows.getAll` order. `N` is the 1-based position in that list.
 - Inside a card, tabs are listed in Chrome's tab order. Each row shows the favicon (with a neutral placeholder if there is none) and the title (the URL if there is no title), truncated with an ellipsis.
 - Each Chrome tab group gets a header row: a disclosure arrow, a color dot, the group title (or "Untitled group"), and the tab count, all in the group's Chrome color. The group's tabs are indented beneath it with a left rule in the group color.
