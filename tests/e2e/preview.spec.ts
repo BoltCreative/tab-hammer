@@ -33,6 +33,16 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
     return { windowId: win!.id!, tabId: win!.tabs![0]!.id! };
   }, shotUrl);
   await expect.poll(() => hasPreview(sw, shotUrl)).toBe(true);
+  // The service worker records each attempt's outcome after saving; the card reads it below.
+  await expect
+    .poll(() =>
+      sw.evaluate(async (windowId) => {
+        const { captureOutcomes } = await chrome.storage.session.get('captureOutcomes');
+        return (captureOutcomes as Record<string, { outcome: string }> | undefined)?.[windowId]
+          ?.outcome;
+      }, ids.windowId),
+    )
+    .toBe('saved');
 
   // Background tabs are never visible, so never captured: one on the same page (previews are
   // keyed by URL, fragment ignored, so it shares the shot) and one on a page never shown.
@@ -67,6 +77,8 @@ test('hovering a tab shows its captured preview; a never-seen page gets a text-o
   await row(neverId).hover();
   await expect(card).toContainText(`${ORIGIN}/never`);
   await expect(card.locator('img')).toHaveCount(0);
+  // A tab without a preview says what the window's latest capture attempt did.
+  await expect(card).toContainText('No preview yet · last capture: saved');
   await expect(row(neverId)).toHaveAttribute('aria-describedby', 'tab-hover-card');
   await expect(card).toHaveAttribute('id', 'tab-hover-card');
 

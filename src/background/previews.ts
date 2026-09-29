@@ -2,10 +2,16 @@
 // Chrome can only capture the tab currently showing in a window, so we capture whenever a tab
 // becomes visible and keep the latest shot per page URL (so restored tabs keep theirs after a
 // browser restart).
+import {
+  OUTCOMES_KEY,
+  withOutcome,
+  type CaptureOutcome,
+  type OutcomeMap,
+} from '../shared/captureOutcomes';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { prunePreviews, putPreview } from '../shared/previewStore';
 import { createCaptureScheduler } from './captureScheduler';
-import { createWindowCapturer, type Shot } from './captureWindow';
+import { createActivationGenerations, createWindowCapturer, type Shot } from './captureWindow';
 
 // About 2× the card's ~404 CSS px width, so previews stay sharp on Retina displays.
 const PREVIEW_WIDTH = 640;
@@ -36,6 +42,17 @@ async function save(url: string, shot: Shot & { capturedAt: number }): Promise<v
   }
 }
 
+// Captures run one at a time (the scheduler serializes them), so this read-modify-write can't race.
+async function record(windowId: number, outcome: CaptureOutcome): Promise<void> {
+  const { [OUTCOMES_KEY]: prev } = await chrome.storage.session.get(OUTCOMES_KEY);
+  const map = prev && typeof prev === 'object' ? (prev as OutcomeMap) : {};
+  await chrome.storage.session.set({
+    [OUTCOMES_KEY]: withOutcome(map, windowId, { at: Date.now(), outcome }),
+  });
+}
+
+const generations = createActivationGenerations();
+
 const captureWindow = createWindowCapturer({
   hasPermission: () => chrome.permissions.contains({ origins: ['<all_urls>'] }),
   getWindow: (windowId) => chrome.windows.get(windowId),
@@ -49,6 +66,8 @@ const captureWindow = createWindowCapturer({
   downscale,
   save,
   retry: (windowId) => scheduler.trigger(windowId),
+  generation: generations.get,
+  record,
 });
 
 const scheduler = createCaptureScheduler({
@@ -64,11 +83,16 @@ const quietly = (p: Promise<unknown>) => void p.catch(() => {});
 export function registerPreviewCapture(): void {
   // Incognito tabs are filtered here so they don't spend the capture rate budget; captureWindow
   // also refuses incognito windows, since previews persist on disk.
-  chrome.tabs.onActivated.addListener(({ windowId }) => scheduler.trigger(windowId));
+  // Every change to what a window shows bumps its activation generation, so a capture in flight
+  // across the change is dropped (see createActivationGenerations).
+  chrome.tabs.onActivated.addListener(({ windowId }) => {
+    generations.bump(windowId);
+    scheduler.trigger(windowId);
+  });
   chrome.tabs.onUpdated.addListener((_tabId, change, tab) => {
-    if (change.status === 'complete' && tab.active && !tab.incognito) {
-      scheduler.trigger(tab.windowId);
-    }
+    if (!tab.active) return;
+    if (change.url !== undefined || change.status === 'loading') generations.bump(tab.windowId);
+    if (change.status === 'complete' && !tab.incognito) scheduler.trigger(tab.windowId);
   });
   chrome.windows.onFocusChanged.addListener((windowId) => {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) scheduler.trigger(windowId);
@@ -78,6 +102,7 @@ export function registerPreviewCapture(): void {
   chrome.tabs.onReplaced.addListener((addedTabId) =>
     quietly(
       chrome.tabs.get(addedTabId).then((t) => {
+        generations.bump(t.windowId);
         if (t.active && !t.incognito) scheduler.trigger(t.windowId);
       }),
     ),

@@ -198,6 +198,13 @@ main {
   color: var(--text-muted);
   font-size: 11px;
 }
+.hover-card-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .permission-banner {
   display: flex;
   align-items: center;
