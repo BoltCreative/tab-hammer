@@ -65,7 +65,7 @@ toolbar click ──► service worker ──► open or focus the Tab Hammer po
                      └─ components: WindowCard, GroupRow, TabRow
 ```
 
-- **Service worker** (`src/background/`): only handles `action.onClicked`. It stores the Tab Hammer window ID in `chrome.storage.session` so it can focus the existing window, or create one if that window is gone. It keeps no other state, so being terminated after about 30s idle is harmless.
+- **Service worker** (`src/background/`): handles `action.onClicked` and captures hover previews (see [Hover preview](#hover-preview)). It stores the Tab Hammer window ID in `chrome.storage.session` so it can focus the existing window, or create one if that window is gone. Previews live in IndexedDB; the only in-memory state is the capture debounce/queue, so being terminated after about 30s idle costs at most a pending capture.
 - **chromeSource** (`src/view/chrome/`): the only module that touches `chrome.*` from the page. It exposes `snapshot()` → `{ windows, tabs, groups, selfWindowId, lastFocusedWindowId }` and `subscribe(onChange)`, plus `activateTab(tabId, windowId)` and `focusWindow(windowId)`.
 - **buildTree** (`src/model/`): a pure function from the raw snapshot plus the Tab Hammer window ID to `WindowNode[]`. `WindowNode` holds `children: (GroupNode | TabNode)[]`; `GroupNode` holds `tabs: TabNode[]`. It groups consecutive tabs by `groupId`. Chrome keeps group tabs contiguous, but buildTree must not assume that: if tabs of the same group are split apart, each run gets its own `GroupNode`. A group's first run is keyed `g:<groupId>` and later runs `g:<groupId>#2`, `#3`, …, so the key survives the group's first tab closing or moving. It excludes the Tab Hammer window and flags the last-focused window (tracked by chromeSource from `windows.getLastFocused` and `windows.onFocusChanged`, ignoring Tab Hammer's own window), active tabs, and discarded tabs. Nodes carry Chrome IDs for now. When persistence arrives, it will introduce Tab Hammer's own stable node IDs, because Chrome's window and tab IDs change across restarts.
 - **selection** (`src/model/`): a pure reducer over the flattened list of visible row keys (for example `w:12`, `g:5`, `t:301`). It handles `click`, `toggle`, `range`, and `prune(existingKeys)`, and ranges only span rows that are visible (not inside collapsed nodes).
@@ -73,7 +73,20 @@ toolbar click ──► service worker ──► open or focus the Tab Hammer po
 
 ### Manifest
 
-MV3. Permissions: `tabs` (titles and URLs), `tabGroups`, `storage`, `favicon` (favicons via `chrome-extension://<id>/_favicon/?pageUrl=…&size=16`). `action` has no popup, so `onClicked` fires. There are no host permissions and no content scripts.
+MV3. Permissions: `tabs` (titles and URLs), `tabGroups`, `storage`, `favicon` (favicons via `chrome-extension://<id>/_favicon/?pageUrl=…&size=16`). `action` has no popup, so `onClicked` fires. Host permissions: `<all_urls>`, which `tabs.captureVisibleTab` needs for hover previews. There are no content scripts.
+
+## Hover preview
+
+Resting the pointer on a tab row for 400ms opens a floating card showing the page's last screenshot (if one exists), its title, URL, and "Last viewed …" (relative, from `tab.lastAccessed`). With no screenshot the card is text-only. The card spans the window width minus an 8px margin and sits below the row, or above it if it doesn't fit, always inside the window. It closes on leaving the row, any scroll, any mouse press, or window blur. It has `pointer-events: none`, so click, cmd/shift-click, and double-click behave exactly as without it. The rows' native `title` tooltip was removed so it doesn't compete with the card.
+
+**Capture (service worker).** Chrome can only screenshot the tab currently showing in a window (`tabs.captureVisibleTab`); background tabs aren't rendered. So the service worker captures as the user browses: on `tabs.onActivated`, `tabs.onUpdated` with `status: 'complete'` on an active tab, `windows.onFocusChanged`, and `tabs.onReplaced` (when the new tab is active). Listeners are registered synchronously at top level.
+
+- A pure scheduler (`src/background/captureScheduler.ts`) debounces per window (500ms after the last trigger, so the page has painted) and runs captures one at a time, at least 550ms apart (Chrome allows 2 calls per second). A failed capture is swallowed; it just means no preview.
+- Skipped: non-`normal` windows (Tab Hammer's own window is a popup, and its stored ID is checked too), tabs not yet `complete`, and URLs Chrome won't let extensions capture. Only `http:`, `https:` and `file:` are attempted; `chrome://`, extension pages, `about:`, `view-source:`, `devtools:`, the Chrome Web Store, and `data:` (refused even with `<all_urls>`) are not.
+- After capturing, the window's active tab is re-read; if it switched tabs or navigated meanwhile, the shot is discarded rather than mislabeled.
+- The JPEG is downscaled to 320px wide (`createImageBitmap` + `OffscreenCanvas`) and stored.
+
+**Store (`src/shared/previewStore.ts`).** IndexedDB, one record per page: `{ key, capturedAt, image: Blob, width, height }`. The key is the page URL with its `#fragment` dropped (query kept), not the tab ID, so previews survive a browser restart (tab IDs are reassigned; restored and discarded tabs keep their URLs) and tabs on the same page share the latest shot. Nothing is deleted when a tab closes, since the page may be open elsewhere or reopened. Instead, entries older than 30 days are dropped and the store is capped at 1000 entries, evicting the least recently captured (`pickEvictions` in `src/shared/previewPolicy.ts`). Pruning reads keys only (via a `capturedAt` index), and runs on browser startup and every 25 writes. The view reads the store directly by the tab's current URL.
 
 ## Stack and tooling
 
@@ -83,7 +96,7 @@ MV3. Permissions: `tabs` (titles and URLs), `tabGroups`, `storage`, `favicon` (f
 
 ## Testing
 
-- **Unit (Vitest):** tests for `buildTree` and `selection`, because these contain the real edge cases:
+- **Unit (Vitest):** tests for `buildTree` and `selection`, because these contain the real edge cases (plus, for hover preview, the capture scheduler's debounce/rate limit, the URL skip rules, the prune policy, and card placement):
   - ungrouped tabs mixed with grouped ones
   - a split group run
   - collapsed groups
@@ -91,7 +104,7 @@ MV3. Permissions: `tabs` (titles and URLs), `tabGroups`, `storage`, `favicon` (f
   - missing titles or favicons
   - range selection across a collapsed node
   - pruning after a tab closes
-- **E2E (Playwright):** load the built `dist/` into Chromium with a persistent context (`--load-extension`). Open two windows, several tabs, and a tab group, open the Tab Hammer page, and assert that the cards, group row, and tabs render. Then close a tab and assert that it disappears (the live update). Then double-click a tab in the other window and assert that Chrome's active tab and focused window change. Tests wait on concrete conditions, never sleeps.
+- **E2E (Playwright):** load the built `dist/` into Chromium with a persistent context (`--load-extension`). Open two windows, several tabs, and a tab group, open the Tab Hammer page, and assert that the cards, group row, and tabs render. Then close a tab and assert that it disappears (the live update). Then double-click a tab in the other window and assert that Chrome's active tab and focused window change. For hover preview: open a window on an http page (served by Playwright routing), poll until the service worker has stored its preview, hover its row and assert the card shows the image, hover a background tab on the same URL (different fragment) and assert it shares the image, and hover a never-shown tab and assert a text-only card. Tests wait on concrete conditions, never sleeps.
 - **Completion gate:** `npm run gate` = typecheck + lint + format check + unit + build + e2e. It runs headless by default and is recorded in CLAUDE.md's gate table.
 
 ## Error handling

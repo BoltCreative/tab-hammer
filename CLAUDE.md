@@ -30,9 +30,9 @@ The e2e suite runs headless (new-headless Chromium). Headless Chromium ignores w
 
 ## Architecture in one breath
 
-A service worker only opens or focuses the Tab Hammer popup window. The view page reads Chrome's live windows, tabs, and groups (`src/view/chrome/chromeSource.ts`, the only view module that touches `chrome.*`). It feeds them through two pure, unit-tested modules: `src/model/buildTree.ts` (raw data → window/group/tab view model) and `src/model/selection.ts` (multi-select reducer). Then it renders React components. Chrome window and tab IDs are not stable across restarts, so persistence (post-MVP) must introduce Tab Hammer's own node IDs.
+A service worker opens or focuses the Tab Hammer popup window, and screenshots each window's visible tab as the user browses (`src/background/previews.ts`) into an IndexedDB store keyed by page URL (`src/shared/previewStore.ts`), which the view reads for the tab hover card. The view page reads Chrome's live windows, tabs, and groups (`src/view/chrome/chromeSource.ts`, the only view module that touches `chrome.*`). It feeds them through two pure, unit-tested modules: `src/model/buildTree.ts` (raw data → window/group/tab view model) and `src/model/selection.ts` (multi-select reducer). Then it renders React components. Chrome window and tab IDs are not stable across restarts, so persistence (post-MVP) must introduce Tab Hammer's own node IDs.
 
 ## Tests
 
-- Unit: `src/model/__tests__/`. Pure logic only.
-- E2E: `tests/e2e/`. The fixture opens the view through the service worker's `tabHammer.openOrFocus` test hook, the same code path as the toolbar click.
+- Unit: `src/**/__tests__/` (model, capture scheduler, preview policy, card placement). Pure logic only.
+- E2E: `tests/e2e/`. The fixture opens the view through the service worker's `tabHammer.openOrFocus` test hook, the same code path as the toolbar click. Chrome refuses to screenshot `data:` pages, so preview tests serve http pages through Playwright's `context.route`.
