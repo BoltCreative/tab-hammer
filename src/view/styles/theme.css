@@ -11,7 +11,7 @@
   --row-selected: #2b3a5c;
   --row-active: #2a2c31;
   --row-active-focused: #30333a;
-  --text-active: #f0f1f3;
+  --text-steel: #6f9fcf; /* steel blue, lifted for contrast on the dark card */
   --group-grey: #bdc1c6;
   --group-blue: #8ab4f8;
   --group-red: #f28b82;
@@ -82,11 +82,11 @@ main {
 .window-header {
   font-size: 12px;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-steel);
 }
 /* Every window's active tab gets a faint row tint; selection (blue) wins over it. */
 .tab.active {
-  color: var(--text-active);
+  color: var(--text-steel);
   font-weight: 700;
 }
 .tab.active:not([aria-selected='true']) {
