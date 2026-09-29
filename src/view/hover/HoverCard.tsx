@@ -3,7 +3,12 @@ import type { TabNode } from '../../model/types';
 import { describeNoPreview } from '../../shared/captureOutcomes';
 import { wantsOnDemandCapture } from '../../shared/previewPolicy';
 import { getPreview, type Preview } from '../../shared/previewStore';
-import { latestCaptureOutcome, requestTabCapture } from '../chrome/captureOutcome';
+import {
+  isTabLoaded,
+  latestCaptureOutcome,
+  requestTabCapture,
+  watchTabLoaded,
+} from '../chrome/captureOutcome';
 import { relativeTime } from './relativeTime';
 import { HOVER_CARD_ID } from './useHoverCard';
 import { placeCardTop } from './placeCard';
@@ -21,7 +26,8 @@ interface Loaded {
   url: string; // the tab URL this lookup was for
   image: { src: string; width: number; height: number } | null;
   note: string | null; // why there's no image, when there isn't one
-  capturing: boolean; // an on-demand capture is in flight
+  // An on-demand capture is in flight: first loading the page (if it wasn't loaded), then capturing.
+  capturing: 'loading' | 'capturing' | false;
 }
 
 /**
@@ -37,7 +43,12 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
   useEffect(() => {
     let cancelled = false;
     const objectUrls: string[] = [];
-    const done = (image: Loaded['image'], note: string | null, capturing = false) => {
+    let unwatch: (() => void) | undefined;
+    const done = (
+      image: Loaded['image'],
+      note: string | null,
+      capturing: Loaded['capturing'] = false,
+    ) => {
       if (!cancelled) setLoaded({ url, image, note, capturing });
     };
     const lookup = () => getPreview(url).catch(() => undefined);
@@ -61,8 +72,17 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
         else await noPreview();
         return;
       }
-      done(image, null, true);
+      const loadedAlready = await isTabLoaded(tabId).catch(() => true);
+      if (cancelled) return;
+      done(image, null, loadedAlready ? 'capturing' : 'loading');
+      if (!loadedAlready) {
+        unwatch = watchTabLoaded(tabId, () => {
+          if (!cancelled)
+            setLoaded((l) => (l?.capturing === 'loading' ? { ...l, capturing: 'capturing' } : l));
+        });
+      }
       await requestTabCapture(tabId).catch(() => undefined);
+      unwatch?.();
       if (cancelled) return;
       const fresh = await lookup();
       if (cancelled) return;
@@ -72,6 +92,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
     })();
     return () => {
       cancelled = true;
+      unwatch?.();
       objectUrls.forEach((u) => URL.revokeObjectURL(u));
     };
   }, [tabId, url, windowId, discarded, previewEpoch]);
@@ -79,7 +100,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
   const ready = loaded?.url === tab.url;
   const image = ready ? loaded.image : null;
   const note = ready ? loaded.note : null;
-  const capturing = ready && loaded.capturing;
+  const capturing = ready ? loaded.capturing : false;
 
   // Place it once its height is known. The image's width/height attributes fix its aspect ratio
   // before it loads, so this measurement is final.
@@ -116,7 +137,11 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
         {tab.lastAccessed !== undefined && (
           <div className="hover-card-meta">Last viewed {relativeTime(tab.lastAccessed)}</div>
         )}
-        {capturing && <div className="hover-card-note">Capturing preview…</div>}
+        {capturing && (
+          <div className="hover-card-note">
+            {capturing === 'loading' ? 'Loading page…' : 'Capturing preview…'}
+          </div>
+        )}
         {note && (
           <div className="hover-card-note" title={note}>
             {note}

@@ -19,6 +19,7 @@ import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { clearPreviews, prunePreviews, putPreview } from '../shared/previewStore';
 import { createBrowserSession } from './browserSession';
 import { createCaptureQueue } from './captureQueue';
+import { createLoadWaiter } from './waitForLoad';
 import { createCaptureScheduler } from './captureScheduler';
 import {
   createActivationGenerations,
@@ -71,28 +72,11 @@ async function recordUnder(
   await chrome.storage.session.set({ [key]: withOutcome(map, id, entry) });
 }
 
-function waitForComplete(tabId: number, ms: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (complete: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      resolve(complete);
-    };
-    const onUpdated = (id: number, change: { status?: string }) => {
-      if (id === tabId && change.status === 'complete') finish(true);
-    };
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    const timer = setTimeout(() => finish(false), ms);
-    // It may have finished before the listener was added.
-    chrome.tabs.get(tabId).then(
-      (t) => t.status === 'complete' && finish(true),
-      () => finish(false),
-    );
-  });
-}
+const waitForComplete = createLoadWaiter({
+  onUpdated: chrome.tabs.onUpdated,
+  onRemoved: chrome.tabs.onRemoved,
+  getStatus: async (tabId) => (await chrome.tabs.get(tabId)).status,
+});
 
 const browserSession = createBrowserSession(
   {
@@ -179,6 +163,9 @@ const captureTab = createTabCapturer({
   record: (tabId, outcome, url) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome, url),
   sessionId: () => browserSession.current(),
   waitForComplete,
+  // To be confirmed in real Chrome: reloading a lazily restored ('unloaded') background tab
+  // loads it without activating it.
+  reload: (tabId) => chrome.tabs.reload(tabId),
 });
 
 /**

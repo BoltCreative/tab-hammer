@@ -46,3 +46,17 @@ export async function clearAllPreviews(): Promise<void> {
   } satisfies ClearPreviewsRequest)) as { ok?: boolean } | undefined;
   if (!reply?.ok) throw new Error('clearing previews failed');
 }
+
+/** Whether the tab has finished loading (an on-demand capture loads it first if not). */
+export async function isTabLoaded(tabId: number): Promise<boolean> {
+  return (await chrome.tabs.get(tabId)).status === 'complete';
+}
+
+/** Calls `onLoaded` once the tab finishes loading. Returns the unsubscribe. */
+export function watchTabLoaded(tabId: number, onLoaded: () => void): () => void {
+  const listener = (id: number, change: { status?: string }) => {
+    if (id === tabId && change.status === 'complete') onLoaded();
+  };
+  chrome.tabs.onUpdated.addListener(listener);
+  return () => chrome.tabs.onUpdated.removeListener(listener);
+}

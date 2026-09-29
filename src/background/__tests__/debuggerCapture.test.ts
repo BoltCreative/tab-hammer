@@ -101,6 +101,7 @@ function setup(
     detach: log('detach', async () => {}),
     screenshot: log('screenshot', async () => 'AAAA'),
     waitForComplete: log('waitForComplete', async () => true),
+    reload: log('reload', async () => {}),
     captureVisible: log('captureVisible', async () => 'saved' as const),
     downscale: log('downscale', async () => ({ image: new Blob(['x']), width: 640, height: 360 })),
     save: log('save', save),
@@ -201,15 +202,23 @@ describe('createTabCapturer', () => {
     expect(calls).toEqual(['attach(70)', 'detach(70)']);
   });
 
-  it.each(['unloaded', 'loading'] as const)(
-    'loads a %s tab (e.g. lazily restored after a browser restart) once attached, then captures it',
-    async (status) => {
+  it.each([
+    [
+      'an unloaded tab (lazily restored after a browser restart), reloading it',
+      'unloaded',
+      ['reload(70)'],
+    ],
+    ['a loading tab', 'loading', []],
+  ] as const)(
+    'loads %s before attaching, so the infobar is up only for the screenshot',
+    async (_name, status, loadStart) => {
       const { capture, calls, outcome } = setup({ target: { status } });
       await expect(capture()).resolves.toBe('saved');
       expect(outcome()).toBe('saved');
       expect(calls).toEqual([
-        'attach(70)',
+        ...loadStart,
         `waitForComplete(70,${LOAD_TIMEOUT_MS})`,
+        'attach(70)',
         'screenshot(70)',
         'detach(70)',
         `downscale(${DATA_URL})`,
@@ -218,12 +227,12 @@ describe('createTabCapturer', () => {
     },
   );
 
-  it('still tries one screenshot when the tab doesn’t finish loading in time', async () => {
+  it('still attaches and tries one screenshot when the tab doesn’t finish loading in time', async () => {
     const env = setup({ target: { status: 'unloaded' } });
     const { capture, calls, outcome } = env;
     env.deps.waitForComplete = async (id, ms) => {
       calls.push(`waitForComplete(${id},${ms})`);
-      return false; // timed out
+      return false; // timed out (or the tab closed)
     };
     env.deps.screenshot = async (id) => {
       calls.push(`screenshot(${id})`);
@@ -232,8 +241,9 @@ describe('createTabCapturer', () => {
     await capture();
     expect(outcome()).toBe('error:capture: Internal error');
     expect(calls).toEqual([
-      'attach(70)',
+      'reload(70)',
       `waitForComplete(70,${LOAD_TIMEOUT_MS})`,
+      'attach(70)',
       'screenshot(70)',
       'detach(70)',
     ]);
@@ -354,6 +364,7 @@ describe('createTabCapturer', () => {
       const others = [
         tab(71, 3, { discarded: true }), // activating would reload it
         tab(72, 1, { groupId: 5 }), // activating would expand its collapsed group
+        tab(75, 2, { status: 'unloaded' }), // activating would load a second page
         tab(73, 0),
         tab(74, 6),
       ];
@@ -376,7 +387,7 @@ describe('createTabCapturer', () => {
         windowId: WINDOW,
         targetId: 70,
         standInId: 73,
-        knownTabIds: [70, 71, 72, 73, 74],
+        knownTabIds: [70, 71, 72, 75, 73, 74],
         at: NOW,
       });
     });
@@ -401,8 +412,12 @@ describe('createTabCapturer', () => {
       expect(tabs().map((t) => [t.id, t.active])).toEqual([[70, true]]);
     });
 
-    it('uses a temporary tab when every neighbour is asleep or in a collapsed group', async () => {
-      const others = [tab(71, 3, { discarded: true }), tab(72, 1, { groupId: 5 })];
+    it('uses a temporary tab when every neighbour is asleep, unloaded, or in a collapsed group', async () => {
+      const others = [
+        tab(71, 3, { discarded: true }),
+        tab(72, 1, { groupId: 5 }),
+        tab(73, 0, { status: 'unloaded' }),
+      ];
       const { capture, calls } = setup({ ...minimized, others, collapsed: [5] });
       await capture();
       expect(calls).toEqual([

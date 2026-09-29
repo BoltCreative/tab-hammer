@@ -50,6 +50,8 @@ export interface OffscreenDeps {
    * false after `ms`.
    */
   waitForComplete: (tabId: number, ms: number) => Promise<boolean>;
+  /** Loads an 'unloaded' tab (chrome.tabs.reload), without the debugger or activating it. */
+  reload: (tabId: number) => Promise<void>;
   timeoutMs?: number;
   loadTimeoutMs?: number;
   now?: () => number;
@@ -83,7 +85,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 /**
  * Picks the tab to show in place of `target` while it is captured: the nearest by index that is
- * not discarded (activating it would reload it) and not in a collapsed group (activating it
+ * not discarded or unloaded (activating it would load it) and not in a collapsed group (activating it
  * would expand the group for good). Undefined if there is none.
  */
 export function pickStandIn(
@@ -96,6 +98,7 @@ export function pickStandIn(
       (t) =>
         t.id !== target.id &&
         !t.discarded &&
+        t.status !== 'unloaded' && // activating it would load a second page
         !(t.groupId !== undefined && collapsedGroups.includes(t.groupId)),
     )
     .sort((a, b) => Math.abs(a.index - target.index) - Math.abs(b.index - target.index))[0];
@@ -197,9 +200,9 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     if (tab.incognito) return 'skipped:incognito';
     // Attaching the debugger to a discarded (sleeping) tab would reload it.
     if (tab.discarded) return 'skipped:discarded';
-    // Unlike captureVisibleTab, tabs still loading (or never loaded: after a browser restart most
-    // tabs are restored lazily, as 'unloaded') are fine: attaching makes Chrome load them, and the
-    // capture waits for that below. They then stay loaded.
+    // Unlike captureVisibleTab, tabs still loading, or never loaded (after a browser restart most
+    // tabs are restored lazily, as 'unloaded'), are captured too. They are loaded first, without
+    // the debugger, so its infobar isn't up during the load; they then stay loaded.
     if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
     const win = await deps.getWindow(tab.windowId);
     if (win.incognito) return 'skipped:incognito';
@@ -208,6 +211,13 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     const minimized = win.state === 'minimized';
     // A visible tab can be captured without the debugger (and its infobar).
     if (tab.active && !minimized) return deps.captureVisible(tab.windowId);
+
+    if (tab.status !== 'complete') {
+      if (tab.status === 'unloaded') await deps.reload(tabId);
+      // On a load timeout, still try one screenshot: a slow page may have painted enough.
+      await deps.waitForComplete(tabId, loadTimeoutMs);
+      if (signal?.aborted) return 'error:capture: gave up waiting';
+    }
 
     const target = { ...tab, id: tab.id };
     // One swap at a time: a run the queue gave up on may still be mid-swap. An old record is
@@ -226,9 +236,6 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
       try {
         // The queue gave up on this run while attach hung; detach (below) right away.
         if (signal?.aborted) return 'error:attach: gave up waiting';
-        // On a load timeout, still try one screenshot: a slow page may have painted enough.
-        if (tab.status !== 'complete') await deps.waitForComplete(tabId, loadTimeoutMs);
-        if (signal?.aborted) return 'error:capture: gave up waiting';
         data = await withTimeout(deps.screenshot(tabId), timeoutMs);
       } catch (err) {
         return `error:capture: ${message(err)}`;
