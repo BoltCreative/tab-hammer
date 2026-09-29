@@ -11,6 +11,7 @@ function toTabNode(t: RawTab): TabNode {
     url,
     active: t.active,
     discarded: t.discarded,
+    lastAccessed: t.lastAccessed,
   };
 }
 

@@ -1,15 +1,17 @@
 import { useState, type MouseEvent } from 'react';
 import type { TabNode } from '../../model/types';
 import { faviconUrl } from '../chrome/favicon';
+import type { HoverHandlers } from '../hover/useHoverCard';
 
 interface Props {
   tab: TabNode;
   selected: boolean;
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
+  hover: HoverHandlers;
 }
 
-export function TabRow({ tab, selected, onSelect, onActivate }: Props) {
+export function TabRow({ tab, selected, onSelect, onActivate, hover }: Props) {
   // Remember which URL's favicon failed, so a navigation to a new URL retries.
   const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
   const iconFailed = failedIconUrl === tab.url;
@@ -23,9 +25,10 @@ export function TabRow({ tab, selected, onSelect, onActivate }: Props) {
       data-key={tab.key}
       data-kind="tab"
       aria-selected={selected}
-      title={tab.url}
       onClick={(e) => onSelect(e, tab.key)}
       onDoubleClick={() => onActivate(tab)}
+      onMouseEnter={(e) => hover.onRowEnter(tab.key, e.currentTarget)}
+      onMouseLeave={hover.onRowLeave}
     >
       {tab.url && !iconFailed ? (
         <img

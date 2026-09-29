@@ -54,6 +54,7 @@ export async function snapshot(): Promise<RawSnapshot> {
               pendingUrl: t.pendingUrl,
               active: t.active,
               discarded: t.discarded,
+              lastAccessed: t.lastAccessed,
             },
           ],
     ),

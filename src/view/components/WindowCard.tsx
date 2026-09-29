@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react';
 import type { TabNode, WindowNode } from '../../model/types';
 import { isGroupCollapsed, type CollapseState } from '../../model/visibleRows';
+import type { HoverHandlers } from '../hover/useHoverCard';
 import { GroupRow } from './GroupRow';
 import { TabRow } from './TabRow';
 
@@ -13,6 +14,7 @@ interface Props {
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
   onFocusWindow: (windowId: number) => void;
+  hover: HoverHandlers;
 }
 
 export function WindowCard(p: Props) {
@@ -53,6 +55,7 @@ export function WindowCard(p: Props) {
               onToggleCollapse={p.onToggleGroup}
               onSelect={p.onSelect}
               onActivate={p.onActivate}
+              hover={p.hover}
             />
           ) : (
             <TabRow
@@ -61,6 +64,7 @@ export function WindowCard(p: Props) {
               selected={p.selected.has(c.key)}
               onSelect={p.onSelect}
               onActivate={p.onActivate}
+              hover={p.hover}
             />
           ),
         )}

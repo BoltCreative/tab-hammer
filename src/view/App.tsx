@@ -20,6 +20,8 @@ import {
 import { activateTab, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
 import { selectionActionFor } from './components/rowClick';
 import { WindowCard } from './components/WindowCard';
+import { HoverCard } from './hover/HoverCard';
+import { useHoverCard } from './hover/useHoverCard';
 
 export function App() {
   const [tree, setTree] = useState<WindowNode[]>([]);
@@ -47,6 +49,17 @@ export function App() {
     refresh();
     return subscribe(refresh);
   }, [refresh]);
+
+  const [hovered, hover] = useHoverCard();
+  // Look the tab up in the live tree so the card follows title changes and vanishes if it closes.
+  const hoveredTab = useMemo(
+    () =>
+      hovered &&
+      tree
+        .flatMap((w) => w.children.flatMap((c) => (c.kind === 'group' ? c.tabs : [c])))
+        .find((t) => t.key === hovered.key),
+    [tree, hovered],
+  );
 
   const visible = useMemo(() => visibleRowKeys(tree, collapse), [tree, collapse]);
 
@@ -89,8 +102,10 @@ export function App() {
           onSelect={onSelect}
           onActivate={onActivate}
           onFocusWindow={onFocusWindow}
+          hover={hover}
         />
       ))}
+      {hovered && hoveredTab && <HoverCard tab={hoveredTab} row={hovered.row} />}
     </main>
   );
 }

@@ -15,6 +15,7 @@ export interface RawTab {
   pendingUrl?: string;
   active: boolean;
   discarded: boolean;
+  lastAccessed?: number; // ms since epoch
 }
 
 export interface RawGroup {
@@ -43,6 +44,7 @@ export interface TabNode {
   url: string;
   active: boolean;
   discarded: boolean;
+  lastAccessed?: number; // ms since epoch, when the user last viewed the tab
 }
 
 export interface GroupNode {

@@ -12,6 +12,7 @@
   --row-active: #2a2c31;
   --row-active-focused: #30333a;
   --text-tab: #a1bad4; /* steel blue softened toward the base gray */
+  --hover-card-shadow: rgba(0, 0, 0, 0.5);
   --group-grey: #bdc1c6;
   --group-blue: #8ab4f8;
   --group-red: #f28b82;
@@ -142,4 +143,54 @@ main {
   margin-left: 12px;
   padding-left: 4px;
   border-left: 2px solid var(--group-color);
+}
+/* Tab hover preview. pointer-events: none so it never takes clicks or hover from the rows under it. */
+.hover-card {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  visibility: hidden; /* until placed; see HoverCard */
+  z-index: 10;
+  pointer-events: none;
+  background: var(--card);
+  border: 1px solid var(--card-border-focused);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--hover-card-shadow);
+  overflow: hidden;
+}
+.hover-card-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+  object-fit: cover;
+  object-position: top;
+  border-bottom: 1px solid var(--card-border);
+  background: var(--bg);
+}
+.hover-card-text {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hover-card-title {
+  color: var(--text-strong);
+  font-weight: 600;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.hover-card-url {
+  color: var(--text-tab);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hover-card-meta {
+  color: var(--text-muted);
+  font-size: 11px;
 }

@@ -1,5 +1,6 @@
 import type { CSSProperties, MouseEvent } from 'react';
 import type { GroupNode, TabNode } from '../../model/types';
+import type { HoverHandlers } from '../hover/useHoverCard';
 import { TabRow } from './TabRow';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   onToggleCollapse: (key: string) => void;
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
+  hover: HoverHandlers;
 }
 
 export function GroupRow({
@@ -18,6 +20,7 @@ export function GroupRow({
   onToggleCollapse,
   onSelect,
   onActivate,
+  hover,
 }: Props) {
   const style = { '--group-color': `var(--group-${group.color})` } as CSSProperties;
   return (
@@ -52,6 +55,7 @@ export function GroupRow({
               selected={selected.has(t.key)}
               onSelect={onSelect}
               onActivate={onActivate}
+              hover={hover}
             />
           ))}
         </div>
