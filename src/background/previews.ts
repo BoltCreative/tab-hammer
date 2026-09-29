@@ -2,15 +2,15 @@
 // Chrome can only capture the tab currently showing in a window, so we capture whenever a tab
 // becomes visible and keep the latest shot per page URL (so restored tabs keep theirs after a
 // browser restart).
+import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { prunePreviews, putPreview } from '../shared/previewStore';
-import { createCaptureScheduler, isCapturableUrl } from './captureScheduler';
+import { createCaptureScheduler } from './captureScheduler';
+import { createWindowCapturer, type Shot } from './captureWindow';
 
-const PREVIEW_WIDTH = 320;
-// Pruning reads every key, so do it every so often rather than after each write.
-const PRUNE_EVERY_WRITES = 25;
-let writesSincePrune = 0;
+// About 2× the card's ~404 CSS px width, so previews stay sharp on Retina displays.
+const PREVIEW_WIDTH = 640;
 
-async function downscale(dataUrl: string): Promise<{ image: Blob; width: number; height: number }> {
+async function downscale(dataUrl: string): Promise<Shot> {
   const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
   const width = Math.min(PREVIEW_WIDTH, bitmap.width);
   const height = Math.max(1, Math.round((bitmap.height * width) / bitmap.width));
@@ -24,29 +24,31 @@ async function downscale(dataUrl: string): Promise<{ image: Blob; width: number;
   };
 }
 
-async function activeTab(windowId: number): Promise<chrome.tabs.Tab | undefined> {
-  const [tab] = await chrome.tabs.query({ windowId, active: true });
-  return tab;
-}
-
-async function captureWindow(windowId: number): Promise<void> {
-  const win = await chrome.windows.get(windowId);
-  if (win.type !== 'normal') return; // Tab Hammer's own window is a popup; never capture it
-  const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
-  if (windowId === viewWindowId) return;
-  const tab = await activeTab(windowId);
-  if (tab?.id === undefined || tab.status !== 'complete' || !isCapturableUrl(tab.url)) return;
-
-  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 80 });
-  // The window may have switched tabs or navigated while we captured; don't mislabel the shot.
-  const after = await activeTab(windowId);
-  if (after?.id !== tab.id || after.url !== tab.url) return;
-  await putPreview(tab.url!, { capturedAt: Date.now(), ...(await downscale(dataUrl)) });
-  if (++writesSincePrune >= PRUNE_EVERY_WRITES) {
-    writesSincePrune = 0;
+// The service worker is killed after ~30s idle, so in-memory counters don't survive long.
+// Prune on the first write of each lifetime (applies the age limit regularly) and whenever a
+// write pushes the store over its size cap.
+let prunedThisLifetime = false;
+async function save(url: string, shot: Shot & { capturedAt: number }): Promise<void> {
+  const count = await putPreview(url, shot);
+  if (!prunedThisLifetime || count > PRUNE_LIMITS.maxEntries) {
+    prunedThisLifetime = true;
     await prunePreviews();
   }
 }
+
+const captureWindow = createWindowCapturer({
+  getWindow: (windowId) => chrome.windows.get(windowId),
+  viewWindowId: async () => {
+    const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
+    return typeof viewWindowId === 'number' ? viewWindowId : undefined;
+  },
+  activeTab: async (windowId) => (await chrome.tabs.query({ windowId, active: true }))[0],
+  captureVisibleTab: (windowId) =>
+    chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: 80 }),
+  downscale,
+  save,
+  retry: (windowId) => scheduler.trigger(windowId),
+});
 
 const scheduler = createCaptureScheduler({
   debounceMs: 500,
@@ -59,9 +61,13 @@ const quietly = (p: Promise<unknown>) => void p.catch(() => {});
 
 /** Registers the capture listeners. Must run synchronously at service worker top level. */
 export function registerPreviewCapture(): void {
+  // Incognito tabs are filtered here so they don't spend the capture rate budget; captureWindow
+  // also refuses incognito windows, since previews persist on disk.
   chrome.tabs.onActivated.addListener(({ windowId }) => scheduler.trigger(windowId));
   chrome.tabs.onUpdated.addListener((_tabId, change, tab) => {
-    if (change.status === 'complete' && tab.active) scheduler.trigger(tab.windowId);
+    if (change.status === 'complete' && tab.active && !tab.incognito) {
+      scheduler.trigger(tab.windowId);
+    }
   });
   chrome.windows.onFocusChanged.addListener((windowId) => {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) scheduler.trigger(windowId);
@@ -71,7 +77,7 @@ export function registerPreviewCapture(): void {
   chrome.tabs.onReplaced.addListener((addedTabId) =>
     quietly(
       chrome.tabs.get(addedTabId).then((t) => {
-        if (t.active) scheduler.trigger(t.windowId);
+        if (t.active && !t.incognito) scheduler.trigger(t.windowId);
       }),
     ),
   );

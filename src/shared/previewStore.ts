@@ -23,7 +23,19 @@ function db(): Promise<IDBDatabase> {
       req.result
         .createObjectStore(STORE, { keyPath: 'key' })
         .createIndex(BY_CAPTURED_AT, 'capturedAt');
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const conn = req.result;
+      // Let a newer version (e.g. an updated extension in another context) upgrade the schema,
+      // and reopen on next use if Chrome closes the connection underneath us.
+      conn.onversionchange = () => {
+        conn.close();
+        dbPromise = null;
+      };
+      conn.onclose = () => {
+        dbPromise = null;
+      };
+      resolve(conn);
+    };
     req.onerror = () => reject(req.error);
   }).catch((err: unknown) => {
     dbPromise = null; // let the next call retry
@@ -54,30 +66,32 @@ export function getPreview(url: string): Promise<Preview | undefined> {
   });
 }
 
-export function putPreview(url: string, shot: Omit<Preview, 'key'>): Promise<void> {
+/** Stores a shot of the page at `url` and resolves with the store's new entry count. */
+export function putPreview(url: string, shot: Omit<Preview, 'key'>): Promise<number> {
   return run('readwrite', (s) => {
     s.put({ ...shot, key: previewKey(url) });
-    return () => undefined;
+    const count = s.count();
+    return () => count.result;
   });
 }
 
-/** Applies the age and size limits (see pickEvictions). Reads only keys, never the images. */
-export async function prunePreviews(now = Date.now()): Promise<void> {
-  const entries = await run('readonly', (s) => {
-    const found: { key: string; capturedAt: number }[] = [];
+/**
+ * Applies the age and size limits (see pickEvictions). Reads only keys, never the images, and
+ * reads and deletes in one transaction so a shot written meanwhile can't be evicted by mistake.
+ */
+export function prunePreviews(now = Date.now()): Promise<void> {
+  return run('readwrite', (s) => {
+    const entries: { key: string; capturedAt: number }[] = [];
     const req = s.index(BY_CAPTURED_AT).openKeyCursor();
     req.onsuccess = () => {
       const cursor = req.result;
-      if (!cursor) return;
-      found.push({ key: cursor.primaryKey as string, capturedAt: cursor.key as number });
-      cursor.continue();
+      if (cursor) {
+        entries.push({ key: cursor.primaryKey as string, capturedAt: cursor.key as number });
+        cursor.continue();
+        return;
+      }
+      pickEvictions(entries, now).forEach((k) => s.delete(k));
     };
-    return () => found;
-  });
-  const evict = pickEvictions(entries, now);
-  if (evict.length === 0) return;
-  await run('readwrite', (s) => {
-    evict.forEach((k) => s.delete(k));
     return () => undefined;
   });
 }
