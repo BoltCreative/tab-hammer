@@ -77,9 +77,10 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
   await row(neverId).hover();
   await expect(card).toContainText('about:blank');
   await expect(shot).toHaveCount(0);
-  // A tab without a preview says what the window's latest capture attempt did, and gets a muted
-  // favicon placeholder instead of a screenshot in the preview area.
-  await expect(card).toContainText('No preview yet · last capture: saved');
+  // A tab without a preview says what the window's latest capture attempt did (in friendly text,
+  // not the raw outcome code), and gets a muted favicon placeholder instead of a screenshot in the
+  // preview area.
+  await expect(card).toContainText('A preview was captured but isn’t available for this page');
   await expect(card.locator('.hover-card-preview-favicon')).toBeVisible();
   await expect(row(neverId)).toHaveAttribute('aria-describedby', 'tab-hover-card');
   await expect(card).toHaveAttribute('id', 'tab-hover-card');
