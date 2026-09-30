@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { TabNode } from '../../model/types';
-import { describeNoPreview } from '../../shared/captureOutcomes';
+import { describeNoPreview, type OutcomeDescription } from '../../shared/captureOutcomes';
 import { wantsOnDemandCapture } from '../../shared/previewPolicy';
 import { getPreview, type Preview } from '../../shared/previewStore';
 import { faviconUrl } from '../chrome/favicon';
@@ -26,7 +26,7 @@ interface Props {
 interface Loaded {
   url: string; // the tab URL this lookup was for
   image: { src: string; width: number; height: number } | null;
-  note: string | null; // why there's no image, when there isn't one
+  note: OutcomeDescription | null; // why there's no image, when there isn't one
   // An on-demand capture is in flight: first loading the page (if it wasn't loaded), then capturing.
   capturing: 'loading' | 'capturing' | false;
 }
@@ -47,7 +47,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
     let unwatch: (() => void) | undefined;
     const done = (
       image: Loaded['image'],
-      note: string | null,
+      note: Loaded['note'],
       capturing: Loaded['capturing'] = false,
     ) => {
       if (!cancelled) setLoaded({ url, image, note, capturing });
@@ -138,7 +138,7 @@ interface PreviewProps {
   ready: boolean;
   image: Loaded['image'];
   capturing: Loaded['capturing'];
-  note: string | null;
+  note: OutcomeDescription | null;
   tab: TabNode;
 }
 
@@ -174,7 +174,11 @@ function HoverCardPreview({ ready, image, capturing, note, tab }: PreviewProps) 
   return (
     <div className="hover-card-preview hover-card-preview-empty">
       {tab.url && <img className="hover-card-preview-favicon" src={faviconUrl(tab.url)} alt="" />}
-      {note && <span className="hover-card-preview-status">{note}</span>}
+      {note && (
+        <span className="hover-card-preview-status" title={note.detail}>
+          {note.text}
+        </span>
+      )}
     </div>
   );
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { describeNoPreview, withOutcome } from '../captureOutcomes';
+import {
+  describeNoPreview,
+  friendlyCaptureOutcome,
+  withOutcome,
+  type CaptureOutcome,
+} from '../captureOutcomes';
 
 describe('withOutcome', () => {
   it('replaces a window’s entry and keeps only the newest windows', () => {
@@ -14,19 +19,75 @@ describe('withOutcome', () => {
   });
 });
 
-describe('describeNoPreview', () => {
+describe('friendlyCaptureOutcome', () => {
   it.each([
-    [undefined, 'No preview yet · no capture attempted in this window'],
-    ['saved', 'No preview yet · last capture: saved'],
+    // saved, but no image found for the current URL (rare: pruned or evicted meanwhile).
+    ['saved', 'A preview was captured but isn’t available for this page'],
+
+    // Every skip reason the code can record.
+    ['skipped:no-permission', "Preview permissions haven't been granted yet"],
+    ['skipped:incognito', 'Incognito tabs are never captured'],
+    ['skipped:not-normal-window', "This kind of window can't be previewed"],
+    ['skipped:minimized', 'Preview paused while the window is minimized'],
+    ['skipped:own-window', "Tab Hammer doesn't preview its own window"],
+    ['skipped:no-tab', "Couldn't find the tab to capture"],
+    ['skipped:not-loaded-yet', 'Page had not finished loading yet'],
+    ['skipped:not-capturable-url', 'Chrome doesn’t allow previews of this page'],
+    ['skipped:changed-during-capture', 'Page changed while it was being captured'],
+    ['skipped:discarded', 'Tab is asleep — open it once to get a preview'],
+    ['skipped:swap-pending', "Already refreshing this tab's preview"],
+    ['skipped:superseded', 'Skipped to keep up with your cursor — hover again'],
+
+    // An unrecognized skip reason falls back like an unrecognized error would.
+    ['skipped:some-future-reason', "Couldn't capture a preview"],
+
+    // Attach errors (on-demand capture of a background tab).
     [
-      'skipped:changed-during-capture',
-      'No preview yet · last capture: skipped (changed during capture)',
+      'error:attach: Cannot access a chrome-extension:// URL of different extension',
+      "Another extension's content on this page blocks previews",
     ],
     [
-      'error:capture: Tabs cannot be edited',
-      'No preview yet · last capture: failed (capture: Tabs cannot be edited)',
+      'error:attach: Another debugger is already attached to the tab with given id.',
+      'DevTools or another tool is inspecting this tab',
     ],
-  ] as const)('%s', (outcome, text) => {
-    expect(describeNoPreview(outcome && { at: 0, outcome })).toBe(text);
+    ['error:attach: gave up waiting', 'Page took too long to draw'],
+
+    // CDP screenshot failures.
+    ['error:capture: {"code":-32603,"message":"Internal error"}', "Chrome couldn't draw this page"],
+    ['error:capture: timed out after 5000ms', 'Page took too long to draw'],
+    ['error:capture: gave up waiting', 'Page took too long to draw'],
+    ['error:capture failed', "Couldn't capture a preview"],
+
+    // captureVisibleTab quota.
+    [
+      'error:capture: MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND',
+      'Chrome is limiting captures right now — try again shortly',
+    ],
+
+    // Other pipeline stages and the queue's own timeout.
+    ['error:downscale: out of memory', "Couldn't capture a preview"],
+    ['error:save: the operation failed for reasons unknown.', "Couldn't capture a preview"],
+    ['error:gave up after 20000ms', 'Page took too long to draw'],
+    ['error:no reply from the service worker', 'Lost touch with the extension — try again'],
+
+    // Wholly unknown error text still gets a safe, generic sentence.
+    ['error:something nobody has seen before', "Couldn't capture a preview"],
+  ] satisfies [CaptureOutcome, string][])('%s → %s', (outcome, text) => {
+    expect(friendlyCaptureOutcome(outcome)).toBe(text);
+  });
+});
+
+describe('describeNoPreview', () => {
+  it('has no friendly text (and no detail) when no capture was ever attempted', () => {
+    expect(describeNoPreview(undefined)).toEqual({ text: 'No preview yet' });
+  });
+
+  it('pairs the friendly text with the raw outcome, for a tooltip', () => {
+    expect(
+      describeNoPreview({ at: 0, outcome: 'error:capture: {"code":-32603,"message":"boom"}' }),
+    ).toEqual({
+      text: "Chrome couldn't draw this page",
+      detail: 'error:capture: {"code":-32603,"message":"boom"}',
+    });
   });
 });
