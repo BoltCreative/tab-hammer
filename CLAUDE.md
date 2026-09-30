@@ -26,7 +26,7 @@ Pick the gate by change class. Report the gate name and result when declaring wo
 
 Run it once on the final commit. The e2e suite launches its own throwaway Chromium profile; it never touches the user's Chrome.
 
-The gate builds into `dist-e2e/` (`npm run build:e2e`), and the e2e fixture loads the extension from there. `dist/` belongs to the user: their `npm run dev` server writes it and their Chrome loads it, so never build into it from a gate or test run. To run e2e alone, `npm run build:e2e` first.
+The gate builds into `dist-e2e/` (`npm run build:e2e`), and the e2e fixture loads the extension from there. `~/.tab-hammer/dist` belongs to the user: every tree's `npm run dev` server writes it and their Chrome loads it, so never build into it from a gate or test run, and never run `npm run dev` yourself. `dist/` is only the `npm run build` output. To run e2e alone, `npm run build:e2e` first.
 
 The e2e suite runs headless (new-headless Chromium). Headless Chromium ignores window focus changes, so window focus is asserted via recorded `chrome.windows.update` calls rather than by observing which window is focused. It must stay headless: the user works on this machine while gates run, and headed windows steal their workspace.
 

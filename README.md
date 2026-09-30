@@ -32,9 +32,19 @@ Then in Chrome: `chrome://extensions` → enable Developer mode → **Load unpac
 npm run dev
 ```
 
-This starts a dev server that rebuilds `dist/` on save. Load `dist/` once (as above); after that,
-most changes — to the view or the service worker — reload the running extension automatically, so
-you don't need to click "Reload" in `chrome://extensions` for everyday edits.
+This starts a dev server that rebuilds `~/.tab-hammer/dist` on save (set `TAB_HAMMER_DEV_DIR` to
+use another folder). Load that folder once, the same way as above; after that, most changes — to
+the view or the service worker — reload the running extension automatically, so you don't need to
+click "Reload" in `chrome://extensions` for everyday edits.
+
+Every checkout and worktree's dev server writes that same folder, and the manifest's fixed `key`
+gives the extension the same ID wherever it's built, so storage, previews, and permission grants
+carry over. To test a different tree, stop `npm run dev` and start it in the other tree: the
+running extension reloads itself onto the new build. In Skullet, that's one command:
+
+```
+skullet-cli wiring create tab-hammer dev tab-hammer=worktree:<name>   # or tab-hammer=root
+```
 
 Before calling anything done, run the completion gate:
 
@@ -44,7 +54,8 @@ npm run gate
 
 This runs the typechecker, linter, formatter check, unit tests, and the end-to-end Playwright
 suite. The gate builds the extension into `dist-e2e/` (a separate output directory) rather than
-`dist/`, so running it never clobbers the build your `npm run dev` server and Chrome are using.
+`~/.tab-hammer/dist`, so running it never clobbers the build your `npm run dev` server and Chrome
+are using.
 
 ## Permissions
 
