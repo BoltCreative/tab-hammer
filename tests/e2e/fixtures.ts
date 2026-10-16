@@ -7,8 +7,8 @@ import {
 } from '@playwright/test';
 import path from 'node:path';
 
-// Built by `npm run build:e2e`. Kept apart from dist/, which the user's dev server writes and their
-// own Chrome loads, so gate runs never clobber it.
+// Built by `npm run build:e2e`. Kept apart from ~/.tab-hammer/dist, which the user's dev server
+// writes and their own Chrome loads, so gate runs never clobber it.
 const DIST = path.resolve(import.meta.dirname, '../../dist-e2e');
 const VIEW_PATH = 'src/view/index.html';
 

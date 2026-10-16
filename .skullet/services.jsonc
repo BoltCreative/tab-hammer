@@ -1,0 +1,22 @@
+// Tab Hammer's dev server, declared as a nexus service (SKULL-810).
+//
+// Singleton swap: activating `dev` in another tree stops the running `npm run dev` and relaunches it
+// there, on the same port (5174). Every tree's dev server writes the same folder
+// (~/.tab-hammer/dist, see vite.config.ts) and the manifest `key` pins the extension ID, so Chrome
+// loads that folder once and the extension reloads itself when the new server comes up.
+//
+//   skullet-cli wiring create tab-hammer dev tab-hammer=worktree:<name>   # or tab-hammer=root
+//
+// No `auto_start`: the user starts the dev server explicitly.
+{
+  "services": {
+    "dev": {
+      "command": "npm run dev",
+      "scope": "worktree",
+      "singleton": true,
+      "restart_at_root": false,
+      "default_port": 5174,
+    },
+  },
+  "connections": {},
+}
