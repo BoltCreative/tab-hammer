@@ -14,6 +14,7 @@ interface Props {
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
   onFocusWindow: (windowId: number) => void;
+  onWindowContextMenu: (e: MouseEvent, win: WindowNode) => void;
   hover: HoverHandlers;
 }
 
@@ -30,6 +31,7 @@ export function WindowCard(p: Props) {
         aria-selected={p.selected.has(win.key)}
         onClick={(e) => p.onSelect(e, win.key)}
         onDoubleClick={() => p.onFocusWindow(win.windowId)}
+        onContextMenu={(e) => p.onWindowContextMenu(e, win)}
       >
         <span
           className="twisty"

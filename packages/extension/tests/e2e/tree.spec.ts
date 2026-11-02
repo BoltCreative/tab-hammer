@@ -146,3 +146,26 @@ test('the header stays put while only the outline list scrolls', async ({ sw, vi
   expect(await headerTop()).toBe(0);
   await expect(view.getByRole('button', { name: 'Clear previews' })).toBeInViewport();
 });
+
+test("right-clicking a window header copies all its tabs' URLs in tab order", async ({
+  context,
+  sw,
+  view,
+}) => {
+  // Lets the test read the clipboard back (the extension itself only asks for clipboardWrite).
+  // No origin: Playwright can't parse chrome-extension:// origins, and this profile is throwaway.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const s = await buildLayout(sw);
+  const expected = await sw.evaluate(
+    async (id) => (await chrome.tabs.query({ windowId: id })).map((t) => t.url || t.pendingUrl),
+    s.winA,
+  );
+
+  await view.locator(`[data-key="w:${s.winA}"]`).click({ button: 'right' });
+  const item = view.getByRole('menuitem', { name: 'Copy all URLs (3)' });
+  await item.click();
+  await expect(view.getByTestId('context-menu')).toHaveCount(0);
+  await expect
+    .poll(() => view.evaluate(() => navigator.clipboard.readText()))
+    .toBe(expected.join('\n'));
+});

@@ -1,4 +1,5 @@
 import { getPreview } from '../shared/previewStore';
+import { connectBridge } from './bridge';
 import { registerPreviewCapture } from './previews';
 
 export const VIEW_PATH = 'src/view/index.html';
@@ -23,9 +24,11 @@ async function openOrFocus(): Promise<void> {
 }
 
 chrome.action.onClicked.addListener(() => {
+  connectBridge();
   void openOrFocus();
 });
 registerPreviewCapture();
+connectBridge();
 
 // Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and
 // waits on hasPreview for a background capture to land in the store.

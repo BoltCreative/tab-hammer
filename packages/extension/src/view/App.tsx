@@ -18,6 +18,7 @@ import {
   type CollapseState,
 } from '../model/visibleRows';
 import { activateTab, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
+import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
@@ -78,6 +79,26 @@ export function App() {
   const onActivate = (t: TabNode) => void activateTab(t.tabId, t.windowId).catch(refresh);
   const onFocusWindow = (id: number) => void focusWindow(id).catch(refresh);
 
+  // Right-click menu on a window header. Holds the window's key, not the node, so the menu always
+  // acts on the window's current tabs even if they change while it is open.
+  const [menu, setMenu] = useState<{ x: number; y: number; windowKey: string } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const onWindowContextMenu = (e: MouseEvent, win: WindowNode) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, windowKey: win.key });
+  };
+  const menuWindow = menu && tree.find((w) => w.key === menu.windowKey);
+  // The window's URLs in tab order, one per line (blank ones, e.g. a tab still loading, skipped).
+  const copyWindowUrls = (win: WindowNode) => {
+    const urls = win.children
+      .flatMap((c) => (c.kind === 'group' ? c.tabs : [c]))
+      .map((t) => t.url)
+      .filter(Boolean);
+    navigator.clipboard
+      .writeText(urls.join('\n'))
+      .catch((err: unknown) => console.error('Tab Hammer: copying URLs failed', err));
+  };
+
   const onToggleWindow = (key: string) =>
     setCollapse((c) => {
       const next = new Set(c.collapsedWindows);
@@ -111,12 +132,26 @@ export function App() {
             onSelect={onSelect}
             onActivate={onActivate}
             onFocusWindow={onFocusWindow}
+            onWindowContextMenu={onWindowContextMenu}
             hover={hover}
           />
         ))}
       </main>
       {hovered && hoveredTab && (
         <HoverCard tab={hoveredTab} row={hovered.row} list={listRef} previewEpoch={previewEpoch} />
+      )}
+      {menu && menuWindow && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+          items={[
+            {
+              label: `Copy all URLs (${menuWindow.tabCount})`,
+              onSelect: () => copyWindowUrls(menuWindow),
+            },
+          ]}
+        />
       )}
     </div>
   );

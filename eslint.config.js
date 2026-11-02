@@ -7,11 +7,11 @@ import globals from 'globals';
 export default defineConfig(
   {
     ignores: [
-      'dist/',
-      'dist-e2e/',
-      'node_modules/',
-      'test-results/',
-      'playwright-report/',
+      '**/dist/',
+      '**/dist-e2e/',
+      '**/node_modules/',
+      '**/test-results/',
+      '**/playwright-report/',
       '.worktrees/',
       '.superpowers/',
     ],
@@ -23,8 +23,9 @@ export default defineConfig(
     languageOptions: { globals: { ...globals.browser, ...globals.webextensions, ...globals.node } },
   },
   {
-    // React code lives only in src/. Elsewhere (e.g. Playwright fixtures) `use` is not a React hook.
-    files: ['src/**/*.{ts,tsx}'],
+    // React code lives only in the extension's src/. Elsewhere (e.g. Playwright fixtures) `use` is
+    // not a React hook.
+    files: ['packages/extension/src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: { ...reactHooks.configs.recommended.rules },
   },
