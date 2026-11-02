@@ -78,13 +78,17 @@ const waitForComplete = createLoadWaiter({
   getStatus: async (tabId) => (await chrome.tabs.get(tabId)).status,
 });
 
-const browserSession = createBrowserSession(
-  {
+const browserSession = createBrowserSession({
+  local: {
     get: (key) => chrome.storage.local.get(key),
     set: (items) => chrome.storage.local.set(items),
   },
-  () => crypto.randomUUID(),
-);
+  session: {
+    get: (key) => chrome.storage.session.get(key),
+    set: (items) => chrome.storage.session.set(items),
+  },
+  newId: () => crypto.randomUUID(),
+});
 const record = (windowId: number, outcome: CaptureOutcome) =>
   recordUnder(OUTCOMES_KEY, windowId, outcome);
 
@@ -183,9 +187,9 @@ async function cleanUpAfterCrash(): Promise<void> {
   );
 }
 // Runs once per service worker lifetime, before its first capture. It is also started early by
-// onInstalled (the extension was reloaded or updated) and onStartup (the browser launched: that
-// one first renews the browser session, so a record from before the restart is dropped). It isn't
-// started at load, where it could read the old session before onStartup renews it.
+// onInstalled (the extension was reloaded or updated) and onStartup (the browser launched). Either
+// order is safe: recovery reads the browser session ID, which waits until onStartup has renewed it
+// (see browserSession.ts), so a record from before a browser restart is dropped, never acted on.
 let cleanedUp: Promise<void> | undefined;
 const cleanUpOnce = () => (cleanedUp ??= cleanUpAfterCrash());
 
@@ -246,10 +250,13 @@ export function registerPreviewCapture(): void {
   // when a tab closes; age and size limits keep the store bounded instead.
   chrome.runtime.onStartup.addListener(() => {
     quietly(prunePreviews());
-    cleanedUp = browserSession.renew().then(cleanUpAfterCrash, cleanUpAfterCrash);
-    quietly(cleanedUp);
+    quietly(browserSession.launched());
+    quietly(cleanUpOnce());
   });
-  chrome.runtime.onInstalled.addListener(() => quietly(cleanUpOnce()));
+  chrome.runtime.onInstalled.addListener(() => {
+    quietly(browserSession.installed());
+    quietly(cleanUpOnce());
+  });
 
   // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
