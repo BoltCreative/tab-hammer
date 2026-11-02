@@ -103,3 +103,11 @@ export function clearPreviews(): Promise<void> {
     return () => undefined;
   });
 }
+
+/** Deletes the previews of these pages (Chrome removed them from its history). */
+export function deletePreviews(urls: readonly string[]): Promise<void> {
+  return run('readwrite', (s) => {
+    for (const key of new Set(urls.map(previewKey))) s.delete(key);
+    return () => undefined;
+  });
+}

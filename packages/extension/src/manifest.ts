@@ -12,6 +12,7 @@ export default defineManifest({
   // debugger: on-demand hover previews of background tabs (CDP Page.captureScreenshot).
   // clipboardWrite: the window menu's "Copy all URLs".
   // nativeMessaging: the bridge to Claude's MCP server (packages/mcp).
+  // history: deleting previews when the user clears Chrome's browsing history.
   permissions: [
     'tabs',
     'tabGroups',
@@ -20,6 +21,7 @@ export default defineManifest({
     'debugger',
     'clipboardWrite',
     'nativeMessaging',
+    'history',
   ],
   // captureVisibleTab (hover previews) needs host access to the page being captured.
   host_permissions: ['<all_urls>'],

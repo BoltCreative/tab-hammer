@@ -16,7 +16,7 @@ import {
   type CaptureTabReply,
 } from '../shared/messages';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
-import { clearPreviews, prunePreviews, putPreview } from '../shared/previewStore';
+import { clearPreviews, deletePreviews, prunePreviews, putPreview } from '../shared/previewStore';
 import { createBrowserSession } from './browserSession';
 import { createCaptureQueue } from './captureQueue';
 import { createLoadWaiter } from './waitForLoad';
@@ -253,6 +253,14 @@ export function registerPreviewCapture(): void {
     quietly(browserSession.launched());
     quietly(cleanUpOnce());
   });
+  // Previews are screenshots of pages the user visited, so they go when Chrome's history does:
+  // "Clear browsing data" for all time wipes them all; any narrower removal (a time range, or a
+  // single entry from the History page) deletes just the pages it named. Keys drop the #fragment,
+  // so removing one fragment's entry also removes the page's shared preview, erring toward
+  // forgetting.
+  chrome.history.onVisitRemoved.addListener(({ allHistory, urls }) =>
+    quietly(allHistory ? clearAll() : deletePreviews(urls ?? [])),
+  );
   chrome.runtime.onInstalled.addListener(() => {
     quietly(browserSession.installed());
     quietly(cleanUpOnce());
