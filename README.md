@@ -2,8 +2,9 @@
 
 Tab Hammer is a Manifest V3 Chrome extension that opens its own window and shows every open
 Chrome window, tab group, and tab as a live outline — a spiritual successor to Tabs Outliner,
-built to fix its annoyances. It's read-only apart from selection and double-click-to-switch: there's
-no moving, closing, or renaming from Tab Hammer (yet).
+built to fix its annoyances. The outline itself is read-only apart from selection, double-click-to-switch,
+and copying URLs; moving, grouping, and closing tabs goes through Claude, via Tab Hammer's MCP
+server.
 
 Key features:
 
@@ -15,6 +16,9 @@ Key features:
 - **Hover previews**, including on-demand screenshots of tabs you haven't looked at yet, so you
   can see what a background tab is before switching to it.
 - **Clear previews**, a one-click way to wipe every stored screenshot and start fresh.
+- **Copy all URLs** — right-click a window to copy its tabs' URLs, one per line.
+- **Claude can organize your tabs** — an MCP server lets Claude Code list, group, move, focus, open,
+  and close tabs across every window (see [Let Claude organize your tabs](#let-claude-organize-your-tabs)).
 
 ## Install from source
 
@@ -24,7 +28,38 @@ npm run build
 ```
 
 Then in Chrome: `chrome://extensions` → enable Developer mode → **Load unpacked** → select the
-`dist/` folder. Click the toolbar icon to open Tab Hammer.
+`packages/extension/dist/` folder. Click the toolbar icon to open Tab Hammer.
+
+## Let Claude organize your tabs
+
+Tab Hammer includes an MCP server, so Claude Code can see every open window, group, and tab and
+rearrange them: "group my research tabs", "close the duplicates", "move everything about the
+trip into its own window". Set it up once, from the checkout you'll keep (not a worktree):
+
+```
+npm install
+npm run install-mcp
+```
+
+Then reload Tab Hammer in `chrome://extensions` (or click its toolbar icon) and start a new Claude
+Code session. Claude gets these tools: `list_tabs`, `focus_tab`, `open_tabs`, `move_tabs`,
+`group_tabs`, `ungroup_tabs`, `update_group`, and `close_tabs`. Claude Code asks before running
+each one unless you allow it.
+
+How it fits together: Claude Code starts the MCP server; Chrome starts a small native messaging
+host for Tab Hammer; the two meet on a local socket (`~/.tab-hammer/bridge.sock`, readable only by
+you). Nothing runs unless Chrome and Claude Code are. The installer copies the host to
+`~/.tab-hammer/native-host` (macOS won't let Chrome run programs from inside `~/Documents` without
+a permission prompt), registers it with Chrome, and adds `tab-hammer` to Claude Code's user-level
+MCP servers. It needs Node 22.18 or newer. `npm run uninstall-mcp` removes all of it.
+
+## Repository layout
+
+npm workspaces, one package per process:
+
+- `packages/extension` — the Chrome extension (service worker, outline view, tests).
+- `packages/mcp` — the MCP server Claude Code starts, and the native host Chrome starts.
+- `packages/protocol` — the message types both sides compile against.
 
 ## Development
 
@@ -70,6 +105,8 @@ Chrome shows these permissions when you install Tab Hammer; here's why each is n
   it's capturing, for hover previews.
 - **`debugger`** — on-demand previews of background tabs, via the Chrome DevTools Protocol (see
   below).
+- **`clipboardWrite`** — the window menu's "Copy all URLs".
+- **`nativeMessaging`** — talk to the local native host that connects Claude's MCP server.
 
 **Privacy notes:**
 
