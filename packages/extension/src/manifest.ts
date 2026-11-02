@@ -1,5 +1,12 @@
 import { defineManifest } from '@crxjs/vite-plugin';
 
+const ICONS = {
+  16: 'icons/icon-16.png',
+  32: 'icons/icon-32.png',
+  48: 'icons/icon-48.png',
+  128: 'icons/icon-128.png',
+};
+
 export default defineManifest({
   manifest_version: 3,
   name: 'Tab Hammer',
@@ -26,5 +33,7 @@ export default defineManifest({
   // captureVisibleTab (hover previews) needs host access to the page being captured.
   host_permissions: ['<all_urls>'],
   background: { service_worker: 'src/background/index.ts', type: 'module' },
-  action: { default_title: 'Open Tab Hammer' },
+  // Rendered from icons/icon.svg by scripts/render-icons.ts.
+  icons: ICONS,
+  action: { default_title: 'Open Tab Hammer', default_icon: ICONS },
 });
