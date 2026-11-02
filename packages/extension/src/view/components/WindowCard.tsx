@@ -4,6 +4,7 @@ import { isGroupCollapsed, type CollapseState } from '../../model/visibleRows';
 import type { HoverHandlers } from '../hover/useHoverCard';
 import { GroupRow } from './GroupRow';
 import { TabRow } from './TabRow';
+import type { RowDrag } from './useRowDrag';
 
 interface Props {
   win: WindowNode;
@@ -16,6 +17,7 @@ interface Props {
   onFocusWindow: (windowId: number) => void;
   onWindowContextMenu: (e: MouseEvent, win: WindowNode) => void;
   hover: HoverHandlers;
+  drag: RowDrag;
 }
 
 export function WindowCard(p: Props) {
@@ -28,6 +30,7 @@ export function WindowCard(p: Props) {
         role="treeitem"
         data-key={win.key}
         data-kind="window"
+        {...p.drag(win.key, 'window')}
         aria-selected={p.selected.has(win.key)}
         onClick={(e) => p.onSelect(e, win.key)}
         onDoubleClick={() => p.onFocusWindow(win.windowId)}
@@ -58,6 +61,7 @@ export function WindowCard(p: Props) {
               onSelect={p.onSelect}
               onActivate={p.onActivate}
               hover={p.hover}
+              drag={p.drag}
             />
           ) : (
             <TabRow
@@ -67,6 +71,7 @@ export function WindowCard(p: Props) {
               onSelect={p.onSelect}
               onActivate={p.onActivate}
               hover={p.hover}
+              drag={p.drag}
             />
           ),
         )}

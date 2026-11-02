@@ -2,6 +2,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 import type { GroupNode, TabNode } from '../../model/types';
 import type { HoverHandlers } from '../hover/useHoverCard';
 import { TabRow } from './TabRow';
+import type { RowDrag } from './useRowDrag';
 
 interface Props {
   group: GroupNode;
@@ -11,6 +12,7 @@ interface Props {
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
   hover: HoverHandlers;
+  drag: RowDrag;
 }
 
 export function GroupRow({
@@ -21,6 +23,7 @@ export function GroupRow({
   onSelect,
   onActivate,
   hover,
+  drag,
 }: Props) {
   const style = { '--group-color': `var(--group-${group.color})` } as CSSProperties;
   return (
@@ -30,6 +33,7 @@ export function GroupRow({
         role="treeitem"
         data-key={group.key}
         data-kind="group"
+        {...drag(group.key, 'group')}
         aria-selected={selected.has(group.key)}
         onClick={(e) => onSelect(e, group.key)}
       >
@@ -56,6 +60,7 @@ export function GroupRow({
               onSelect={onSelect}
               onActivate={onActivate}
               hover={hover}
+              drag={drag}
             />
           ))}
         </div>

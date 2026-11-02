@@ -17,9 +17,11 @@ import {
   visibleRowKeys,
   type CollapseState,
 } from '../model/visibleRows';
-import { activateTab, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
+import { planMove } from '../model/moveSelection';
+import { activateTab, applyMoveOps, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
+import { useRowDrag } from './components/useRowDrag';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
@@ -78,6 +80,18 @@ export function App() {
   }, [tree]);
 
   const onSelect = (e: MouseEvent, key: string) => dispatch(selectionActionFor(e, key, visible));
+  const drag = useRowDrag(
+    selection.selected,
+    (key) => dispatch({ type: 'click', key }),
+    (keys, target) => {
+      const ops = planMove(tree, keys, target);
+      if (ops.length === 0) return;
+      applyMoveOps(ops).catch((err: unknown) => {
+        console.error('Tab Hammer: moving tabs failed', err);
+        refresh();
+      });
+    },
+  );
   const onActivate = (t: TabNode) => void activateTab(t.tabId, t.windowId).catch(refresh);
   const onFocusWindow = (id: number) => void focusWindow(id).catch(refresh);
 
@@ -136,6 +150,7 @@ export function App() {
             onFocusWindow={onFocusWindow}
             onWindowContextMenu={onWindowContextMenu}
             hover={hover}
+            drag={drag}
           />
         ))}
       </main>
