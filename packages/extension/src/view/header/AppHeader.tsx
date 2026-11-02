@@ -28,7 +28,14 @@ function refreshStatus(state: RefreshState): string {
  * The view's fixed header: it stays put while the outline scrolls beneath it. Toolbar and action
  * buttons, and the permission banner, go here.
  */
-export function AppHeader({ onPreviewsChanged }: { onPreviewsChanged: () => void }) {
+interface Props {
+  onPreviewsChanged: () => void;
+  query: string;
+  onQueryChange: (query: string) => void;
+  matchCount: number | null; // tabs matching the search, or null when not searching
+}
+
+export function AppHeader({ onPreviewsChanged, query, onQueryChange, matchCount }: Props) {
   const [status, setStatus] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -61,6 +68,22 @@ export function AppHeader({ onPreviewsChanged }: { onPreviewsChanged: () => void
     <header className="app-header">
       <PreviewPermissionBanner />
       <div className="toolbar" role="toolbar" aria-label="Tab Hammer tools">
+        <input
+          type="search"
+          className="search"
+          placeholder="Search tabs"
+          aria-label="Search tabs by title or URL"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') onQueryChange('');
+          }}
+        />
+        {matchCount !== null && (
+          <span className="toolbar-status" data-testid="match-count">
+            {matchCount === 1 ? '1 tab' : `${matchCount} tabs`}
+          </span>
+        )}
         <span className="toolbar-status" role="status">
           {clearStatus || refreshStatus(refresh.state)}
         </span>

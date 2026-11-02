@@ -169,3 +169,32 @@ test("right-clicking a window header copies all its tabs' URLs in tab order", as
     .poll(() => view.evaluate(() => navigator.clipboard.readText()))
     .toBe(expected.join('\n'));
 });
+
+test('the header search filters the outline, keeping window and group context', async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw);
+  // Collapsed in Chrome: a match inside still shows.
+  await sw.evaluate(async (tabId) => {
+    const { groupId } = await chrome.tabs.get(tabId);
+    await chrome.tabGroups.update(groupId, { collapsed: true });
+  }, s.groupedTabIds[0]);
+  const search = view.getByRole('searchbox', { name: 'Search tabs by title or URL' });
+  await search.fill('bravo');
+  const rows = view.locator('main.outline [role="treeitem"]');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveAttribute('data-key', `w:${s.winA}`);
+  await expect(rows.locator('.title').nth(1)).toHaveText('Research');
+  await expect(rows.locator('.title').nth(2)).toHaveText('Bravo');
+  await expect(view.getByTestId('match-count')).toHaveText('1 tab');
+  await expect(search).toBeInViewport();
+
+  await search.fill('nothing-matches-this');
+  await expect(view.getByText('No matching tabs')).toBeVisible();
+
+  await search.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(view.locator(`[data-key="t:${s.lonelyTabId}"]`)).toBeVisible();
+  await expect(view.getByTestId('match-count')).toHaveCount(0);
+});

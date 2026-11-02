@@ -64,6 +64,25 @@ body,
   gap: 8px;
   padding: 3px 10px;
 }
+.search {
+  flex: 1;
+  min-width: 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 12px;
+}
+.search:focus {
+  outline: none;
+  border-color: var(--card-border-focused);
+}
+.outline-empty {
+  margin: 12px 4px;
+  color: var(--text-muted);
+}
 .toolbar-status {
   color: var(--text-muted);
   font-size: 11px;

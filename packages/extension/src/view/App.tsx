@@ -10,7 +10,9 @@ import {
 import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
 import type { TabNode, WindowNode } from '../model/types';
+import { countTabs, filterTree } from '../model/filterTree';
 import {
+  EXPAND_ALL,
   allRowKeys,
   discardStaleOverrides,
   toggleGroup,
@@ -55,10 +57,16 @@ export function App() {
     return subscribe(refresh);
   }, [refresh]);
 
-  const visible = useMemo(() => visibleRowKeys(tree, collapse), [tree, collapse]);
+  // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
+  // Moves still plan against the whole tree.
+  const [query, setQuery] = useState('');
+  const shown = useMemo(() => filterTree(tree, query), [tree, query]);
+  const filtering = shown !== tree;
+  const shownCollapse = filtering ? EXPAND_ALL : collapse;
+  const visible = useMemo(() => visibleRowKeys(shown, shownCollapse), [shown, shownCollapse]);
   const signatureOf = useCallback(
-    (key: string) => hoverSignature(tree, visible, key),
-    [tree, visible],
+    (key: string) => hoverSignature(shown, visible, key),
+    [shown, visible],
   );
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
@@ -69,15 +77,16 @@ export function App() {
   const hoveredTab = useMemo(
     () =>
       hovered &&
-      tree
+      shown
         .flatMap((w) => w.children.flatMap((c) => (c.kind === 'group' ? c.tabs : [c])))
         .find((t) => t.key === hovered.key),
-    [tree, hovered],
+    [shown, hovered],
   );
 
+  // Rows a search hides leave the selection, so a drag never carries rows the user can't see.
   useEffect(() => {
-    dispatch({ type: 'prune', existing: allRowKeys(tree) });
-  }, [tree]);
+    dispatch({ type: 'prune', existing: allRowKeys(shown) });
+  }, [shown]);
 
   const onSelect = (e: MouseEvent, key: string) => dispatch(selectionActionFor(e, key, visible));
   const drag = useRowDrag(
@@ -135,13 +144,19 @@ export function App() {
 
   return (
     <div className="app">
-      <AppHeader onPreviewsChanged={bumpPreviewEpoch} />
+      <AppHeader
+        onPreviewsChanged={bumpPreviewEpoch}
+        query={query}
+        onQueryChange={setQuery}
+        matchCount={filtering ? countTabs(shown) : null}
+      />
       <main ref={listRef} className="outline" role="tree" aria-multiselectable="true">
-        {tree.map((w) => (
+        {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
+        {shown.map((w) => (
           <WindowCard
             key={w.key}
             win={w}
-            collapse={collapse}
+            collapse={shownCollapse}
             selected={selection.selected}
             onToggleWindow={onToggleWindow}
             onToggleGroup={onToggleGroup}

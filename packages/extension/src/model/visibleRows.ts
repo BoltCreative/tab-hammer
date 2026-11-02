@@ -9,7 +9,15 @@ export interface GroupOverride {
 export interface CollapseState {
   collapsedWindows: ReadonlySet<string>;
   groupOverrides: ReadonlyMap<string, GroupOverride>;
+  /** Show everything expanded, whatever else says (while a search filters the outline). */
+  expandAll?: boolean;
 }
+
+export const EXPAND_ALL: CollapseState = {
+  collapsedWindows: new Set(),
+  groupOverrides: new Map(),
+  expandAll: true,
+};
 
 // An override only holds while Chrome's own collapsed flag is unchanged; once Chrome's flag
 // changes, the view mirrors Chrome again.
@@ -19,6 +27,7 @@ function liveOverride(g: GroupNode, c: CollapseState): GroupOverride | undefined
 }
 
 export function isGroupCollapsed(g: GroupNode, c: CollapseState): boolean {
+  if (c.expandAll) return false;
   return liveOverride(g, c)?.collapsed ?? g.chromeCollapsed;
 }
 
