@@ -14,6 +14,41 @@ async function servePages(context: BrowserContext) {
   });
 }
 
+/**
+ * Opens a window (showing about:blank) with these pages in background tabs, and returns the tabs'
+ * IDs. A tab's requests are only routed once Playwright has attached to it, and a tab the service
+ * worker creates starts loading before that (unrouted, it would load Chrome's error page), so each
+ * tab starts on a placeholder and navigates once Playwright has seen it.
+ */
+async function openBackgroundTabs(
+  context: BrowserContext,
+  sw: Worker,
+  urls: string[],
+): Promise<number[]> {
+  const placeholders = urls.map((_, i) => `about:blank#tab${i}`);
+  const ids = await sw.evaluate(async (placeholders) => {
+    const win = await chrome.windows.create({ url: 'about:blank' });
+    const ids: number[] = [];
+    for (const url of placeholders)
+      ids.push((await chrome.tabs.create({ windowId: win!.id!, url, active: false })).id!);
+    return ids;
+  }, placeholders);
+  await expect
+    .poll(() => context.pages().map((p) => p.url()))
+    .toEqual(expect.arrayContaining(placeholders));
+  await sw.evaluate(
+    ({ ids, urls }) => Promise.all(ids.map((id, i) => chrome.tabs.update(id, { url: urls[i] }))),
+    { ids, urls },
+  );
+  return ids;
+}
+
+const tabInfo = (sw: Worker, tabId: number) =>
+  sw.evaluate(async (id) => {
+    const t = await chrome.tabs.get(id);
+    return { title: t.title, status: t.status, active: t.active };
+  }, tabId);
+
 const hasPreview = (sw: Worker, url: string) =>
   sw.evaluate(
     (u) => (globalThis as unknown as { tabHammer: TestHooks }).tabHammer.hasPreview(u),
@@ -112,15 +147,15 @@ test('hovering a background tab that was never shown captures it on demand', asy
 }) => {
   await servePages(context);
   const hiddenUrl = `${ORIGIN}/hidden`;
-  const tabId = await sw.evaluate(async (url) => {
-    const win = await chrome.windows.create({ url: 'about:blank' });
-    const tab = await chrome.tabs.create({ windowId: win!.id!, url, active: false });
-    return tab.id!;
-  }, hiddenUrl);
-  // Captures skip pages still loading, so hover once it has loaded.
+  const [tabId] = (await openBackgroundTabs(context, sw, [hiddenUrl])) as [number];
+  // Captures skip pages still loading, so hover once it has loaded (the served page, by its title).
   await expect
-    .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).status, tabId))
-    .toBe('complete');
+    .poll(() => tabInfo(sw, tabId))
+    .toEqual({
+      title: 'hidden',
+      status: 'complete',
+      active: false,
+    });
   expect(await hasPreview(sw, hiddenUrl)).toBe(false);
 
   await view.locator(`[data-key="t:${tabId}"]`).hover();
@@ -138,7 +173,7 @@ test('hovering a background tab that was never shown captures it on demand', asy
   expect((await card.boundingBox())?.height).toBe(boxBeforeShot?.height);
   expect(await hasPreview(sw, hiddenUrl)).toBe(true);
   // The tab stayed in the background; the capture didn't switch to it.
-  expect(await sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, tabId)).toBe(false);
+  expect((await tabInfo(sw, tabId)).active).toBe(false);
 });
 
 test('Clear previews deletes every stored preview', async ({ context, sw, view }) => {
@@ -234,4 +269,63 @@ test("clearing Chrome's history deletes the matching previews, and all of them o
   // "Clear browsing data" for all time.
   await sw.evaluate(() => chrome.history.deleteAll());
   await expect.poll(() => hasPreview(sw, keep)).toBe(false);
+});
+
+test('Refresh stale captures background tabs without switching to them', async ({
+  context,
+  sw,
+  view,
+}) => {
+  await servePages(context);
+  const urls = [`${ORIGIN}/bg-one`, `${ORIGIN}/bg-two`];
+  const tabIds = await openBackgroundTabs(context, sw, urls);
+  for (const id of tabIds)
+    await expect.poll(() => tabInfo(sw, id)).toMatchObject({ status: 'complete' });
+  expect(await hasPreview(sw, urls[0]!)).toBe(false);
+
+  await view.getByRole('button', { name: 'Refresh stale' }).click();
+  await expect(view.getByRole('status')).toHaveText('refreshed 2/2');
+  for (const url of urls) expect(await hasPreview(sw, url)).toBe(true);
+  for (const id of tabIds) expect((await tabInfo(sw, id)).active).toBe(false);
+
+  // Everything is fresh now, so a second stale run has nothing to do.
+  await view.getByRole('button', { name: 'Refresh stale' }).click();
+  await expect(view.getByRole('status')).toHaveText('Nothing to refresh');
+});
+
+test('Stop ends a refresh run after the capture in flight', async ({ context, sw, view }) => {
+  await servePages(context);
+  // The first tab's page doesn't finish loading until the test lets it (an image on it hangs), so
+  // the run is reliably mid-capture (a capture waits for the load) when Stop is pressed.
+  let release!: () => void;
+  const released = new Promise<void>((r) => (release = r));
+  await context.route('http://slow.test/**', async (route) => {
+    if (new URL(route.request().url()).pathname === '/hang') {
+      await released;
+      return route.fulfill({ status: 204 });
+    }
+    return route.fulfill({
+      contentType: 'text/html',
+      body: '<title>slow</title><img src="/hang">slow',
+    });
+  });
+  const slow = 'http://slow.test/';
+  const after = `${ORIGIN}/after`;
+  const [slowId, afterId] = (await openBackgroundTabs(context, sw, [slow, after])) as [
+    number,
+    number,
+  ];
+  await expect.poll(() => tabInfo(sw, afterId)).toMatchObject({ status: 'complete' });
+  await expect.poll(() => tabInfo(sw, slowId)).toMatchObject({ title: 'slow' });
+  expect((await tabInfo(sw, slowId)).status).toBe('loading');
+
+  await view.getByRole('button', { name: 'Refresh stale' }).click();
+  await expect(view.getByRole('status')).toHaveText('Refreshing 0/2');
+  await view.getByRole('button', { name: 'Stop' }).click();
+  await expect(view.getByRole('status')).toHaveText('Stopping…');
+  release();
+  await expect(view.getByRole('status')).toHaveText('Stopped: refreshed 1/2');
+  expect(await hasPreview(sw, slow)).toBe(true);
+  expect(await hasPreview(sw, after)).toBe(false);
+  await expect(view.getByRole('button', { name: 'Refresh stale' })).toBeVisible();
 });

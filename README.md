@@ -15,6 +15,9 @@ Key features:
 - **Double-click a tab** to bring it to the front — the fastest way to jump across windows.
 - **Hover previews**, including on-demand screenshots of tabs you haven't looked at yet, so you
   can see what a background tab is before switching to it.
+- **Refresh previews** — **Refresh stale** captures every tab with no preview or an old one, and
+  **Refresh all** re-captures every tab, one at a time in the background (no tab switching), with
+  progress and a Stop button. Sleeping tabs are skipped.
 - **Clear previews**, a one-click way to wipe every stored screenshot and start fresh.
 - **Copy all URLs** — right-click a window to copy its tabs' URLs, one per line.
 - **Claude can organize your tabs** — an MCP server lets Claude Code list, group, move, focus, open,
@@ -107,6 +110,8 @@ Chrome shows these permissions when you install Tab Hammer; here's why each is n
   below).
 - **`clipboardWrite`** — the window menu's "Copy all URLs".
 - **`nativeMessaging`** — talk to the local native host that connects Claude's MCP server.
+- **`history`** — notice when you clear Chrome's browsing history, so the matching previews are
+  deleted too. Tab Hammer never reads your history.
 
 **Privacy notes:**
 
@@ -115,8 +120,10 @@ Chrome shows these permissions when you install Tab Hammer; here's why each is n
   page reopened later or open in several tabs shares one shot.
 - Previews older than 30 days are dropped, and the store is capped at 1000 entries (oldest evicted
   first).
-- Previews are **not** cleared by Chrome's "Clear browsing data" — use Tab Hammer's own **Clear
-  previews** button (in its header) to wipe them.
+- Clearing Chrome's browsing history deletes the matching previews: clearing all of it ("All
+  time") deletes every preview, and a narrower clear (a time range, or removing single pages from
+  the History page) deletes those pages' previews. Tab Hammer's own **Clear previews** button (in
+  its header) wipes them all at any time.
 
 ## Hiding Chrome's debugging banner
 

@@ -1,6 +1,7 @@
 // Talks to the service worker about preview captures: reads its record of the latest attempt for
 // a tab and its window (see ../../shared/captureOutcomes.ts), so the hover card can say why a tab
-// has no preview, and asks it to capture a tab on demand.
+// has no preview, and asks it to capture a tab on demand (one tab for a hover card, or each in
+// turn for the header's "Refresh previews").
 import {
   OUTCOMES_KEY,
   TAB_OUTCOMES_KEY,
@@ -15,6 +16,8 @@ import {
   type CaptureTabRequest,
   type ClearPreviewsRequest,
 } from '../../shared/messages';
+import { getPreview } from '../../shared/previewStore';
+import type { RefreshTab } from '../refresh/refreshRun';
 
 /**
  * The latest capture attempt that concerns this tab: its own on-demand one if it has one (it is
@@ -59,4 +62,35 @@ export function watchTabLoaded(tabId: number, onLoaded: () => void): () => void 
   };
   chrome.tabs.onUpdated.addListener(listener);
   return () => chrome.tabs.onUpdated.removeListener(listener);
+}
+
+/** Every tab, in outline order, for "Refresh previews", and Tab Hammer's own window (left out). */
+export async function refreshCandidates(): Promise<{
+  tabs: RefreshTab[];
+  ownWindowId: number | null;
+}> {
+  const [tabs, own] = await Promise.all([chrome.tabs.query({}), chrome.windows.getCurrent()]);
+  return { tabs: tabs.flatMap((t) => toRefreshTab(t) ?? []), ownWindowId: own.id ?? null };
+}
+
+/** The tab as it is now, or undefined if it closed. */
+export async function refreshTab(tabId: number): Promise<RefreshTab | undefined> {
+  return toRefreshTab(await chrome.tabs.get(tabId).catch(() => undefined));
+}
+
+function toRefreshTab(t: chrome.tabs.Tab | undefined): RefreshTab | undefined {
+  if (t?.id === undefined) return undefined;
+  return {
+    id: t.id,
+    windowId: t.windowId,
+    url: t.url,
+    discarded: t.discarded,
+    status: t.status,
+    incognito: t.incognito,
+  };
+}
+
+/** When the page at `url` was last captured, if ever. */
+export async function previewCapturedAt(url: string): Promise<number | undefined> {
+  return (await getPreview(url))?.capturedAt;
 }
