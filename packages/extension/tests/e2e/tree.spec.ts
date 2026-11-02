@@ -198,3 +198,52 @@ test('the header search filters the outline, keeping window and group context', 
   await expect(view.locator(`[data-key="t:${s.lonelyTabId}"]`)).toBeVisible();
   await expect(view.getByTestId('match-count')).toHaveCount(0);
 });
+
+test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter activates', async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw);
+  const [alpha, bravo] = s.groupedTabIds;
+  const row = (k: string) => view.locator(`[data-key="${k}"]`);
+  const selectedKeys = () =>
+    view.locator('[aria-selected="true"]').evaluateAll((els) => els.map((e) => e.dataset.key));
+
+  await row(`t:${alpha}`).click();
+  await view.keyboard.press('ArrowDown');
+  await expect(row(`t:${bravo}`)).toBeFocused();
+  expect(await selectedKeys()).toEqual([`t:${bravo}`]);
+  await view.keyboard.press('Shift+ArrowDown'); // onto Charlie, the window's loose tab
+  const charlie = await row(`w:${s.winA}`)
+    .locator('..')
+    .locator(':scope > [data-kind="tab"]')
+    .getAttribute('data-key');
+  expect(await selectedKeys()).toEqual([`t:${bravo}`, charlie]);
+  await expect(row(charlie!)).toHaveAttribute('aria-level', '2');
+  await expect(row(`t:${bravo}`)).toHaveAttribute('aria-level', '3');
+  await expect(row(charlie!)).toHaveAttribute('tabindex', '0');
+
+  await view.keyboard.press('ArrowLeft'); // to the window
+  await expect(row(`w:${s.winA}`)).toBeFocused();
+  await expect(row(`w:${s.winA}`)).toHaveAttribute('aria-expanded', 'true');
+  await view.keyboard.press('ArrowLeft'); // collapse it
+  await expect(row(`w:${s.winA}`)).toHaveAttribute('aria-expanded', 'false');
+  await expect(row(`t:${alpha}`)).toHaveCount(0);
+  await view.keyboard.press('ArrowRight'); // expand
+  await view.keyboard.press('ArrowRight'); // into the group
+  await expect(row(`g:${await groupIdOf(sw, alpha)}`)).toBeFocused();
+  await view.keyboard.press('ArrowDown');
+  await view.keyboard.press('Enter');
+  await expect
+    .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, alpha))
+    .toBe(true);
+
+  // Down arrow from the search box lands in the outline.
+  await view.getByRole('searchbox').focus();
+  await view.keyboard.press('ArrowDown');
+  await expect(row(`t:${alpha}`)).toBeFocused();
+});
+
+async function groupIdOf(sw: import('@playwright/test').Worker, tabId: number) {
+  return sw.evaluate(async (id) => (await chrome.tabs.get(id)).groupId, tabId);
+}

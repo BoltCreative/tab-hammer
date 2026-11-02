@@ -133,6 +133,13 @@ main.outline {
 .row:hover {
   background: var(--row-hover);
 }
+.row:focus {
+  outline: none;
+}
+.row:focus-visible {
+  outline: 1px solid var(--drop-indicator);
+  outline-offset: -1px;
+}
 .row[aria-selected='true'] {
   background: var(--row-selected);
   color: #fff;

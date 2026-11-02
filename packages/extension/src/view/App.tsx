@@ -5,24 +5,26 @@ import {
   useReducer,
   useRef,
   useState,
+  type KeyboardEvent,
   type MouseEvent,
 } from 'react';
 import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
-import type { TabNode, WindowNode } from '../model/types';
+import type { GroupNode, TabNode, WindowNode } from '../model/types';
 import { countTabs, filterTree } from '../model/filterTree';
+import { navIntent, outlineRows } from '../model/keyboardNav';
 import {
   EXPAND_ALL,
   allRowKeys,
   discardStaleOverrides,
   toggleGroup,
-  visibleRowKeys,
   type CollapseState,
 } from '../model/visibleRows';
 import { planMove } from '../model/moveSelection';
 import { activateTab, applyMoveOps, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
+import type { RowPropsFor } from './components/rowProps';
 import { useRowDrag } from './components/useRowDrag';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
@@ -63,7 +65,9 @@ export function App() {
   const shown = useMemo(() => filterTree(tree, query), [tree, query]);
   const filtering = shown !== tree;
   const shownCollapse = filtering ? EXPAND_ALL : collapse;
-  const visible = useMemo(() => visibleRowKeys(shown, shownCollapse), [shown, shownCollapse]);
+  const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
+  const visible = useMemo(() => rows.map((r) => r.key), [rows]);
+  const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
   const signatureOf = useCallback(
     (key: string) => hoverSignature(shown, visible, key),
     [shown, visible],
@@ -88,7 +92,17 @@ export function App() {
     dispatch({ type: 'prune', existing: allRowKeys(shown) });
   }, [shown]);
 
-  const onSelect = (e: MouseEvent, key: string) => dispatch(selectionActionFor(e, key, visible));
+  // The keyboard cursor: the row arrow keys move from. A click puts it on the clicked row.
+  const [cursor, setCursor] = useState<string | null>(null);
+  // The one row in the Tab order (roving tabindex): the cursor, or the first row.
+  const tabStop = cursor !== null && rowByKey.has(cursor) ? cursor : (visible[0] ?? null);
+  const focusRow = (key: string) =>
+    listRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus();
+
+  const onSelect = (e: MouseEvent, key: string) => {
+    setCursor(key);
+    dispatch(selectionActionFor(e, key, visible));
+  };
   const drag = useRowDrag(
     selection.selected,
     (key) => dispatch({ type: 'click', key }),
@@ -101,6 +115,17 @@ export function App() {
       });
     },
   );
+  const rowProps: RowPropsFor = (key, kind) => {
+    const r = rowByKey.get(key);
+    return {
+      ...drag(key, kind),
+      tabIndex: key === tabStop ? 0 : -1,
+      'aria-level': r?.level,
+      'aria-setsize': r?.setSize,
+      'aria-posinset': r?.posInSet,
+      'aria-expanded': r?.expanded,
+    };
+  };
   const onActivate = (t: TabNode) => void activateTab(t.tabId, t.windowId).catch(refresh);
   const onFocusWindow = (id: number) => void focusWindow(id).catch(refresh);
 
@@ -142,15 +167,64 @@ export function App() {
     [tree],
   );
 
+  const onTreeKeyDown = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const intent = navIntent(rows, tabStop, e.key, e.shiftKey);
+    if (!intent) return;
+    e.preventDefault();
+    switch (intent.type) {
+      case 'move':
+        setCursor(intent.key);
+        dispatch(
+          intent.extend
+            ? { type: 'range', key: intent.key, visible }
+            : { type: 'click', key: intent.key },
+        );
+        focusRow(intent.key);
+        break;
+      case 'toggleSelect':
+        dispatch({ type: 'toggle', key: intent.key });
+        break;
+      case 'toggleExpand':
+        if (intent.key.startsWith('w:')) onToggleWindow(intent.key);
+        else onToggleGroup(intent.key);
+        break;
+      case 'activate': {
+        // Same as double-click: a tab is activated, a window focused; a group opens or closes.
+        const node = findNode(shown, intent.key);
+        if (node?.kind === 'tab') onActivate(node);
+        else if (node?.kind === 'window') onFocusWindow(node.windowId);
+        else if (node?.kind === 'group' && rowByKey.get(node.key)?.expanded !== undefined) {
+          onToggleGroup(node.key);
+        }
+        break;
+      }
+    }
+  };
+  // Down arrow in the search box moves into the outline.
+  const enterOutline = () => {
+    if (tabStop === null) return;
+    setCursor(tabStop);
+    focusRow(tabStop);
+  };
+
   return (
     <div className="app">
       <AppHeader
         onPreviewsChanged={bumpPreviewEpoch}
         query={query}
         onQueryChange={setQuery}
+        onSearchArrowDown={enterOutline}
         matchCount={filtering ? countTabs(shown) : null}
       />
-      <main ref={listRef} className="outline" role="tree" aria-multiselectable="true">
+      <main
+        ref={listRef}
+        className="outline"
+        role="tree"
+        aria-label="Windows and tabs"
+        aria-multiselectable="true"
+        onKeyDown={onTreeKeyDown}
+      >
         {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
         {shown.map((w) => (
           <WindowCard
@@ -165,7 +239,7 @@ export function App() {
             onFocusWindow={onFocusWindow}
             onWindowContextMenu={onWindowContextMenu}
             hover={hover}
-            drag={drag}
+            rowProps={rowProps}
           />
         ))}
       </main>
@@ -187,4 +261,18 @@ export function App() {
       )}
     </div>
   );
+}
+
+function findNode(tree: WindowNode[], key: string): WindowNode | GroupNode | TabNode | undefined {
+  for (const w of tree) {
+    if (w.key === key) return w;
+    for (const c of w.children) {
+      if (c.key === key) return c;
+      if (c.kind === 'group') {
+        const t = c.tabs.find((x) => x.key === key);
+        if (t) return t;
+      }
+    }
+  }
+  return undefined;
 }

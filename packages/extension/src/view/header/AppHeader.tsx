@@ -32,10 +32,17 @@ interface Props {
   onPreviewsChanged: () => void;
   query: string;
   onQueryChange: (query: string) => void;
+  onSearchArrowDown: () => void;
   matchCount: number | null; // tabs matching the search, or null when not searching
 }
 
-export function AppHeader({ onPreviewsChanged, query, onQueryChange, matchCount }: Props) {
+export function AppHeader({
+  onPreviewsChanged,
+  query,
+  onQueryChange,
+  onSearchArrowDown,
+  matchCount,
+}: Props) {
   const [status, setStatus] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -77,6 +84,10 @@ export function AppHeader({ onPreviewsChanged, query, onQueryChange, matchCount 
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') onQueryChange('');
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              onSearchArrowDown();
+            }
           }}
         />
         {matchCount !== null && (

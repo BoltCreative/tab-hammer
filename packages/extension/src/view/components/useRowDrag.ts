@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { dragKeys, dropPositionFor, type DropTarget } from '../../model/moveSelection';
-
-type Kind = 'window' | 'group' | 'tab';
+import type { RowKind as Kind } from './rowProps';
 
 export interface RowDragProps {
   draggable: boolean;
