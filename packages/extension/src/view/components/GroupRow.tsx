@@ -8,6 +8,7 @@ interface Props {
   group: GroupNode;
   collapsed: boolean;
   selected: ReadonlySet<string>;
+  duplicates: ReadonlySet<string>; // tab keys that share a URL with another tab
   onToggleCollapse: (key: string) => void;
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
@@ -19,6 +20,7 @@ export function GroupRow({
   group,
   collapsed,
   selected,
+  duplicates,
   onToggleCollapse,
   onSelect,
   onActivate,
@@ -57,6 +59,7 @@ export function GroupRow({
               key={t.key}
               tab={t}
               selected={selected.has(t.key)}
+              duplicate={duplicates.has(t.key)}
               onSelect={onSelect}
               onActivate={onActivate}
               hover={hover}

@@ -11,6 +11,7 @@ import {
 import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
 import type { GroupNode, TabNode, WindowNode } from '../model/types';
+import { findDuplicates } from '../model/duplicates';
 import { countTabs, filterTree } from '../model/filterTree';
 import { navIntent, outlineRows } from '../model/keyboardNav';
 import {
@@ -21,7 +22,14 @@ import {
   type CollapseState,
 } from '../model/visibleRows';
 import { planMove } from '../model/moveSelection';
-import { activateTab, applyMoveOps, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
+import {
+  activateTab,
+  applyMoveOps,
+  closeTabs,
+  focusWindow,
+  snapshot,
+  subscribe,
+} from './chrome/chromeSource';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
 import type { RowPropsFor } from './components/rowProps';
@@ -63,6 +71,8 @@ export function App() {
   // Moves still plan against the whole tree.
   const [query, setQuery] = useState('');
   const shown = useMemo(() => filterTree(tree, query), [tree, query]);
+  // Duplicates are found across the whole tree, whatever the search shows.
+  const duplicates = useMemo(() => findDuplicates(tree), [tree]);
   const filtering = shown !== tree;
   const shownCollapse = filtering ? EXPAND_ALL : collapse;
   const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
@@ -215,6 +225,8 @@ export function App() {
         query={query}
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
+        duplicateCount={duplicates.toClose.length}
+        onCloseDuplicates={() => closeTabs(duplicates.toClose.map((t) => t.tabId))}
         matchCount={filtering ? countTabs(shown) : null}
       />
       <main
@@ -232,6 +244,7 @@ export function App() {
             win={w}
             collapse={shownCollapse}
             selected={selection.selected}
+            duplicates={duplicates.keys}
             onToggleWindow={onToggleWindow}
             onToggleGroup={onToggleGroup}
             onSelect={onSelect}

@@ -10,6 +10,7 @@ interface Props {
   win: WindowNode;
   collapse: CollapseState;
   selected: ReadonlySet<string>;
+  duplicates: ReadonlySet<string>; // tab keys that share a URL with another tab
   onToggleWindow: (key: string) => void;
   onToggleGroup: (key: string) => void;
   onSelect: (e: MouseEvent, key: string) => void;
@@ -61,6 +62,7 @@ export function WindowCard(p: Props) {
               group={c}
               collapsed={isGroupCollapsed(c, p.collapse)}
               selected={p.selected}
+              duplicates={p.duplicates}
               onToggleCollapse={p.onToggleGroup}
               onSelect={p.onSelect}
               onActivate={p.onActivate}
@@ -72,6 +74,7 @@ export function WindowCard(p: Props) {
               key={c.key}
               tab={c}
               selected={p.selected.has(c.key)}
+              duplicate={p.duplicates.has(c.key)}
               onSelect={p.onSelect}
               onActivate={p.onActivate}
               hover={p.hover}

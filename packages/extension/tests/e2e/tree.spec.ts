@@ -247,3 +247,24 @@ test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter
 async function groupIdOf(sw: import('@playwright/test').Worker, tabId: number) {
   return sw.evaluate(async (id) => (await chrome.tabs.get(id)).groupId, tabId);
 }
+
+test('closes duplicate tabs across windows, keeping one copy', async ({ sw, view }) => {
+  const dup = 'data:text/html,<title>Dup</title>';
+  await sw.evaluate(async (url) => {
+    await chrome.windows.create({
+      url: [url, `${url}#again`, 'data:text/html,<title>Solo</title>'],
+    });
+    await chrome.windows.create({ url });
+  }, dup);
+  await expect(view.locator('.tab.duplicate')).toHaveCount(3);
+  const button = view.getByRole('button', { name: 'Close 2 duplicates' });
+  await button.click();
+  await expect
+    .poll(() =>
+      sw.evaluate(async () => (await chrome.tabs.query({ title: 'Dup' })).map((t) => t.active)),
+    )
+    .toEqual([true]);
+  await expect(view.locator('.tab.duplicate')).toHaveCount(0);
+  await expect(button).toHaveCount(0);
+  await expect(view.getByText('Solo')).toBeVisible();
+});

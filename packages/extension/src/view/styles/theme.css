@@ -395,3 +395,12 @@ main.outline {
 .row[data-drop='inside'] {
   box-shadow: inset 0 0 0 2px var(--drop-indicator);
 }
+/* Marks a tab whose URL is open in another tab too (see "Close duplicates" in the header). */
+.dup-badge {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--card-border);
+  border-radius: 3px;
+  padding: 0 3px;
+}

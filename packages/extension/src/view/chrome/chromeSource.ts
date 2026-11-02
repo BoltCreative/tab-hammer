@@ -176,3 +176,7 @@ export async function applyMoveOps(ops: MoveOp[]): Promise<void> {
     }
   }
 }
+
+export async function closeTabs(tabIds: number[]): Promise<void> {
+  if (tabIds.length > 0) await chrome.tabs.remove(tabIds);
+}
