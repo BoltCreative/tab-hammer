@@ -188,6 +188,41 @@ describe('reconcile', () => {
     expect(ids(outline.windows[0]!.tabs)).toEqual(['b', 'a']);
   });
 
+  it('a window still open but emptied by a tab move does not keep the moved tab', () => {
+    const o = {
+      windows: [
+        win('w1', {
+          chromeWindowId: 1,
+          groups: [group('G', { chromeGroupId: 5 })],
+          tabs: [live('a', 11, { groupId: 'G' }), tab('h', { groupId: 'G' })],
+        }),
+        win('w2', { chromeWindowId: 2, tabs: [live('b', 21)] }),
+      ],
+    };
+    const { outline } = reconcile(
+      o,
+      input(snap({ windows: { 1: [], 2: [t(21), t(11, { groupId: 5 })] }, groups: [g(5, 2)] })),
+    );
+    const all = outline.windows.flatMap((w) => ids(w.tabs));
+    expect(all.filter((id) => id === 'a')).toHaveLength(1);
+    const [w1, w2] = outline.windows;
+    expect(w1!.tabs.map((x) => [x.id, x.groupId])).toEqual([['h', 'n1']]);
+    expect(w1!.groups.map((x) => [x.id, x.chromeGroupId])).toEqual([['n1', undefined]]);
+    expect(ids(w2!.tabs)).toEqual(['b', 'a']);
+    expect(w2!.groups.map((x) => x.id)).toEqual(['G']);
+  });
+
+  it('a missed close of a window holding hibernated tabs hibernates it', () => {
+    const o = { windows: [win('w', { chromeWindowId: 1, tabs: [live('a', 11), tab('h')] })] };
+    const w = reconcile(o, input(snap({ windows: {} }))).outline.windows[0]!;
+    expect(w.state).toBe('hibernated');
+    expect(w.closedAt).toBeUndefined();
+    expect(w.tabs.map((x) => [x.id, x.liveAtClose])).toEqual([
+      ['a', true],
+      ['h', false],
+    ]);
+  });
+
   it('an unknown window becomes a provisional row at the bottom', () => {
     const o = {
       windows: [
@@ -311,6 +346,14 @@ describe('reconcile', () => {
     expect(byId.get('K')!.chromeGroupId).toBeUndefined(); // Chrome group gone, hibernated member keeps it
     expect(byId.get('K')!.modifiedAt).toBe(0);
     expect(byId.get('n1')).toMatchObject({ chromeGroupId: 7, title: 'g7', modifiedAt: NOW });
+  });
+
+  it('a group the group query missed keeps its record and members this round', () => {
+    const G = group('G', { chromeGroupId: 5 });
+    const a = live('a', 11, { groupId: 'G' });
+    const o = { windows: [win('w', { chromeWindowId: 1, groups: [G], tabs: [a] })] };
+    const r = reconcile(o, input(snap({ windows: { 1: [t(11, { groupId: 5 })] }, groups: [] })));
+    expect(r.outline).toBe(o);
   });
 
   it('a group moved to another window takes its record with it', () => {

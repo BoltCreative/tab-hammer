@@ -59,10 +59,15 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
 
   // Rule 1: index live records by Chrome ID across windows (a closing window keeps its own).
   const tabIndex = new Map<number, TabRec>();
+  const tabHome = new Map<number, number>(); // chromeTabId -> Chrome window ID it was recorded in
   const groupIndex = new Map<number, GroupRec>();
   for (const w of liveWindows) {
     if (isClosing(w)) continue;
-    for (const t of w.tabs) if (t.chromeTabId !== undefined) tabIndex.set(t.chromeTabId, t);
+    for (const t of w.tabs) {
+      if (t.chromeTabId === undefined) continue;
+      tabIndex.set(t.chromeTabId, t);
+      tabHome.set(t.chromeTabId, w.chromeWindowId!);
+    }
     for (const g of w.groups) if (g.chromeGroupId !== undefined) groupIndex.set(g.chromeGroupId, g);
   }
 
@@ -75,6 +80,10 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
   for (const list of tabsByWindow.values()) list.sort((a, b) => a.index - b.index);
   const snapshotTabIds = new Set(snapshot.tabs.map((t) => t.id));
   const liveGroups = new Map(snapshot.groups.map((g) => [g.id, g]));
+  // Groups a tab reports but the group query missed (a race): leave them as they are this round.
+  const racedGroups = new Set(
+    snapshot.tabs.map((t) => t.groupId).filter((id) => id !== -1 && !liveGroups.has(id)),
+  );
 
   // Records whose persisted fields changed this round; their window is stamped too.
   const stamped = new WeakSet<object>();
@@ -115,8 +124,11 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
   }
 
   function resolveTab(lt: LiveTab): TabRec {
-    const groupId = lt.groupId === -1 ? undefined : resolveGroup(lt.groupId)?.id;
     const existing = tabIndex.get(lt.id);
+    let groupId: string | undefined;
+    if (racedGroups.has(lt.groupId)) {
+      if (tabHome.get(lt.id) === lt.windowId) groupId = existing?.groupId;
+    } else if (lt.groupId !== -1) groupId = resolveGroup(lt.groupId)?.id;
     if (!existing) {
       const rec: TabRec = {
         id: newId(),
@@ -164,7 +176,9 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
         continue;
       }
       const lg = liveGroups.get(g.chromeGroupId);
-      if (!lg) {
+      if (!lg && racedGroups.has(g.chromeGroupId)) {
+        kept.push(g);
+      } else if (!lg) {
         const next = { ...g };
         delete next.chromeGroupId;
         kept.push(next);
@@ -224,14 +238,20 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
   }
 
   /** Rule 2: Chrome closed the window without us seeing it. Tabs and groups it no longer owns go. */
-  function missedClose(w: WindowRec): WindowRec | undefined {
+  /** `w` without the tabs and groups Chrome now has in other windows (`home` = w's Chrome ID if it's still open). */
+  function withoutMoved(w: WindowRec, home: number | undefined): WindowRec {
     const tabs = w.tabs.filter(
       (t) => t.chromeTabId === undefined || !snapshotTabIds.has(t.chromeTabId),
     );
-    if (tabs.length === 0) return undefined; // every tab moved to another window
-    const { groups: kept, remap } = keepGroups(w.groups, tabs, undefined);
+    const { groups: kept, remap } = keepGroups(w.groups, tabs, home);
     const remapped = remapTabs(tabs, remap);
-    const rest = stampIfChanged(w, remapped, referenced(kept, remapped));
+    return stampIfChanged(w, remapped, referenced(kept, remapped));
+  }
+
+  /** Rule 2: Chrome closed the window without us seeing it. */
+  function missedClose(w: WindowRec): WindowRec | undefined {
+    const rest = withoutMoved(w, undefined);
+    if (rest.tabs.length === 0) return undefined; // every tab moved to another window
     return closeWindow({ windows: [rest] }, rest.id, now).windows[0];
   }
 
@@ -247,6 +267,9 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
       else if (!isClosing(w) && tabsByWindow.has(chromeId)) {
         const { tabs, groups } = content(chromeId, w);
         next = stampIfChanged(w, tabs, groups);
+      } else if (!isClosing(w)) {
+        // Rule 3: no tabs this round (e.g. its last tab just moved out); keep the rest.
+        next = withoutMoved(w, chromeId);
       }
     }
     if (next !== w) changed = true;
