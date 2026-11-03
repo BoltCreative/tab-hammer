@@ -18,6 +18,7 @@ import {
 import { browserSession } from '../session';
 import { liveDetails, readSnapshot } from './chromeOutline';
 import { createJobQueue } from './jobQueue';
+import { createLaunchUrls } from './launchUrls';
 import { loadOutline, saveOutline } from './outlineStore';
 import { createSettleTracker } from './settleTracker';
 
@@ -42,13 +43,6 @@ async function readInstallId(): Promise<string> {
   return id;
 }
 
-/**
- * chrome.storage.session key mirroring the launch-URL map, so it survives the worker idling out
- * between a tab's creation and its window settling (session storage ends with the browser
- * session, as tab IDs do).
- */
-export const LAUNCH_URLS_KEY = 'outlineLaunchUrls';
-
 const newId = () => crypto.randomUUID();
 
 function sameLive(a: LiveDetails | null, b: LiveDetails): boolean {
@@ -65,7 +59,14 @@ export function registerOutline(): OutlineOwner {
   let initialized = false;
 
   // Recorded by listeners, read by jobs.
-  const launchUrls = new Map<number, string>(); // chromeTabId -> first address it had
+  const launchUrls = createLaunchUrls(
+    {
+      getAll: () => chrome.storage.session.get(null),
+      set: (items) => chrome.storage.session.set(items),
+      remove: (keys) => chrome.storage.session.remove(keys),
+    },
+    (err) => console.error('[outline] launch URLs', err),
+  );
   const closingWindowIds = new Set<number>();
   let focusEvent: number | undefined; // latest onFocusChanged window, not yet checked
   let focusedWindowId: number | null = null;
@@ -139,7 +140,7 @@ export function registerOutline(): OutlineOwner {
     after = same,
     force = false,
   }: { before?: Op; after?: Op; force?: boolean } = {}): Promise<void> {
-    const snapshot = await readSnapshot(launchUrls);
+    const snapshot = await readSnapshot(launchUrls.urls);
     updateFocus(snapshot);
     const now = Date.now();
     const r = reconcile(before(outline), { snapshot, closingWindowIds, now, newId, installId });
@@ -149,7 +150,7 @@ export function registerOutline(): OutlineOwner {
 
   async function init(): Promise<void> {
     installId = await readInstallId();
-    await loadLaunchUrls();
+    await launchUrls.load();
     const { meta, outline: loaded } = await loadOutline();
     outline = persisted = loaded;
     sessionId = await browserSession.current();
@@ -177,52 +178,18 @@ export function registerOutline(): OutlineOwner {
       tracker.touch(chromeWindowId);
   }
 
-  // Tabs removed before the stored launch URLs were loaded, so loading doesn't bring them back.
-  let removedBeforeLoad: Set<number> | null = new Set();
-
-  async function loadLaunchUrls(): Promise<void> {
-    if (removedBeforeLoad === null) return; // a retried init already loaded them
-    const { [LAUNCH_URLS_KEY]: stored } = await chrome.storage.session.get(LAUNCH_URLS_KEY);
-    if (stored && typeof stored === 'object') {
-      for (const [id, url] of Object.entries(stored as Record<string, unknown>)) {
-        const tabId = Number(id);
-        // Stored entries were recorded first, so they win over ones noted since the worker woke.
-        if (typeof url === 'string' && !removedBeforeLoad.has(tabId)) launchUrls.set(tabId, url);
-      }
-    }
-    removedBeforeLoad = null;
-    saveLaunchUrls();
-  }
-
-  function saveLaunchUrls(): void {
-    void chrome.storage.session
-      .set({ [LAUNCH_URLS_KEY]: Object.fromEntries(launchUrls) })
-      .catch((err: unknown) => console.error('[outline] launch URLs', err));
-  }
-
-  function noteLaunchUrl(tabId: number, url: string | undefined): void {
-    if (!url || launchUrls.has(tabId)) return;
-    launchUrls.set(tabId, url);
-    saveLaunchUrls();
-  }
-
-  function forgetLaunchUrl(tabId: number): void {
-    removedBeforeLoad?.add(tabId);
-    if (launchUrls.delete(tabId)) saveLaunchUrls();
-  }
-
   chrome.tabs.onCreated.addListener((tab) => {
-    if (tab.id !== undefined) noteLaunchUrl(tab.id, tab.url || tab.pendingUrl);
+    if (tab.id !== undefined) launchUrls.note(tab.id, tab.url || tab.pendingUrl);
     touchIfProvisional(tab.windowId);
     scheduleReconcile();
   });
   // The first committed navigation is the address Chrome restored the tab with, even if the
   // page later redirects (an expired login, a challenge page).
   chrome.webNavigation.onCommitted.addListener((d) => {
-    if (d.frameId === 0) noteLaunchUrl(d.tabId, d.url);
+    if (d.frameId === 0) launchUrls.note(d.tabId, d.url);
   });
   chrome.tabs.onRemoved.addListener((tabId, info) => {
-    forgetLaunchUrl(tabId);
+    launchUrls.forget(tabId);
     if (info.isWindowClosing) {
       // The window's own removal closes its record (with every tab) once it lands.
       closingWindowIds.add(info.windowId);
@@ -246,9 +213,9 @@ export function registerOutline(): OutlineOwner {
   chrome.tabs.onUpdated.addListener(scheduleReconcile);
   chrome.tabs.onActivated.addListener(scheduleReconcile);
   chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
-    const launch = launchUrls.get(removedTabId);
-    forgetLaunchUrl(removedTabId);
-    noteLaunchUrl(addedTabId, launch);
+    const launch = launchUrls.urls.get(removedTabId);
+    launchUrls.forget(removedTabId);
+    launchUrls.note(addedTabId, launch);
     // Reconciling too picks up the new tab's live details.
     void enqueue(() => step({ before: (o) => replaceTabId(o, addedTabId, removedTabId) }));
   });
