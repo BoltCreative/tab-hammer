@@ -142,11 +142,16 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
       stamped.add(rec);
       return rec;
     }
+    // A tab that hasn't loaded its saved address yet (a lazily reopened, discarded one) reports
+    // an empty title or its url as the title, and maybe no url: the saved ones stay until it loads.
+    const url = lt.url || existing.url;
+    const unloaded = url === existing.url && (!lt.title || lt.title === lt.url);
+    const title = unloaded ? existing.title : lt.title;
     const persisted =
-      existing.url !== lt.url || existing.title !== lt.title || existing.groupId !== groupId;
+      existing.url !== url || existing.title !== title || existing.groupId !== groupId;
     const fillLaunch = existing.launchUrl === undefined && lt.launchUrl !== undefined;
     if (!persisted && !fillLaunch) return existing;
-    const rec: TabRec = { ...existing, url: lt.url, title: lt.title };
+    const rec: TabRec = { ...existing, url, title };
     if (groupId === undefined) delete rec.groupId;
     else rec.groupId = groupId;
     if (fillLaunch) rec.launchUrl = lt.launchUrl;

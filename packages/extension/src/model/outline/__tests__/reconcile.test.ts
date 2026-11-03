@@ -294,6 +294,54 @@ describe('reconcile', () => {
     expect(w2!.tabs[0]).toMatchObject({ modifiedAt: 0, launchUrl: 'https://e.test/launch' });
   });
 
+  it('a tab that has not loaded yet keeps its saved title and url', () => {
+    // A lazily reopened (discarded) tab reports an empty title, or its url as the title, and may
+    // not report a url at all until it loads.
+    const o = {
+      windows: [
+        win('w1', {
+          chromeWindowId: 1,
+          tabs: [
+            live('a', 11, { title: 'Alpha' }),
+            live('b', 12, { title: 'Bravo' }),
+            live('c', 13, { url: 'https://e.test/saved' }),
+          ],
+        }),
+      ],
+    };
+    const { outline } = reconcile(
+      o,
+      input(
+        snap({
+          windows: {
+            1: [t(11, { title: '' }), t(12, { title: 'https://e.test/12' }), t(13, { url: '' })],
+          },
+        }),
+      ),
+    );
+    expect(outline.windows[0]).toBe(o.windows[0]);
+
+    // A tab that navigated elsewhere takes the new page's title, even one that is its url.
+    const moved = reconcile(
+      o,
+      input(
+        snap({ windows: { 1: [t(11, { url: 'https://x.test/', title: 'https://x.test/' })] } }),
+      ),
+    ).outline;
+    expect(moved.windows[0]!.tabs[0]).toMatchObject({
+      url: 'https://x.test/',
+      title: 'https://x.test/',
+    });
+
+    // Once loaded, the real title replaces the saved one.
+    const loaded = reconcile(o, input(snap({ windows: { 1: [t(11), t(12), t(13)] } }))).outline;
+    expect(loaded.windows[0]!.tabs.map((x) => [x.title, x.url, x.modifiedAt])).toEqual([
+      ['t11', 'https://e.test/11', NOW],
+      ['t12', 'https://e.test/12', NOW],
+      ['t13', 'https://e.test/13', NOW],
+    ]);
+  });
+
   it('groups follow Chrome for live tabs and keep hibernated members', () => {
     const o = {
       windows: [
