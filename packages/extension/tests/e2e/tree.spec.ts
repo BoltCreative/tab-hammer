@@ -169,3 +169,102 @@ test("right-clicking a window header copies all its tabs' URLs in tab order", as
     .poll(() => view.evaluate(() => navigator.clipboard.readText()))
     .toBe(expected.join('\n'));
 });
+
+test('the header search filters the outline, keeping window and group context', async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw);
+  // Collapsed in Chrome: a match inside still shows.
+  await sw.evaluate(async (tabId) => {
+    const { groupId } = await chrome.tabs.get(tabId);
+    await chrome.tabGroups.update(groupId, { collapsed: true });
+  }, s.groupedTabIds[0]);
+  const search = view.getByRole('searchbox', { name: 'Search tabs by title or URL' });
+  await search.fill('bravo');
+  const rows = view.locator('main.outline [role="treeitem"]');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveAttribute('data-key', `w:${s.winA}`);
+  await expect(rows.locator('.title').nth(1)).toHaveText('Research');
+  await expect(rows.locator('.title').nth(2)).toHaveText('Bravo');
+  await expect(view.getByTestId('match-count')).toHaveText('1 tab');
+  await expect(search).toBeInViewport();
+
+  await search.fill('nothing-matches-this');
+  await expect(view.getByText('No matching tabs')).toBeVisible();
+
+  await search.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(view.locator(`[data-key="t:${s.lonelyTabId}"]`)).toBeVisible();
+  await expect(view.getByTestId('match-count')).toHaveCount(0);
+});
+
+test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter activates', async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw);
+  const [alpha, bravo] = s.groupedTabIds;
+  const row = (k: string) => view.locator(`[data-key="${k}"]`);
+  const selectedKeys = () =>
+    view.locator('[aria-selected="true"]').evaluateAll((els) => els.map((e) => e.dataset.key));
+
+  await row(`t:${alpha}`).click();
+  await view.keyboard.press('ArrowDown');
+  await expect(row(`t:${bravo}`)).toBeFocused();
+  expect(await selectedKeys()).toEqual([`t:${bravo}`]);
+  await view.keyboard.press('Shift+ArrowDown'); // onto Charlie, the window's loose tab
+  const charlie = await row(`w:${s.winA}`)
+    .locator('..')
+    .locator(':scope > [data-kind="tab"]')
+    .getAttribute('data-key');
+  expect(await selectedKeys()).toEqual([`t:${bravo}`, charlie]);
+  await expect(row(charlie!)).toHaveAttribute('aria-level', '2');
+  await expect(row(`t:${bravo}`)).toHaveAttribute('aria-level', '3');
+  await expect(row(charlie!)).toHaveAttribute('tabindex', '0');
+
+  await view.keyboard.press('ArrowLeft'); // to the window
+  await expect(row(`w:${s.winA}`)).toBeFocused();
+  await expect(row(`w:${s.winA}`)).toHaveAttribute('aria-expanded', 'true');
+  await view.keyboard.press('ArrowLeft'); // collapse it
+  await expect(row(`w:${s.winA}`)).toHaveAttribute('aria-expanded', 'false');
+  await expect(row(`t:${alpha}`)).toHaveCount(0);
+  await view.keyboard.press('ArrowRight'); // expand
+  await view.keyboard.press('ArrowRight'); // into the group
+  await expect(row(`g:${await groupIdOf(sw, alpha)}`)).toBeFocused();
+  await view.keyboard.press('ArrowDown');
+  await view.keyboard.press('Enter');
+  await expect
+    .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, alpha))
+    .toBe(true);
+
+  // Down arrow from the search box lands in the outline.
+  await view.getByRole('searchbox').focus();
+  await view.keyboard.press('ArrowDown');
+  await expect(row(`t:${alpha}`)).toBeFocused();
+});
+
+async function groupIdOf(sw: import('@playwright/test').Worker, tabId: number) {
+  return sw.evaluate(async (id) => (await chrome.tabs.get(id)).groupId, tabId);
+}
+
+test('closes duplicate tabs across windows, keeping one copy', async ({ sw, view }) => {
+  const dup = 'data:text/html,<title>Dup</title>';
+  await sw.evaluate(async (url) => {
+    await chrome.windows.create({
+      url: [url, `${url}#again`, 'data:text/html,<title>Solo</title>'],
+    });
+    await chrome.windows.create({ url });
+  }, dup);
+  await expect(view.locator('.tab.duplicate')).toHaveCount(3);
+  const button = view.getByRole('button', { name: 'Close 2 duplicates' });
+  await button.click();
+  await expect
+    .poll(() =>
+      sw.evaluate(async () => (await chrome.tabs.query({ title: 'Dup' })).map((t) => t.active)),
+    )
+    .toEqual([true]);
+  await expect(view.locator('.tab.duplicate')).toHaveCount(0);
+  await expect(button).toHaveCount(0);
+  await expect(view.getByText('Solo')).toBeVisible();
+});

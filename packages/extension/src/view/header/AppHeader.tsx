@@ -24,11 +24,29 @@ function refreshStatus(state: RefreshState): string {
   return `${state.stopped ? 'Stopped: ' : ''}refreshed ${p.saved}/${p.total}${failed}`;
 }
 
+interface Props {
+  onPreviewsChanged: () => void;
+  query: string;
+  onQueryChange: (query: string) => void;
+  onSearchArrowDown: () => void;
+  duplicateCount: number; // tabs "Close duplicates" would close
+  onCloseDuplicates: () => Promise<void>;
+  matchCount: number | null; // tabs matching the search, or null when not searching
+}
+
 /**
  * The view's fixed header: it stays put while the outline scrolls beneath it. Toolbar and action
  * buttons, and the permission banner, go here.
  */
-export function AppHeader({ onPreviewsChanged }: { onPreviewsChanged: () => void }) {
+export function AppHeader({
+  onPreviewsChanged,
+  query,
+  onQueryChange,
+  onSearchArrowDown,
+  matchCount,
+  duplicateCount,
+  onCloseDuplicates,
+}: Props) {
   const [status, setStatus] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -61,9 +79,43 @@ export function AppHeader({ onPreviewsChanged }: { onPreviewsChanged: () => void
     <header className="app-header">
       <PreviewPermissionBanner />
       <div className="toolbar" role="toolbar" aria-label="Tab Hammer tools">
+        <input
+          type="search"
+          className="search"
+          placeholder="Search tabs"
+          aria-label="Search tabs by title or URL"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') onQueryChange('');
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              onSearchArrowDown();
+            }
+          }}
+        />
+        {matchCount !== null && (
+          <span className="toolbar-status" data-testid="match-count">
+            {matchCount === 1 ? '1 tab' : `${matchCount} tabs`}
+          </span>
+        )}
         <span className="toolbar-status" role="status">
           {clearStatus || refreshStatus(refresh.state)}
         </span>
+        {duplicateCount > 0 && (
+          <button
+            type="button"
+            className="toolbar-button"
+            title="Close every tab whose URL is open in another tab, keeping the one you used last"
+            onClick={() =>
+              void onCloseDuplicates().catch((err: unknown) =>
+                console.error('Tab Hammer: closing duplicates failed', err),
+              )
+            }
+          >
+            {duplicateCount === 1 ? 'Close 1 duplicate' : `Close ${duplicateCount} duplicates`}
+          </button>
+        )}
         {refreshing ? (
           <button
             type="button"

@@ -4,11 +4,13 @@ import { isGroupCollapsed, type CollapseState } from '../../model/visibleRows';
 import type { HoverHandlers } from '../hover/useHoverCard';
 import { GroupRow } from './GroupRow';
 import { TabRow } from './TabRow';
+import type { RowPropsFor } from './rowProps';
 
 interface Props {
   win: WindowNode;
   collapse: CollapseState;
   selected: ReadonlySet<string>;
+  duplicates: ReadonlySet<string>; // tab keys that share a URL with another tab
   onToggleWindow: (key: string) => void;
   onToggleGroup: (key: string) => void;
   onSelect: (e: MouseEvent, key: string) => void;
@@ -16,18 +18,24 @@ interface Props {
   onFocusWindow: (windowId: number) => void;
   onWindowContextMenu: (e: MouseEvent, win: WindowNode) => void;
   hover: HoverHandlers;
+  rowProps: RowPropsFor;
 }
 
 export function WindowCard(p: Props) {
   const { win } = p;
   const collapsed = p.collapse.collapsedWindows.has(win.key);
   return (
-    <section data-testid="window-card" className={win.focused ? 'card focused' : 'card'}>
+    <section
+      role="none"
+      data-testid="window-card"
+      className={win.focused ? 'card focused' : 'card'}
+    >
       <div
         className="row window-header"
         role="treeitem"
         data-key={win.key}
         data-kind="window"
+        {...p.rowProps(win.key, 'window')}
         aria-selected={p.selected.has(win.key)}
         onClick={(e) => p.onSelect(e, win.key)}
         onDoubleClick={() => p.onFocusWindow(win.windowId)}
@@ -54,19 +62,23 @@ export function WindowCard(p: Props) {
               group={c}
               collapsed={isGroupCollapsed(c, p.collapse)}
               selected={p.selected}
+              duplicates={p.duplicates}
               onToggleCollapse={p.onToggleGroup}
               onSelect={p.onSelect}
               onActivate={p.onActivate}
               hover={p.hover}
+              rowProps={p.rowProps}
             />
           ) : (
             <TabRow
               key={c.key}
               tab={c}
               selected={p.selected.has(c.key)}
+              duplicate={p.duplicates.has(c.key)}
               onSelect={p.onSelect}
               onActivate={p.onActivate}
               hover={p.hover}
+              rowProps={p.rowProps}
             />
           ),
         )}

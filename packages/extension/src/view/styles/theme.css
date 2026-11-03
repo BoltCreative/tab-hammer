@@ -11,6 +11,7 @@
   --row-selected: #2b3a5c;
   --row-active: #2a2c31;
   --row-active-focused: #30333a;
+  --drop-indicator: #8ab4f8;
   --text-tab: #a1bad4; /* steel blue softened toward the base gray */
   --hover-card-shadow: rgba(0, 0, 0, 0.5);
   --group-grey: #bdc1c6;
@@ -60,8 +61,29 @@ body,
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   padding: 3px 10px;
+}
+/* The search box takes a full row of its own, above the buttons, so they never squeeze it. */
+.search {
+  flex: 1 1 100%;
+  min-width: 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 12px;
+}
+.search:focus {
+  outline: none;
+  border-color: var(--card-border-focused);
+}
+.outline-empty {
+  margin: 12px 4px;
+  color: var(--text-muted);
 }
 .toolbar-status {
   color: var(--text-muted);
@@ -112,6 +134,13 @@ main.outline {
 }
 .row:hover {
   background: var(--row-hover);
+}
+.row:focus {
+  outline: none;
+}
+.row:focus-visible {
+  outline: 1px solid var(--drop-indicator);
+  outline-offset: -1px;
 }
 .row[aria-selected='true'] {
   background: var(--row-selected);
@@ -357,4 +386,23 @@ main.outline {
 }
 .context-menu-item:disabled {
   color: var(--text-muted);
+}
+/* Drag-move drop indicator: a line above or below the row, or an outline for "into". */
+.row[data-drop='before'] {
+  box-shadow: inset 0 2px 0 var(--drop-indicator);
+}
+.row[data-drop='after'] {
+  box-shadow: inset 0 -2px 0 var(--drop-indicator);
+}
+.row[data-drop='inside'] {
+  box-shadow: inset 0 0 0 2px var(--drop-indicator);
+}
+/* Marks a tab whose URL is open in another tab too (see "Close duplicates" in the header). */
+.dup-badge {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--card-border);
+  border-radius: 3px;
+  padding: 0 3px;
 }

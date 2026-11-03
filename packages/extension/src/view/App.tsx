@@ -5,21 +5,35 @@ import {
   useReducer,
   useRef,
   useState,
+  type KeyboardEvent,
   type MouseEvent,
 } from 'react';
 import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
-import type { TabNode, WindowNode } from '../model/types';
+import type { GroupNode, TabNode, WindowNode } from '../model/types';
+import { findDuplicates } from '../model/duplicates';
+import { countTabs, filterTree } from '../model/filterTree';
+import { navIntent, outlineRows } from '../model/keyboardNav';
 import {
+  EXPAND_ALL,
   allRowKeys,
   discardStaleOverrides,
   toggleGroup,
-  visibleRowKeys,
   type CollapseState,
 } from '../model/visibleRows';
-import { activateTab, focusWindow, snapshot, subscribe } from './chrome/chromeSource';
+import { planMove } from '../model/moveSelection';
+import {
+  activateTab,
+  applyMoveOps,
+  closeTabs,
+  focusWindow,
+  snapshot,
+  subscribe,
+} from './chrome/chromeSource';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
+import type { RowPropsFor } from './components/rowProps';
+import { useRowDrag } from './components/useRowDrag';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
@@ -53,10 +67,20 @@ export function App() {
     return subscribe(refresh);
   }, [refresh]);
 
-  const visible = useMemo(() => visibleRowKeys(tree, collapse), [tree, collapse]);
+  // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
+  // Moves still plan against the whole tree.
+  const [query, setQuery] = useState('');
+  const shown = useMemo(() => filterTree(tree, query), [tree, query]);
+  // Duplicates are found across the whole tree, whatever the search shows.
+  const duplicates = useMemo(() => findDuplicates(tree), [tree]);
+  const filtering = shown !== tree;
+  const shownCollapse = filtering ? EXPAND_ALL : collapse;
+  const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
+  const visible = useMemo(() => rows.map((r) => r.key), [rows]);
+  const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
   const signatureOf = useCallback(
-    (key: string) => hoverSignature(tree, visible, key),
-    [tree, visible],
+    (key: string) => hoverSignature(shown, visible, key),
+    [shown, visible],
   );
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
@@ -67,17 +91,51 @@ export function App() {
   const hoveredTab = useMemo(
     () =>
       hovered &&
-      tree
+      shown
         .flatMap((w) => w.children.flatMap((c) => (c.kind === 'group' ? c.tabs : [c])))
         .find((t) => t.key === hovered.key),
-    [tree, hovered],
+    [shown, hovered],
   );
 
+  // Rows a search hides leave the selection, so a drag never carries rows the user can't see.
   useEffect(() => {
-    dispatch({ type: 'prune', existing: allRowKeys(tree) });
-  }, [tree]);
+    dispatch({ type: 'prune', existing: allRowKeys(shown) });
+  }, [shown]);
 
-  const onSelect = (e: MouseEvent, key: string) => dispatch(selectionActionFor(e, key, visible));
+  // The keyboard cursor: the row arrow keys move from. A click puts it on the clicked row.
+  const [cursor, setCursor] = useState<string | null>(null);
+  // The one row in the Tab order (roving tabindex): the cursor, or the first row.
+  const tabStop = cursor !== null && rowByKey.has(cursor) ? cursor : (visible[0] ?? null);
+  const focusRow = (key: string) =>
+    listRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus();
+
+  const onSelect = (e: MouseEvent, key: string) => {
+    setCursor(key);
+    dispatch(selectionActionFor(e, key, visible));
+  };
+  const drag = useRowDrag(
+    selection.selected,
+    (key) => dispatch({ type: 'click', key }),
+    (keys, target) => {
+      const ops = planMove(tree, keys, target);
+      if (ops.length === 0) return;
+      applyMoveOps(ops).catch((err: unknown) => {
+        console.error('Tab Hammer: moving tabs failed', err);
+        refresh();
+      });
+    },
+  );
+  const rowProps: RowPropsFor = (key, kind) => {
+    const r = rowByKey.get(key);
+    return {
+      ...drag(key, kind),
+      tabIndex: key === tabStop ? 0 : -1,
+      'aria-level': r?.level,
+      'aria-setsize': r?.setSize,
+      'aria-posinset': r?.posInSet,
+      'aria-expanded': r?.expanded,
+    };
+  };
   const onActivate = (t: TabNode) => void activateTab(t.tabId, t.windowId).catch(refresh);
   const onFocusWindow = (id: number) => void focusWindow(id).catch(refresh);
 
@@ -119,16 +177,74 @@ export function App() {
     [tree],
   );
 
+  const onTreeKeyDown = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const intent = navIntent(rows, tabStop, e.key, e.shiftKey);
+    if (!intent) return;
+    e.preventDefault();
+    switch (intent.type) {
+      case 'move':
+        setCursor(intent.key);
+        dispatch(
+          intent.extend
+            ? { type: 'range', key: intent.key, visible }
+            : { type: 'click', key: intent.key },
+        );
+        focusRow(intent.key);
+        break;
+      case 'toggleSelect':
+        dispatch({ type: 'toggle', key: intent.key });
+        break;
+      case 'toggleExpand':
+        if (intent.key.startsWith('w:')) onToggleWindow(intent.key);
+        else onToggleGroup(intent.key);
+        break;
+      case 'activate': {
+        // Same as double-click: a tab is activated, a window focused; a group opens or closes.
+        const node = findNode(shown, intent.key);
+        if (node?.kind === 'tab') onActivate(node);
+        else if (node?.kind === 'window') onFocusWindow(node.windowId);
+        else if (node?.kind === 'group' && rowByKey.get(node.key)?.expanded !== undefined) {
+          onToggleGroup(node.key);
+        }
+        break;
+      }
+    }
+  };
+  // Down arrow in the search box moves into the outline.
+  const enterOutline = () => {
+    if (tabStop === null) return;
+    setCursor(tabStop);
+    focusRow(tabStop);
+  };
+
   return (
     <div className="app">
-      <AppHeader onPreviewsChanged={bumpPreviewEpoch} />
-      <main ref={listRef} className="outline" role="tree" aria-multiselectable="true">
-        {tree.map((w) => (
+      <AppHeader
+        onPreviewsChanged={bumpPreviewEpoch}
+        query={query}
+        onQueryChange={setQuery}
+        onSearchArrowDown={enterOutline}
+        duplicateCount={duplicates.toClose.length}
+        onCloseDuplicates={() => closeTabs(duplicates.toClose.map((t) => t.tabId))}
+        matchCount={filtering ? countTabs(shown) : null}
+      />
+      <main
+        ref={listRef}
+        className="outline"
+        role="tree"
+        aria-label="Windows and tabs"
+        aria-multiselectable="true"
+        onKeyDown={onTreeKeyDown}
+      >
+        {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
+        {shown.map((w) => (
           <WindowCard
             key={w.key}
             win={w}
-            collapse={collapse}
+            collapse={shownCollapse}
             selected={selection.selected}
+            duplicates={duplicates.keys}
             onToggleWindow={onToggleWindow}
             onToggleGroup={onToggleGroup}
             onSelect={onSelect}
@@ -136,6 +252,7 @@ export function App() {
             onFocusWindow={onFocusWindow}
             onWindowContextMenu={onWindowContextMenu}
             hover={hover}
+            rowProps={rowProps}
           />
         ))}
       </main>
@@ -157,4 +274,18 @@ export function App() {
       )}
     </div>
   );
+}
+
+function findNode(tree: WindowNode[], key: string): WindowNode | GroupNode | TabNode | undefined {
+  for (const w of tree) {
+    if (w.key === key) return w;
+    for (const c of w.children) {
+      if (c.key === key) return c;
+      if (c.kind === 'group') {
+        const t = c.tabs.find((x) => x.key === key);
+        if (t) return t;
+      }
+    }
+  }
+  return undefined;
 }
