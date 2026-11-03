@@ -1,12 +1,18 @@
 import { getPreview } from '../shared/previewStore';
 import { connectBridge } from './bridge';
 import { registerPreviewCapture } from './previews';
+import { openingBounds, trackViewBounds } from './viewBounds';
 
 export const VIEW_PATH = 'src/view/index.html';
 
-async function openOrFocus(): Promise<void> {
+async function storedViewWindowId(): Promise<number | undefined> {
   const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
-  if (typeof viewWindowId === 'number') {
+  return typeof viewWindowId === 'number' ? viewWindowId : undefined;
+}
+
+async function openOrFocus(): Promise<void> {
+  const viewWindowId = await storedViewWindowId();
+  if (viewWindowId !== undefined) {
     try {
       await chrome.windows.update(viewWindowId, { focused: true });
       return;
@@ -17,8 +23,7 @@ async function openOrFocus(): Promise<void> {
   const win = await chrome.windows.create({
     url: chrome.runtime.getURL(VIEW_PATH),
     type: 'popup',
-    width: 420,
-    height: 820,
+    ...(await openingBounds()),
   });
   await chrome.storage.session.set({ viewWindowId: win?.id });
 }
@@ -28,6 +33,7 @@ chrome.action.onClicked.addListener(() => {
   void openOrFocus();
 });
 registerPreviewCapture();
+trackViewBounds(storedViewWindowId);
 connectBridge();
 
 // Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and
