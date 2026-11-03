@@ -27,7 +27,6 @@ The longer-term direction is hibernating windows and tabs within a window. This 
 - Online backup (SKULL-814). The storage shape just has to make it easy.
 - Keeping single closed tabs in the trash. Chrome's Cmd+Shift+T covers those.
 - Hibernated rows in the MCP bridge. `list_tabs` and the other bridge commands stay live-only.
-- Dragging hibernated rows. Drag-move works on live rows only for now.
 
 ## Anti-goals
 
@@ -73,6 +72,7 @@ The key distinction, "closed by hand" vs "Chrome quit", cannot be read from Chro
 - **Rename:** Edit turns the window's label into an inline text field. Enter saves, Escape cancels, and an empty name clears back to `Window N`.
 - Keyboard: Delete/Backspace on selected rows = Trash. Enter/double-click on a hibernated row = Open.
 - Search covers hibernated rows too (not the trash). Duplicate detection stays live-only.
+- **Drag and drop works on hibernated rows** (agreed with the user). Moving a hibernated tab or group is only a change in the outline; Chrome isn't involved. A mixed drag, such as a window or a selection holding both kinds, moves its live tabs in Chrome and its hibernated tabs in the outline, keeping their relative order. Live tabs dropped into a hibernated window are hibernated there: closed in Chrome, kept as rows in that window. Trash entries aren't drag targets.
 
 ## Re-linking restored windows (SKULL-822)
 
