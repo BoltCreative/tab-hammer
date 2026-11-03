@@ -16,7 +16,7 @@ import {
   type CaptureTabReply,
 } from '../shared/messages';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
-import { clearPreviews, prunePreviews, putPreview } from '../shared/previewStore';
+import { clearPreviews, deletePreviews, prunePreviews, putPreview } from '../shared/previewStore';
 import { createBrowserSession } from './browserSession';
 import { createCaptureQueue } from './captureQueue';
 import { createLoadWaiter } from './waitForLoad';
@@ -78,13 +78,17 @@ const waitForComplete = createLoadWaiter({
   getStatus: async (tabId) => (await chrome.tabs.get(tabId)).status,
 });
 
-const browserSession = createBrowserSession(
-  {
+const browserSession = createBrowserSession({
+  local: {
     get: (key) => chrome.storage.local.get(key),
     set: (items) => chrome.storage.local.set(items),
   },
-  () => crypto.randomUUID(),
-);
+  session: {
+    get: (key) => chrome.storage.session.get(key),
+    set: (items) => chrome.storage.session.set(items),
+  },
+  newId: () => crypto.randomUUID(),
+});
 const record = (windowId: number, outcome: CaptureOutcome) =>
   recordUnder(OUTCOMES_KEY, windowId, outcome);
 
@@ -183,9 +187,9 @@ async function cleanUpAfterCrash(): Promise<void> {
   );
 }
 // Runs once per service worker lifetime, before its first capture. It is also started early by
-// onInstalled (the extension was reloaded or updated) and onStartup (the browser launched: that
-// one first renews the browser session, so a record from before the restart is dropped). It isn't
-// started at load, where it could read the old session before onStartup renews it.
+// onInstalled (the extension was reloaded or updated) and onStartup (the browser launched). Either
+// order is safe: recovery reads the browser session ID, which waits until onStartup has renewed it
+// (see browserSession.ts), so a record from before a browser restart is dropped, never acted on.
 let cleanedUp: Promise<void> | undefined;
 const cleanUpOnce = () => (cleanedUp ??= cleanUpAfterCrash());
 
@@ -246,10 +250,21 @@ export function registerPreviewCapture(): void {
   // when a tab closes; age and size limits keep the store bounded instead.
   chrome.runtime.onStartup.addListener(() => {
     quietly(prunePreviews());
-    cleanedUp = browserSession.renew().then(cleanUpAfterCrash, cleanUpAfterCrash);
-    quietly(cleanedUp);
+    quietly(browserSession.launched());
+    quietly(cleanUpOnce());
   });
-  chrome.runtime.onInstalled.addListener(() => quietly(cleanUpOnce()));
+  // Previews are screenshots of pages the user visited, so they go when Chrome's history does:
+  // "Clear browsing data" for all time wipes them all; any narrower removal (a time range, or a
+  // single entry from the History page) deletes just the pages it named. Keys drop the #fragment,
+  // so removing one fragment's entry also removes the page's shared preview, erring toward
+  // forgetting.
+  chrome.history.onVisitRemoved.addListener(({ allHistory, urls }) =>
+    quietly(allHistory ? clearAll() : deletePreviews(urls ?? [])),
+  );
+  chrome.runtime.onInstalled.addListener(() => {
+    quietly(browserSession.installed());
+    quietly(cleanUpOnce());
+  });
 
   // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {

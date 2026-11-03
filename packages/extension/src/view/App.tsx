@@ -62,6 +62,8 @@ export function App() {
   const listRef = useRef<HTMLElement>(null);
   const [hovered, hover] = useHoverCard(signatureOf, listRef);
   const [previewEpoch, setPreviewEpoch] = useState(0);
+  // Previews were cleared or refreshed: an open hover card looks its preview up again.
+  const bumpPreviewEpoch = useCallback(() => setPreviewEpoch((n) => n + 1), []);
   const hoveredTab = useMemo(
     () =>
       hovered &&
@@ -119,7 +121,7 @@ export function App() {
 
   return (
     <div className="app">
-      <AppHeader onPreviewsCleared={() => setPreviewEpoch((n) => n + 1)} />
+      <AppHeader onPreviewsChanged={bumpPreviewEpoch} />
       <main ref={listRef} className="outline" role="tree" aria-multiselectable="true">
         {tree.map((w) => (
           <WindowCard

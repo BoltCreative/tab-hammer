@@ -3,6 +3,14 @@
 // It lives in chrome.storage.local, so it survives extension reloads and updates (the usual way a
 // swap gets interrupted during development), and is renewed from runtime.onStartup, which fires
 // when the browser launches but not when the extension reloads.
+//
+// On a browser launch, other events (a hover card's capture request) can reach the service worker
+// before onStartup does, and would read the previous session's ID. So the ID is only handed out
+// once this session is confirmed: by a marker in chrome.storage.session (in memory, so gone after a
+// browser restart, and also after an extension reload or disable), or by onStartup or onInstalled
+// firing. Without the marker, current() waits for one of those. If neither comes (the extension was
+// re-enabled, which fires nothing), it starts a new session after a few seconds: dropping an old
+// swap record is safe, acting on a stale one is not.
 
 export interface KeyValueStore {
   get: (key: string) => Promise<Record<string, unknown>>;
@@ -10,20 +18,74 @@ export interface KeyValueStore {
 }
 
 export const BROWSER_SESSION_KEY = 'browserSession';
+/** In chrome.storage.session: set once this browser session's ID is known to be current. */
+export const SESSION_CONFIRMED_KEY = 'browserSessionConfirmed';
+/** How long current() waits for onStartup/onInstalled before starting a new session itself. */
+export const LAUNCH_EVENT_WAIT_MS = 5000;
 
-export function createBrowserSession(store: KeyValueStore, newId: () => string) {
+export interface BrowserSession {
+  /** This browser session's ID; waits until it's known to be current. */
+  current(): Promise<string>;
+  /** runtime.onStartup: the browser launched, so start a new session. */
+  launched(): Promise<void>;
+  /** runtime.onInstalled: the extension reloaded or updated in the same session; keep the ID. */
+  installed(): Promise<void>;
+}
+
+export function createBrowserSession(opts: {
+  /** chrome.storage.local */
+  local: KeyValueStore;
+  /** chrome.storage.session */
+  session: KeyValueStore;
+  newId: () => string;
+  waitMs?: number;
+  setTimer?: (fn: () => void, ms: number) => void;
+}): BrowserSession {
+  const waitMs = opts.waitMs ?? LAUNCH_EVENT_WAIT_MS;
+  const setTimer = opts.setTimer ?? ((fn, ms) => void setTimeout(fn, ms));
+
+  let confirm!: () => void;
+  const confirmedByEvent = new Promise<void>((r) => (confirm = r));
+  let confirmed: Promise<void> | undefined;
+  let renewedHere = false;
+
+  const markConfirmed = () => opts.session.set({ [SESSION_CONFIRMED_KEY]: true });
+  const renew = async () => {
+    renewedHere = true;
+    await opts.local.set({ [BROWSER_SESSION_KEY]: opts.newId() });
+  };
+
+  const whenConfirmed = () =>
+    (confirmed ??= (async () => {
+      const { [SESSION_CONFIRMED_KEY]: marker } = await opts.session
+        .get(SESSION_CONFIRMED_KEY)
+        .catch(() => ({}) as Record<string, unknown>);
+      if (marker === true) return;
+      const gaveUp = new Promise<'timeout'>((r) => setTimer(() => r('timeout'), waitMs));
+      if ((await Promise.race([confirmedByEvent, gaveUp])) === 'timeout') {
+        await renew();
+        await markConfirmed();
+      }
+    })());
+
   return {
-    /** The current session's ID, created on first use (e.g. right after install). */
-    async current(): Promise<string> {
-      const { [BROWSER_SESSION_KEY]: id } = await store.get(BROWSER_SESSION_KEY);
+    async current() {
+      await whenConfirmed();
+      const { [BROWSER_SESSION_KEY]: id } = await opts.local.get(BROWSER_SESSION_KEY);
       if (typeof id === 'string') return id;
-      return this.renew();
+      await renew(); // first use, e.g. right after install
+      const { [BROWSER_SESSION_KEY]: fresh } = await opts.local.get(BROWSER_SESSION_KEY);
+      return fresh as string;
     },
-    /** Starts a new session. Call from runtime.onStartup. */
-    async renew(): Promise<string> {
-      const id = newId();
-      await store.set({ [BROWSER_SESSION_KEY]: id });
-      return id;
+    async launched() {
+      // If current() already gave up waiting and started a session, that one is this launch's.
+      if (!renewedHere) await renew();
+      await markConfirmed();
+      confirm();
+    },
+    async installed() {
+      await markConfirmed();
+      confirm();
     },
   };
 }
