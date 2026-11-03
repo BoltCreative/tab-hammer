@@ -54,14 +54,36 @@ export interface RestoredTab {
   launchUrl?: string;
 }
 
-export function tabMatch(restored: RestoredTab, savedUrl: string): 0 | 0.75 | 1 {
-  const urls =
-    restored.launchUrl === undefined ? [restored.url] : [restored.launchUrl, restored.url];
-  const saved = normalizeForMatch(savedUrl);
-  if (urls.some((x) => normalizeForMatch(x) === saved)) return 1;
-  const savedKey = looseKey(savedUrl);
-  if (savedKey !== null && urls.some((x) => looseKey(x) === savedKey)) return LOOSE_SCORE;
+interface TabKeys {
+  exact: string[];
+  loose: (string | null)[];
+}
+
+function restoredKeys(tab: RestoredTab): TabKeys {
+  const urls = tab.launchUrl === undefined ? [tab.url] : [tab.launchUrl, tab.url];
+  return { exact: urls.map(normalizeForMatch), loose: urls.map(looseKey) };
+}
+
+interface SavedKeys {
+  blank: boolean;
+  exact: string;
+  loose: string | null;
+}
+
+function savedKeys(url: string): SavedKeys {
+  return { blank: isBlankPage(url), exact: normalizeForMatch(url), loose: looseKey(url) };
+}
+
+// Blank saved pages never match: two new-tab pages say nothing about identity.
+function keyedMatch(r: TabKeys, s: SavedKeys): 0 | 0.75 | 1 {
+  if (s.blank) return 0;
+  if (r.exact.includes(s.exact)) return 1;
+  if (s.loose !== null && r.loose.includes(s.loose)) return LOOSE_SCORE;
   return 0;
+}
+
+export function tabMatch(restored: RestoredTab, savedUrl: string): 0 | 0.75 | 1 {
+  return keyedMatch(restoredKeys(restored), savedKeys(savedUrl));
 }
 
 export interface Alignment {
@@ -74,8 +96,10 @@ export function alignWindows(restored: RestoredTab[], saved: string[]): Alignmen
   const m = saved.length;
   if (n === 0 && m === 0) return { score: 0, pairs: [] };
   const singleTab = n === 1 || m === 1;
+  const rKeys = restored.map(restoredKeys);
+  const sKeys = saved.map(savedKeys);
   const weight = (i: number, j: number): number => {
-    const w = tabMatch(restored[i], saved[j]);
+    const w = keyedMatch(rKeys[i], sKeys[j]);
     return singleTab && w < 1 ? 0 : w;
   };
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
@@ -128,7 +152,12 @@ export function assignMatches(
 ): Assignment[] {
   const scored: { ri: number; ci: number; alignment: Alignment }[] = [];
   restored.forEach((rw, ri) => {
-    if (rw.tabs.every((t) => isBlankPage(t.url))) return;
+    if (
+      rw.tabs.every(
+        (t) => isBlankPage(t.url) && (t.launchUrl === undefined || isBlankPage(t.launchUrl)),
+      )
+    )
+      return;
     candidates.forEach((cand, ci) => {
       if (cand.tabs.every(isBlankPage)) return;
       const alignment = alignWindows(rw.tabs, cand.tabs);

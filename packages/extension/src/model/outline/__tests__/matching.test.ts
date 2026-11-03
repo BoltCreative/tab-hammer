@@ -134,3 +134,28 @@ describe('assignMatches', () => {
     expect(new Set(two.map((m) => m.candidateId)).size).toBe(2);
   });
 });
+
+describe('blank pages and ports', () => {
+  it('blank pages count toward length but never toward a match', () => {
+    const nt = 'chrome://newtab/';
+    const restored = { id: 'r', tabs: [r('a'), { url: nt }, { url: nt }] };
+    const cand: MatchCandidate = {
+      id: 'c',
+      tabs: [u('b'), nt, nt],
+      openAtShutdown: false,
+      lastLiveAt: 0,
+    };
+    expect(alignWindows(restored.tabs, cand.tabs).score).toBe(0);
+    expect(assignMatches([restored], [cand])).toEqual([]);
+  });
+
+  it('a restored window is blank only if both url and launch URL are blank', () => {
+    const restored = { id: 'r', tabs: [{ url: 'chrome://newtab/', launchUrl: u('a') }] };
+    expect(assignMatches([restored], [C('c', ['a'])])).toHaveLength(1);
+  });
+
+  it('different ports never match, the same port matches exactly', () => {
+    expect(tabMatch({ url: 'http://localhost:3000/x' }, 'http://localhost:5173/x')).toBe(0);
+    expect(tabMatch({ url: 'http://localhost:5173/x' }, 'http://localhost:5173/x')).toBe(1);
+  });
+});
