@@ -80,7 +80,7 @@ describe('assignMatches', () => {
   it('loose matches count in multi-tab windows', () => {
     const out = assignMatches([R('r', ['a?x=1', 'b?x=1'])], [C('c', ['a?x=2', 'b?x=2'])]);
     expect(out).toHaveLength(1);
-    expect(out[0].alignment.score).toBe(0.75);
+    expect(out[0]!.alignment.score).toBe(0.75);
   });
 
   it('windows of only new-tab pages are never matched', () => {
@@ -170,7 +170,7 @@ describe('blank pages and ports', () => {
     };
     const out = assignMatches([restored], [cand]);
     expect(out).toHaveLength(1);
-    expect(out[0].alignment.score).toBe(1);
-    expect(out[0].alignment.pairs).toEqual([[1, 1]]);
+    expect(out[0]!.alignment.score).toBe(1);
+    expect(out[0]!.alignment.pairs).toEqual([[1, 1]]);
   });
 });

@@ -103,17 +103,17 @@ export function alignWindows(restored: RestoredTab[], saved: string[]): Alignmen
   const m = sIdx.length;
   if (n === 0 && m === 0) return { score: 0, pairs: [] };
   const singleTab = n === 1 || m === 1;
-  const rKeys = rIdx.map((i) => restoredKeys(restored[i]));
-  const sKeys = sIdx.map((j) => savedKeys(saved[j]));
+  const rKeys = rIdx.map((i) => restoredKeys(restored[i]!));
+  const sKeys = sIdx.map((j) => savedKeys(saved[j]!));
   const weight = (i: number, j: number): number => {
-    const w = keyedMatch(rKeys[i], sKeys[j]);
+    const w = keyedMatch(rKeys[i]!, sKeys[j]!);
     return singleTab && w < 1 ? 0 : w;
   };
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
       const w = weight(i - 1, j - 1);
-      dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1], w > 0 ? dp[i - 1][j - 1] + w : 0);
+      dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!, w > 0 ? dp[i - 1]![j - 1]! + w : 0);
     }
   }
   const pairs: [number, number][] = [];
@@ -121,18 +121,18 @@ export function alignWindows(restored: RestoredTab[], saved: string[]): Alignmen
   let j = m;
   while (i > 0 && j > 0) {
     const w = weight(i - 1, j - 1);
-    if (w > 0 && dp[i][j] === dp[i - 1][j - 1] + w) {
-      pairs.push([rIdx[i - 1], sIdx[j - 1]]);
+    if (w > 0 && dp[i]![j] === dp[i - 1]![j - 1]! + w) {
+      pairs.push([rIdx[i - 1]!, sIdx[j - 1]!]);
       i--;
       j--;
-    } else if (dp[i][j] === dp[i - 1][j]) {
+    } else if (dp[i]![j] === dp[i - 1]![j]) {
       i--;
     } else {
       j--;
     }
   }
   pairs.reverse();
-  return { score: dp[n][m] / Math.max(n, m), pairs };
+  return { score: dp[n]![m]! / Math.max(n, m), pairs };
 }
 
 export interface MatchRestored {
@@ -172,8 +172,8 @@ export function assignMatches(
     });
   });
   scored.sort((a, b) => {
-    const ca = candidates[a.ci];
-    const cb = candidates[b.ci];
+    const ca = candidates[a.ci]!;
+    const cb = candidates[b.ci]!;
     return (
       b.alignment.score - a.alignment.score ||
       Number(cb.openAtShutdown) - Number(ca.openAtShutdown) ||
@@ -190,8 +190,8 @@ export function assignMatches(
     usedR.add(s.ri);
     usedC.add(s.ci);
     out.push({
-      restoredId: restored[s.ri].id,
-      candidateId: candidates[s.ci].id,
+      restoredId: restored[s.ri]!.id,
+      candidateId: candidates[s.ci]!.id,
       alignment: s.alignment,
     });
   }
