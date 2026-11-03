@@ -1,6 +1,6 @@
 import type { Worker } from '@playwright/test';
 import type { WindowRec } from '../../src/model/outline/types';
-import { expect, readOutline, test } from './fixtures';
+import { expect, outlineCommand, readOutline, test } from './fixtures';
 
 const page = (title: string) => `data:text/html,<title>${title}</title>`;
 
@@ -104,4 +104,132 @@ test('a window opened with the same tabs as a trash entry is re-linked to it', a
       };
     })
     .toEqual({ state: 'live', chromeWindowId: second, holders: 1 });
+});
+
+/** Chrome's normal windows other than `except`, each as its tabs' titles and group titles. */
+function chromeWindows(sw: Worker, except: number[] = []) {
+  return sw.evaluate(async (skip) => {
+    const windows = await chrome.windows.getAll({ windowTypes: ['normal'], populate: true });
+    const groups = await chrome.tabGroups.query({});
+    const groupTitle = new Map(groups.map((g) => [g.id, g.title ?? '']));
+    return windows
+      .filter((w) => !skip.includes(w.id!))
+      .map((w) => ({
+        id: w.id!,
+        tabs: (w.tabs ?? []).map((t) => ({
+          title: t.title,
+          group: t.groupId === -1 ? null : (groupTitle.get(t.groupId) ?? null),
+        })),
+      }));
+  }, except);
+}
+
+/** Opens window A and waits for its record. Returns the Chrome window ID and the record. */
+async function windowARecord(sw: Worker): Promise<{ a: number; rec: WindowRec }> {
+  const a = await buildWindowA(sw);
+  await expect
+    .poll(async () => {
+      const rec = await liveRecord(sw, a);
+      return rec?.tabs.map((t) => t.title).join(',') + `|${rec?.groups[0]?.title}`;
+    })
+    .toBe('Alpha,Bravo,Charlie|Research');
+  return { a, rec: (await liveRecord(sw, a))! };
+}
+
+test('hibernating a window closes it and keeps its rows; opening it restores order and groups', async ({
+  sw,
+}) => {
+  const others = (await chromeWindows(sw)).map((w) => w.id);
+  const { a, rec } = await windowARecord(sw);
+  const tabIds = rec.tabs.map((t) => t.id);
+
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.id] });
+
+  expect((await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+  const hibernated = await recordById(sw, rec.id);
+  expect({
+    state: hibernated?.state,
+    tabIds: hibernated?.tabs.map((t) => t.id),
+    chromeTabIds: hibernated?.tabs.filter((t) => t.chromeTabId !== undefined).length,
+  }).toEqual({ state: 'hibernated', tabIds, chromeTabIds: 0 });
+
+  await outlineCommand(sw, { cmd: 'open', id: rec.id });
+
+  await expect
+    .poll(async () => (await chromeWindows(sw, others)).map((w) => w.tabs))
+    .toEqual([
+      [
+        { title: 'Alpha', group: 'Research' },
+        { title: 'Bravo', group: 'Research' },
+        { title: 'Charlie', group: null },
+      ],
+    ]);
+  const [reopened] = await chromeWindows(sw, others);
+  await expect
+    .poll(async () => {
+      const r = await recordById(sw, rec.id);
+      return {
+        state: r?.state,
+        chromeWindowId: r?.chromeWindowId,
+        tabIds: r?.tabs.map((t) => t.id),
+        live: r?.tabs.every((t) => t.chromeTabId !== undefined),
+        holders: (await readOutline(sw)).windows.filter((w) => w.chromeWindowId === reopened!.id)
+          .length,
+      };
+    })
+    .toEqual({ state: 'live', chromeWindowId: reopened!.id, tabIds, live: true, holders: 1 });
+});
+
+test('hibernating one tab keeps its row in place; opening it puts it back at its position', async ({
+  sw,
+}) => {
+  const { a, rec } = await windowARecord(sw);
+  const bravo = rec.tabs[1]!;
+
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [bravo.id] });
+
+  const windowTitles = async () =>
+    (await chromeWindows(sw)).find((w) => w.id === a)?.tabs.map((t) => t.title);
+  expect(await windowTitles()).toEqual(['Alpha', 'Charlie']);
+  const after = await recordById(sw, rec.id);
+  expect({
+    state: after?.state,
+    tabs: after?.tabs.map((t) => [t.title, t.chromeTabId !== undefined]),
+  }).toEqual({
+    state: 'live',
+    tabs: [
+      ['Alpha', true],
+      ['Bravo', false],
+      ['Charlie', true],
+    ],
+  });
+
+  await outlineCommand(sw, { cmd: 'open', id: bravo.id });
+
+  await expect
+    .poll(async () => (await chromeWindows(sw)).find((w) => w.id === a)?.tabs)
+    .toEqual([
+      { title: 'Alpha', group: 'Research' },
+      { title: 'Bravo', group: 'Research' },
+      { title: 'Charlie', group: null },
+    ]);
+  await expect
+    .poll(async () => {
+      const r = await recordById(sw, rec.id);
+      return r?.tabs.map((t) => [t.id, t.chromeTabId !== undefined]);
+    })
+    .toEqual(rec.tabs.map((t) => [t.id, true]));
+});
+
+test('rename and delete forever', async ({ sw }) => {
+  const { rec } = await windowARecord(sw);
+
+  await outlineCommand(sw, { cmd: 'rename', windowId: rec.id, name: '  Reading list ' });
+  expect((await recordById(sw, rec.id))?.name).toBe('Reading list');
+
+  await outlineCommand(sw, { cmd: 'trash', ids: [rec.id] });
+  expect((await recordById(sw, rec.id))?.state).toBe('trashed');
+
+  await outlineCommand(sw, { cmd: 'deleteForever', windowId: rec.id });
+  expect(await recordById(sw, rec.id)).toBeUndefined();
 });

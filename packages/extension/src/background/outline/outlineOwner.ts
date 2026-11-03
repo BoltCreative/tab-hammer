@@ -5,18 +5,31 @@
 // Event listeners only record data and queue work. Every outline change runs in one serial queue,
 // behind init, so no two jobs ever read and write the outline at once.
 import { matchRestored } from '../../model/outline/applyMatch';
-import { closeWindow, expireTrash, startFresh } from '../../model/outline/lifecycle';
+import {
+  closeWindow,
+  deleteWindow,
+  expireTrash,
+  findRow,
+  hibernate,
+  renameWindow,
+  startFresh,
+  trash,
+} from '../../model/outline/lifecycle';
+import { attachOpened, planOpen } from '../../model/outline/open';
+import { attachGroup, placeTabs } from '../../model/outline/place';
 import { reconcile, replaceTabId } from '../../model/outline/reconcile';
 import type { ChromeSnapshot, Outline } from '../../model/outline/types';
 import { SWAP_KEY } from '../../shared/captureSwap';
 import {
   OUTLINE_PORT,
+  isOutlineCommandRequest,
   type LiveDetails,
   type OutlineCommand,
+  type OutlineCommandReply,
   type OutlineStateMessage,
 } from '../../shared/outlineMessages';
 import { browserSession } from '../session';
-import { liveDetails, readSnapshot } from './chromeOutline';
+import { createGroup, liveDetails, openPlanned, readSnapshot, runEffects } from './chromeOutline';
 import { createJobQueue } from './jobQueue';
 import { createLaunchUrls } from './launchUrls';
 import { loadOutline, saveOutline } from './outlineStore';
@@ -172,6 +185,70 @@ export function registerOutline(): OutlineOwner {
 
   const scheduleReconcile = queue.coalesced(() => step());
 
+  /**
+   * One command, run as a single job: reconcile, apply the model op, persist and broadcast, then
+   * act in Chrome. Holding the queue across the Chrome calls means the windows and tabs this
+   * creates are attached before their events' reconcile runs, so they never become provisional.
+   */
+  async function runCommand(c: OutlineCommand): Promise<void> {
+    await step();
+    const now = Date.now();
+    switch (c.cmd) {
+      case 'hibernate':
+      case 'trash': {
+        // The onRemoved events that follow find no live record and do nothing.
+        const r = (c.cmd === 'hibernate' ? hibernate : trash)(outline, c.ids, now);
+        await commit(r.outline, live!);
+        await runEffects(r.effects);
+        return;
+      }
+      case 'rename':
+        await commit(renameWindow(outline, c.windowId, c.name, now), live!);
+        return;
+      case 'deleteForever':
+        await commit(deleteWindow(outline, c.windowId), live!);
+        return;
+      case 'open': {
+        // A trash entry always reopens as a whole window, whichever of its rows was opened.
+        const row = findRow(outline, c.id);
+        const plan = planOpen(outline, row?.window.state === 'trashed' ? row.window.id : c.id);
+        if (!plan) return;
+        const opened = await openPlanned(plan); // a failed window create leaves the outline as is
+        if (opened.tabs.length === 0) throw new Error('Chrome opened none of the tabs');
+        await step({ before: (o) => attachOpened(o, plan.windowId, opened, Date.now()) });
+        return;
+      }
+      case 'place': {
+        const r = placeTabs(outline, c.placement, now, newId);
+        await commit(r.outline, live!);
+        await runEffects(r.effects);
+        const attached: [string, number][] = [];
+        for (const g of r.regroup) {
+          const rec = findRow(outline, g.groupId)?.group;
+          const [first, ...more] = g.chromeTabIds;
+          if (!rec || first === undefined) continue;
+          try {
+            attached.push([g.groupId, await createGroup(g.chromeWindowId, [first, ...more], rec)]);
+          } catch (err) {
+            console.error('[outline] regroup', err); // the tabs stay ungrouped
+          }
+        }
+        if (attached.length > 0) {
+          await step({
+            before: (o) =>
+              attached.reduce((acc, [id, chromeId]) => attachGroup(acc, id, chromeId), o),
+          });
+        }
+        return;
+      }
+      default: {
+        // Runtime messages aren't validated past `command` being an object.
+        const unknown: never = c;
+        throw new Error(`unknown outline command: ${String((unknown as { cmd?: unknown }).cmd)}`);
+      }
+    }
+  }
+
   /** Tab churn in a window still waiting to be matched restarts its quiet period. */
   function touchIfProvisional(chromeWindowId: number): void {
     if (outline.windows.some((w) => w.provisional && w.chromeWindowId === chromeWindowId))
@@ -256,6 +333,16 @@ export function registerOutline(): OutlineOwner {
     if (initialized) post(port);
   });
 
+  chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
+    if (!isOutlineCommandRequest(msg)) return false;
+    void enqueue(() => runCommand(msg.command)).then(
+      () => sendResponse({ ok: true } satisfies OutlineCommandReply),
+      (err: unknown) =>
+        sendResponse({ ok: false, error: String(err) } satisfies OutlineCommandReply),
+    );
+    return true; // the reply is async
+  });
+
   void enqueue(async () => undefined); // runs init
 
   return {
@@ -265,9 +352,7 @@ export function registerOutline(): OutlineOwner {
         closingWindowIds.clear();
         return step({ before: (o) => startFresh(o, Date.now()) });
       }),
-    command: async () => {
-      throw new Error('not implemented');
-    },
+    command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
   };
 }
