@@ -21,6 +21,7 @@
 - Visual changes are limited to: a `hibernated` dim class on rows, an absolutely positioned hover toolbar overlay, the Recently closed section, and the inline rename field. Don't change row font size, height, or padding (another session, SKULL-838, is restyling rows).
 - The MCP bridge (`src/background/tabCommands.ts`) stays live-only and unchanged; `bridge.spec.ts` must keep passing.
 - Tests: Vitest in `__tests__/` folders next to the code, pure logic only, injected clock/timers, no sleeps. E2E waits on conditions (`expect.poll`, locator assertions), never fixed timeouts.
+- **Sync-ready storage** (input from the user, via the spawner; no sync is built here): IDs are `crypto.randomUUID()`. Every `WindowRec` carries `originInstallId` (a per-install ID created once and kept in `chrome.storage.local` under `installId`; the worker passes it into the model). Every `WindowRec`, `GroupRec`, and `TabRec` carries `modifiedAt: number`, set to `now` whenever that record's own persisted fields change (name, state, url, title, group, order position, membership); records whose fields didn't change keep their old `modifiedAt`. Live-only fields (`chromeWindowId`, `chromeTabId`, `chromeGroupId`, `launchUrl`, `provisional`) are machine-local: `exportOutline()` strips them, and a unit test asserts no exported record contains them.
 - Commit messages end with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Review Focus
@@ -107,8 +108,9 @@ export interface TabRec {
   launchUrl?: string;        // address Chrome created/restored the tab with (live/provisional tabs)
   groupId?: string;          // GroupRec.id in the same window
   liveAtClose?: boolean;     // was live when its window last stopped being live (match scoring uses these)
+  modifiedAt: number;
 }
-export interface GroupRec { id: string; chromeGroupId?: number; title: string; color: GroupColor; collapsed: boolean }
+export interface GroupRec { id: string; chromeGroupId?: number; title: string; color: GroupColor; collapsed: boolean; modifiedAt: number }
 export interface WindowRec {
   id: string;
   name?: string;
@@ -118,6 +120,8 @@ export interface WindowRec {
   openAtShutdown?: boolean;
   provisional?: boolean;     // live, unknown origin, not yet matched
   lastLiveAt: number;
+  originInstallId: string;   // install that created it (sync-readiness)
+  modifiedAt: number;
   tabs: TabRec[];
   groups: GroupRec[];
 }
@@ -133,7 +137,7 @@ export const NO_EFFECTS: Effects;
   - `closeWindow(o, windowId: string, now): Outline` — Chrome closed it (or a missed close): strip Chrome IDs (tabs that had one get `liveAtClose: true`, others `false`), `lastLiveAt = now`; → `hibernated` if it holds any hibernated tab, else `trashed` with `closedAt = now`. Clears `provisional`.
   - `hibernate(o, ids: string[], now): OpResult` — window IDs: live → hibernated, `effects.closeWindows`; tab/group IDs: their live tabs lose `chromeTabId`, `effects.closeTabs`; if that leaves a live window with no live tabs it becomes hibernated (its Chrome window closes with its last tab, so it is not listed in `closeWindows`).
   - `trash(o, ids, now): OpResult` — window live → trashed + `closeWindows`; window hibernated → trashed; tab live → removed + `closeTabs`; tab hibernated → removed. If a live window loses all live tabs: hibernated if hibernated tabs remain; if none remain, the whole window is trashed with the removed tabs kept (decision above). A hibernated window left with no tabs is deleted.
-  - `renameWindow(o, windowId, name: string): Outline` — trimmed; empty clears `name`.
+  - `renameWindow(o, windowId, name: string, now): Outline` — trimmed; empty clears `name`.
   - `deleteWindow(o, windowId): Outline` — removes the record.
   - `expireTrash(o, now): Outline` — deletes trashed windows with `now - closedAt > TRASH_TTL_MS` (exactly 7 days old stays).
   - `startFresh(o, now): Outline` — fresh browser launch: every live window → `closeWindow` semantics plus `openAtShutdown: true`.
@@ -471,7 +475,7 @@ export interface OutlineMeta { schemaVersion: number; sessionId: string; order: 
 export function loadOutline(): Promise<{ meta: OutlineMeta | undefined; outline: Outline }>;
 /** Writes windows of `next` that aren't (by reference) in `prev`, deletes ones gone, and the meta, in one transaction. */
 export function saveOutline(prev: Outline, next: Outline, sessionId: string): Promise<void>;
-export function exportOutline(): Promise<{ schemaVersion: number; windows: WindowRec[] }>; // plain JSON, outline order
+export function exportOutline(): Promise<{ schemaVersion: number; windows: SyncWindow[] }>; // plain JSON, outline order, live-only fields stripped (SyncWindow = WindowRec minus chromeWindowId/provisional, tabs/groups minus chromeTabId/chromeGroupId/launchUrl)
 ```
 
   DB `tab-hammer-outline` v1: object store `windows` (keyPath `id`), object store `meta` (one record under key `'meta'`).
@@ -523,6 +527,7 @@ export function isOutlineCommandRequest(msg: unknown): msg is OutlineCommandRequ
 it('round-trips windows in outline order with the meta', …)
 it('writes only changed windows and deletes removed ones', …) // spy-free: save, mutate one by new object, delete one; load equals next
 it('exportOutline returns plain JSON', () => { expect(JSON.parse(JSON.stringify(x))).toEqual(x) })
+it('exportOutline strips machine-local fields', …) // no chromeWindowId/chromeTabId/chromeGroupId/launchUrl/provisional anywhere; originInstallId and modifiedAt present
 // settleTracker.test.ts (fake timers via injected setTimer/clearTimer capturing callbacks)
 it('settles all touched windows together once quiet', …)
 it('a touch restarts the quiet period', …)
@@ -570,7 +575,7 @@ Owner behaviour:
 - **Focus:** `focusedWindowId` = last `windows.onFocusChanged` ID that is a normal window in the latest snapshot (ignore `WINDOW_ID_NONE` and Tab Hammer's popup); seeded from `windows.getLastFocused({ windowTypes: ['normal'] })`.
 - **Broadcast:** `runtime.onConnect` with `name === OUTLINE_PORT` → add port, post the current state once init is done; remove on disconnect. Message: `OutlineStateMessage`.
 - **Manifest:** add `'webNavigation'` to `permissions` with a comment (launch URLs for re-linking). Its install warning ("Read your browsing history") is subsumed by the existing `history` and `tabs` warnings; record in the commit message that you checked this, or, if you find it adds a new warning line, drop the permission, rely on `tabs.onCreated` alone, and report it as a deviation.
-- **Test hooks** (`index.ts`, extend `TestHooks`): `exportOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>` (awaits `owner.idle()` then the store's `exportOutline`), `simulateBrowserRestart: () => Promise<void>`, `outlineCommand: (c: OutlineCommand) => Promise<void>`.
+- **Test hooks** (`index.ts`, extend `TestHooks`): `exportOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>` (awaits `owner.idle()` then returns the owner's full in-memory records, Chrome IDs included, which e2e asserts on; the stripped sync export is unit-tested in Task 6 and also exposed as `syncExport`), `simulateBrowserRestart: () => Promise<void>`, `outlineCommand: (c: OutlineCommand) => Promise<void>`.
 - **Fixtures** (`tests/e2e/fixtures.ts`): `exportOutline(sw)`, `outlineCommand(sw, c)` wrappers over the hooks.
 
 - [ ] **Step 1: Write the unit test** in `src/background/outline/__tests__/outlineOwner.test.ts` for the one pure function: `isFreshLaunch(undefined, 's')` true; `({ sessionId: 's' }, 's')` false; `({ sessionId: 'old' }, 's')` true. Run `npx vitest run src/background/outline/__tests__/outlineOwner.test.ts` → FAIL.
