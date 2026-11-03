@@ -158,4 +158,19 @@ describe('blank pages and ports', () => {
     expect(tabMatch({ url: 'http://localhost:3000/x' }, 'http://localhost:5173/x')).toBe(0);
     expect(tabMatch({ url: 'http://localhost:5173/x' }, 'http://localhost:5173/x')).toBe(1);
   });
+
+  it('blank tabs are ignored: a new-tab page beside real pages still re-links', () => {
+    const nt = 'chrome://newtab/';
+    const restored = { id: 'r', tabs: [{ url: nt }, r('a')] };
+    const cand: MatchCandidate = {
+      id: 'c',
+      tabs: [nt, u('a')],
+      openAtShutdown: false,
+      lastLiveAt: 0,
+    };
+    const out = assignMatches([restored], [cand]);
+    expect(out).toHaveLength(1);
+    expect(out[0].alignment.score).toBe(1);
+    expect(out[0].alignment.pairs).toEqual([[1, 1]]);
+  });
 });

@@ -91,13 +91,20 @@ export interface Alignment {
   pairs: [restoredIndex: number, savedIndex: number][];
 }
 
+function isBlankTab(t: RestoredTab): boolean {
+  return isBlankPage(t.url) && (t.launchUrl === undefined || isBlankPage(t.launchUrl));
+}
+
 export function alignWindows(restored: RestoredTab[], saved: string[]): Alignment {
-  const n = restored.length;
-  const m = saved.length;
+  // Blank tabs say nothing about identity: ignore them entirely, keeping original indices.
+  const rIdx = restored.flatMap((t, i) => (isBlankTab(t) ? [] : [i]));
+  const sIdx = saved.flatMap((url, j) => (isBlankPage(url) ? [] : [j]));
+  const n = rIdx.length;
+  const m = sIdx.length;
   if (n === 0 && m === 0) return { score: 0, pairs: [] };
   const singleTab = n === 1 || m === 1;
-  const rKeys = restored.map(restoredKeys);
-  const sKeys = saved.map(savedKeys);
+  const rKeys = rIdx.map((i) => restoredKeys(restored[i]));
+  const sKeys = sIdx.map((j) => savedKeys(saved[j]));
   const weight = (i: number, j: number): number => {
     const w = keyedMatch(rKeys[i], sKeys[j]);
     return singleTab && w < 1 ? 0 : w;
@@ -115,7 +122,7 @@ export function alignWindows(restored: RestoredTab[], saved: string[]): Alignmen
   while (i > 0 && j > 0) {
     const w = weight(i - 1, j - 1);
     if (w > 0 && dp[i][j] === dp[i - 1][j - 1] + w) {
-      pairs.push([i - 1, j - 1]);
+      pairs.push([rIdx[i - 1], sIdx[j - 1]]);
       i--;
       j--;
     } else if (dp[i][j] === dp[i - 1][j]) {
