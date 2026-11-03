@@ -21,14 +21,14 @@
 - Visual changes are limited to: a `hibernated` dim class on rows, an absolutely positioned hover toolbar overlay, the Recently closed section, and the inline rename field. Don't change row font size, height, or padding (another session, SKULL-838, is restyling rows).
 - The MCP bridge (`src/background/tabCommands.ts`) stays live-only and unchanged; `bridge.spec.ts` must keep passing.
 - Tests: Vitest in `__tests__/` folders next to the code, pure logic only, injected clock/timers, no sleeps. E2E waits on conditions (`expect.poll`, locator assertions), never fixed timeouts.
-- **Sync-ready storage** (input from the user, via the spawner; no sync is built here): IDs are `crypto.randomUUID()`. Every `WindowRec` carries `originInstallId` (a per-install ID created once and kept in `chrome.storage.local` under `installId`; the worker passes it into the model). Every `WindowRec`, `GroupRec`, and `TabRec` carries `modifiedAt: number`, set to `now` whenever that record's own persisted fields change (name, state, url, title, group, order position, membership); records whose fields didn't change keep their old `modifiedAt`. Live-only fields (`chromeWindowId`, `chromeTabId`, `chromeGroupId`, `launchUrl`, `provisional`) are machine-local: `exportOutline()` strips them, and a unit test asserts no exported record contains them.
+- **Sync-ready storage** (input from the user, via the spawner; no sync is built here): IDs are `crypto.randomUUID()`. Every `WindowRec` carries `originInstallId` (a per-install ID created once and kept in `chrome.storage.local` under `installId`; the worker passes it into the model). Every `WindowRec`, `GroupRec`, and `TabRec` carries `modifiedAt: number`, set to `now` whenever that record's own persisted fields change (name, state, url, title, group, order position, membership); records whose fields didn't change keep their old `modifiedAt`. Machine-local fields (`chromeWindowId`, `chromeTabId`, `chromeGroupId`, `launchUrl`, `provisional`, `openAtShutdown`, `liveAtClose`) are stripped by `exportOutline()`, and a unit test seeds a record with every one of them and asserts no exported record contains any.
 - Commit messages end with a blank line then `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Review Focus
 
 1. **Typing in the rename field** — Backspace/Delete must edit the text, not trash the selected rows; Enter must save, not open/activate. (Test: Task 11, e2e `rename field keystrokes stay in the field`.)
 2. **Closing a window in Chrome mid-reconcile** — Chrome fires `tabs.onRemoved` (window closing) for each tab before `windows.onRemoved`; a re-query in between must not strip tabs from the window, so its trash entry keeps every tab. (Test: Task 3, `a window that is closing keeps its tabs`; Task 7 e2e asserts the trash entry's tab count.)
-3. **The worker idling out and waking** is not a browser launch: nothing goes to the trash and Chrome IDs re-attach. (Test: Task 7 unit `isFreshLaunch`; Task 13 e2e asserts the window is still live with the same ID and the trash is empty after a worker restart.)
+3. **The worker idling out and waking** is not a browser launch: nothing goes to the trash and Chrome IDs re-attach. (Test: Task 13 e2e asserts the window is still live with the same ID and the trash is empty after a worker restart.)
 4. **Reopening a tab Chrome refuses to create** (e.g. a URL an extension can't open) — the other tabs still open and the refused one stays hibernated in place. (Test: Task 5, `attachOpened leaves tabs that failed to open hibernated`.)
 5. **A tab dragged out into its own window** keeps its row in a new window row and is never treated as a restored window (never matched against the trash). (Test: Task 3, `a new window holding a known tab is not provisional`.)
 
@@ -39,7 +39,7 @@
 All paths under `packages/extension/` unless noted.
 
 ```
-src/model/outline/types.ts          Outline records (WindowRec/GroupRec/TabRec), ChromeSnapshot, LiveDetails, OutlineState, Effects
+src/model/outline/types.ts          Outline records (WindowRec/GroupRec/TabRec), ChromeSnapshot, Effects
 src/model/outline/lifecycle.ts      closeWindow, hibernate, trash, renameWindow, deleteWindow, expireTrash, startFresh, findRow
 src/model/outline/matching.ts       normalizeForMatch, isBlankPage, tabMatch, alignWindows, assignMatches
 src/model/outline/reconcile.ts      reconcile, mergeHibernated, replaceTabId
@@ -51,7 +51,7 @@ src/model/types.ts                  view nodes reworked (Task 9); Raw* types rem
 src/model/buildTree.ts              OutlineState -> OutlineView (Task 9)
 src/model/moveSelection.ts          planDrop for hibernated rows (Task 10)
 src/model/keyboardNav.ts            'trash' intent (Task 11)
-src/shared/outlineMessages.ts       port name, state message, OutlineCommand + guards
+src/shared/outlineMessages.ts       port name, LiveDetails, OutlineState, state message, OutlineCommand + guards
 src/background/session.ts           the single browserSession instance (moved out of previews.ts)
 src/background/outline/outlineStore.ts   IndexedDB: loadOutline, saveOutline, exportOutline
 src/background/outline/settleTracker.ts  quiet-period tracker for provisional windows
@@ -68,7 +68,7 @@ src/view/components/RecentlyClosed.tsx  trash section
 src/view/components/{WindowCard,GroupRow,TabRow}.tsx  hibernated class, toolbar, data-*-id attributes
 src/view/hover/HoverCard.tsx        no on-demand capture for hibernated tabs
 src/view/styles/theme.css           .hibernated, .row-toolbar, .recently-closed, .rename-field
-tests/e2e/fixtures.ts               helpers: exportOutline, outlineCommand, liveRow
+tests/e2e/fixtures.ts               helpers: readOutline, outlineCommand, liveRow
 tests/e2e/outline.spec.ts           worker mirror + lifecycle flows
 tests/e2e/restart.spec.ts           browser restart re-link, worker restart
 tests/e2e/{tree,move,preview}.spec.ts   locators move from data-key=t:<chromeId> to data-tab-id
@@ -85,7 +85,6 @@ CLAUDE.md (repo root)               architecture + tests sections
 - **Trashing every live tab of a live window that has no hibernated tabs** trashes the window (with its tabs) rather than leaving an empty trash entry. Deleting the last tab of a hibernated window deletes the window.
 - **Rename field:** Enter or blur saves, Escape cancels.
 - **Recently closed entries** are not selectable, not keyboard-navigable, and not drag sources or targets; their tab rows have no hover card or toolbar.
-- **Window rows remain non-draggable** (as today); "mixed drags" are selections or groups holding live and hibernated tabs.
 
 ---
 
@@ -142,8 +141,9 @@ export const NO_EFFECTS: Effects;
   - `expireTrash(o, now): Outline` — deletes trashed windows with `now - closedAt > TRASH_TTL_MS` (exactly 7 days old stays).
   - `startFresh(o, now): Outline` — fresh browser launch: every live window → `closeWindow` semantics plus `openAtShutdown: true`.
   - Any user op on a window (`hibernate`, `trash`, `renameWindow`, and later `attachOpened`) clears its `openAtShutdown`.
+  - **`modifiedAt` rule (all ops here and in Tasks 3-5):** an op sets `modifiedAt = now` only on records whose own persisted fields changed, and leaves other records untouched (by reference). Window: `name`, `state`, or its tab list/group list changes (the flat model has no position field, so adding, removing, or reordering tabs stamps the window). Tab: `url`, `title`, or `groupId` changes. Group: `title`, `color`, or `collapsed` changes.
 
-- [ ] **Step 1: Write the test builders** in `__tests__/recs.ts`: `tab(id, opts?)`, `group(id, opts?)`, `win(id, opts?)` returning records with defaults (`url: https://e.test/<id>`, `title: id`, `state` derived from `chromeWindowId`, `lastLiveAt: 0`, `groups: []`). Later tasks reuse them.
+- [ ] **Step 1: Write the test builders** in `__tests__/recs.ts`: `tab(id, opts?)`, `group(id, opts?)`, `win(id, opts?)` returning records with defaults (`url: https://e.test/<id>`, `title: id`, `state` derived from `chromeWindowId`, `lastLiveAt: 0`, `groups: []`, `modifiedAt: 0`, `originInstallId: 'i'`). Later tasks reuse them.
 
 - [ ] **Step 2: Write the failing tests** in `lifecycle.test.ts`. Use `NOW = 1_000_000`.
 
@@ -169,6 +169,7 @@ it('a fresh launch trashes live windows marked open-at-shutdown, and hibernates 
   // also: user-hibernated windows untouched (no openAtShutdown), already-trashed untouched
 it('user actions clear open-at-shutdown', …) // rename + hibernate on an openAtShutdown window
 it('returns untouched windows by reference', …) // closeWindow on w1 leaves o.windows[1] === result.windows[1]
+it('ops stamp changed records only', …) // renameWindow(o, 'w', 'X', NOW): w.modifiedAt === NOW, its tabs and the other window keep modifiedAt 0; renaming to the same name stamps nothing
 ```
 
 - [ ] **Step 3: Run to verify they fail**
@@ -287,6 +288,7 @@ export interface ReconcileInput {
   closingWindowIds: ReadonlySet<number>; // windows Chrome is closing (tabs.onRemoved isWindowClosing)
   now: number;
   newId: () => string;
+  installId: string;                     // stamped as originInstallId on every new WindowRec
 }
 export interface ReconcileResult { outline: Outline; newProvisional: number[] /* Chrome window IDs */ }
 export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult;
@@ -306,6 +308,7 @@ Rules `reconcile` implements:
 6. Group records: `chromeGroupId` removed when the Chrome group is gone; records no tab references are pruned.
 7. Unknown snapshot window: if it holds any known tab → a new non-provisional live `WindowRec` (a tab dragged out). Otherwise a new live `WindowRec` with `provisional: true`, appended at the bottom, its Chrome ID returned in `newProvisional`.
 8. Windows whose content didn't change come back by reference.
+9. New `WindowRec`s get `originInstallId = input.installId` and `modifiedAt = now`; new tab/group records get `modifiedAt = now`. Existing records are stamped `now` only when their own persisted fields changed (window: tab list/order or group list; tab: `url`, `title`, `groupId`; group: `title`, `color`, `collapsed`); unchanged ones keep their `modifiedAt`.
 
 - [ ] **Step 1: Write the failing tests** (build snapshots with a local `snap({ windows: { 1: [t(11), t(12, { groupId: 5 })] }, groups: [g(5, 1)] })` helper):
 
@@ -319,8 +322,9 @@ it('a closed tab is removed; a missed window close sends the window to the trash
 it('a window that is closing keeps its tabs', () => {
   // window 1 in closingWindowIds, snapshot has it with 1 of its 3 tabs -> record unchanged (toBe)
 });
-it('a new window holding a known tab is not provisional', …) // the tab keeps its record ID in the new window
-it('an unknown window becomes a provisional row at the bottom', …) // newProvisional === [chromeId]
+it('a new window holding a known tab is not provisional', …) // the tab keeps its record ID in the new window; the window carries input.installId as originInstallId
+it('an unknown window becomes a provisional row at the bottom', …) // newProvisional === [chromeId]; originInstallId === input.installId
+it('stamps modifiedAt only on records that changed', …) // retitled tab and its window get now; an untouched sibling tab and window keep their old modifiedAt
 it('groups follow Chrome for live tabs and keep hibernated members', …)
 it('a group moved to another window takes its record with it', …)
 it('unchanged windows come back by reference', …)
@@ -356,6 +360,7 @@ export function matchRestored(o: Outline, provisionalIds: string[], now: number,
 Rules:
 - Candidates: windows with `openAtShutdown` (trashed or hibernated), plus every other trashed window. User-hibernated windows (hibernated, no `openAtShutdown`) never. A candidate's saved list is its tabs with `liveAtClose === true`, in outline order. Restored lists are the provisional window's tabs (`url`, `launchUrl`).
 - Applying a match to candidate `C` from provisional `P`: `C` keeps its position in `Outline.windows`; `P` is removed. `C` becomes `live` with `P`'s `chromeWindowId`, `lastLiveAt = now`, no `closedAt`/`openAtShutdown`/`provisional`, `name` kept. Tabs: walk `P`'s tabs in order; aligned ones take the saved record's `id` with `P`'s `chromeTabId`/`url`/`title`/`launchUrl`; unaligned keep `P`'s record. Then `mergeHibernated(C.tabs with Chrome IDs stripped, thoseLiveTabs)` keeps unrestored saved tabs hibernated in place.
+- `modifiedAt = now` on `C` (state and tab list change) and on any tab record whose `url`/`title`/`groupId` changed by taking `P`'s values; saved tab and group records that didn't change keep their `modifiedAt`.
 - Groups: for each Chrome group in `P`, the `C` group record holding most of its aligned tabs takes over (gets the `chromeGroupId`, Chrome's title/color/collapsed); otherwise `P`'s group record moves into `C`. Live tabs' `groupId` follows Chrome; hibernated tabs keep theirs.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -374,6 +379,7 @@ it('user-hibernated windows are never matched', …)
 it('a restored group re-attaches to the saved group holding most of its tabs', …)
 it('an unmatched provisional window just loses the flag', …)
 it('two restored windows match two trash entries in one pass', …)
+it('stamps modifiedAt only on the matched window and on tabs whose fields changed', …)
 ```
 
 - [ ] **Step 2: Run to verify they fail** — `npx vitest run src/model/outline/__tests__/applyMatch.test.ts` → FAIL.
@@ -425,11 +431,11 @@ export interface PlaceResult {
   effects: Effects;              // live tabs dropped into a hibernated window are closed
   regroup: { groupId: string; chromeWindowId: number; chromeTabIds: number[] }[];
 }
-export function placeTabs(o: Outline, p: Placement, newId: () => string): PlaceResult;
+export function placeTabs(o: Outline, p: Placement, now: number, newId: () => string): PlaceResult;
 export function attachGroup(o: Outline, groupId: string, chromeGroupId: number): Outline;
 ```
 
-  `placeTabs`: moves the records to the target position. `groupId` is applied only to tabs that are hibernated after the move (Chrome owns live tabs' groups). A group record belonging to another window is moved if no tab there still uses it, else copied under a new ID. Target window not live → moved live tabs lose `chromeTabId` and are listed in `effects.closeTabs`; a source window left without live tabs follows the Task 1 rules. Target live and a `groupId` whose record has no `chromeGroupId` while live tabs were placed in it → listed in `regroup`.
+  `placeTabs`: moves the records to the target position. `groupId` is applied only to tabs that are hibernated after the move (Chrome owns live tabs' groups). A group record belonging to another window is moved if no tab there still uses it, else copied under a new ID. `modifiedAt = now` on the source and target windows and on any moved tab whose `groupId` changed (`attachOpened` stamps the window it makes live); everything else keeps its `modifiedAt`. A hibernated source window left with no tabs is deleted. Target window not live → moved live tabs lose `chromeTabId` and are listed in `effects.closeTabs`; a source window left without live tabs follows the Task 1 rules. Target live and a `groupId` whose record has no `chromeGroupId` while live tabs were placed in it → listed in `regroup`.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -449,6 +455,7 @@ it('live tabs dropped into a hibernated window are hibernated there', …) // ef
 it('keeps live and hibernated moved tabs in their relative order', …)
 it('a hibernated tab joining a group takes the group; a live one does not', …)
 it('live tabs placed into a group with no live tabs ask to regroup', …)
+it('stamps modifiedAt on the windows and regrouped tabs it changed, nothing else', …)
 ```
 
 - [ ] **Step 2: Run to verify they fail** — `npx vitest run src/model/outline/__tests__/open.test.ts src/model/outline/__tests__/place.test.ts` → FAIL.
@@ -475,7 +482,7 @@ export interface OutlineMeta { schemaVersion: number; sessionId: string; order: 
 export function loadOutline(): Promise<{ meta: OutlineMeta | undefined; outline: Outline }>;
 /** Writes windows of `next` that aren't (by reference) in `prev`, deletes ones gone, and the meta, in one transaction. */
 export function saveOutline(prev: Outline, next: Outline, sessionId: string): Promise<void>;
-export function exportOutline(): Promise<{ schemaVersion: number; windows: SyncWindow[] }>; // plain JSON, outline order, live-only fields stripped (SyncWindow = WindowRec minus chromeWindowId/provisional, tabs/groups minus chromeTabId/chromeGroupId/launchUrl)
+export function exportOutline(): Promise<{ schemaVersion: number; windows: SyncWindow[] }>; // plain JSON, outline order, live-only fields stripped (SyncWindow = WindowRec minus chromeWindowId/provisional/openAtShutdown; its tabs minus chromeTabId/launchUrl/liveAtClose; its groups minus chromeGroupId)
 ```
 
   DB `tab-hammer-outline` v1: object store `windows` (keyPath `id`), object store `meta` (one record under key `'meta'`).
@@ -525,9 +532,9 @@ export function isOutlineCommandRequest(msg: unknown): msg is OutlineCommandRequ
 ```ts
 // outlineStore.test.ts (import 'fake-indexeddb/auto')
 it('round-trips windows in outline order with the meta', …)
-it('writes only changed windows and deletes removed ones', …) // spy-free: save, mutate one by new object, delete one; load equals next
+it('persists changes and deletions', …) // save, replace one window with a new object, delete one; load equals next
 it('exportOutline returns plain JSON', () => { expect(JSON.parse(JSON.stringify(x))).toEqual(x) })
-it('exportOutline strips machine-local fields', …) // no chromeWindowId/chromeTabId/chromeGroupId/launchUrl/provisional anywhere; originInstallId and modifiedAt present
+it('exportOutline strips machine-local fields', …) // seed a window and its tab/group records with every stripped field (chromeWindowId, provisional, openAtShutdown; chromeTabId, launchUrl, liveAtClose; chromeGroupId) so the test can fail; none appear anywhere in the export; originInstallId and modifiedAt are present
 // settleTracker.test.ts (fake timers via injected setTimer/clearTimer capturing callbacks)
 it('settles all touched windows together once quiet', …)
 it('a touch restarts the quiet period', …)
@@ -548,14 +555,13 @@ it('a forgotten window is not reported', …)
 - Modify: `src/background/index.ts`, `src/manifest.ts`, `tests/e2e/fixtures.ts`
 
 **Interfaces:**
-- Consumes: Tasks 1–6 (`reconcile`, `replaceTabId`, `closeWindow`, `startFresh`, `expireTrash`, `matchRestored`, store, tracker, messages, `browserSession`), `SWAP_KEY`/`hiddenBySwap`/`isSwapRecord` from `src/shared/captureSwap.ts`.
+- Consumes: Tasks 1–6 (`reconcile` (its input takes `installId`), `replaceTabId`, `closeWindow`, `startFresh`, `expireTrash`, `matchRestored`, store, tracker, messages, `browserSession`), `SWAP_KEY`/`hiddenBySwap`/`isSwapRecord` from `src/shared/captureSwap.ts`.
 - Produces (`chromeOutline.ts`):
   - `readSnapshot(launchUrls: ReadonlyMap<number, string>): Promise<ChromeSnapshot>` — `windows.getAll({ windowTypes: ['normal'] })`, `tabs.query({})` filtered to those windows and through `hiddenBySwap`, `tabGroups.query({})`; `url = t.url || t.pendingUrl || ''`.
   - `liveDetails(snapshot, focusedWindowId): LiveDetails`.
 - Produces (`outlineOwner.ts`):
 
 ```ts
-export function isFreshLaunch(meta: OutlineMeta | undefined, sessionId: string): boolean; // meta?.sessionId !== sessionId
 export interface OutlineOwner {
   idle(): Promise<void>;                 // resolves when the job queue is empty
   simulateBrowserRestart(): Promise<void>; // test hook: startFresh + reconcile (fresh-launch path without a relaunch)
@@ -567,7 +573,7 @@ export function registerOutline(): OutlineOwner; // call synchronously at module
 Owner behaviour:
 - **Listeners registered synchronously** in `registerOutline` (Chrome queues events for a waking worker only to listeners registered at top level). Every event handler only records data and enqueues work; all outline mutations run in one serial promise queue, behind `init`.
 - **Launch URLs:** `Map<chromeTabId, string>`, first one wins: `tabs.onCreated` (`url || pendingUrl`, if non-empty) and `webNavigation.onCommitted` with `frameId === 0`. Deleted on `tabs.onRemoved`.
-- **Init:** `loadOutline()`; `sessionId = await browserSession.current()`; if `isFreshLaunch` → `startFresh(outline, now)`; `expireTrash`; reconcile; persist; touch the tracker with every provisional window's Chrome ID.
+- **Init:** read `installId` from `chrome.storage.local` (key `installId`), creating it with `crypto.randomUUID()` if absent, and pass it to every `reconcile`; `loadOutline()`; `sessionId = await browserSession.current()`; if `meta?.sessionId !== sessionId` (a fresh launch; an inline check, not a separate function) → `startFresh(outline, now)`; `expireTrash`; reconcile; persist; touch the tracker with every provisional window's Chrome ID.
 - **Reconcile job** (coalesced: at most one queued, not started): `readSnapshot` → `reconcile` with `closingWindowIds` → `expireTrash` → touch `newProvisional` → persist (`saveOutline(prev, next, sessionId)`) → broadcast if anything changed (outline by reference, or live details by value).
   Scheduled by: `tabs.onCreated/onUpdated/onMoved/onAttached/onDetached/onActivated/onRemoved(not window closing)`, `windows.onCreated/onFocusChanged`, `tabGroups.onCreated/onUpdated/onRemoved/onMoved`, `storage.onChanged` of `SWAP_KEY`.
 - **Explicit intent events:** `tabs.onRemoved` with `isWindowClosing` adds the window to `closingWindowIds` (no reconcile); `windows.onRemoved` → job: `closeWindow` on the live record with that Chrome ID, drop from `closingWindowIds`, `tracker.forget`; `tabs.onReplaced` → job: `replaceTabId`.
@@ -575,16 +581,14 @@ Owner behaviour:
 - **Focus:** `focusedWindowId` = last `windows.onFocusChanged` ID that is a normal window in the latest snapshot (ignore `WINDOW_ID_NONE` and Tab Hammer's popup); seeded from `windows.getLastFocused({ windowTypes: ['normal'] })`.
 - **Broadcast:** `runtime.onConnect` with `name === OUTLINE_PORT` → add port, post the current state once init is done; remove on disconnect. Message: `OutlineStateMessage`.
 - **Manifest:** add `'webNavigation'` to `permissions` with a comment (launch URLs for re-linking). Its install warning ("Read your browsing history") is subsumed by the existing `history` and `tabs` warnings; record in the commit message that you checked this, or, if you find it adds a new warning line, drop the permission, rely on `tabs.onCreated` alone, and report it as a deviation.
-- **Test hooks** (`index.ts`, extend `TestHooks`): `exportOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>` (awaits `owner.idle()` then returns the owner's full in-memory records, Chrome IDs included, which e2e asserts on; the stripped sync export is unit-tested in Task 6 and also exposed as `syncExport`), `simulateBrowserRestart: () => Promise<void>`, `outlineCommand: (c: OutlineCommand) => Promise<void>`.
-- **Fixtures** (`tests/e2e/fixtures.ts`): `exportOutline(sw)`, `outlineCommand(sw, c)` wrappers over the hooks.
+- **Test hooks** (`index.ts`, extend `TestHooks`): `readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>` (awaits `owner.idle()` then returns the owner's full in-memory records, Chrome IDs included, which e2e asserts on; the stripped sync export, `exportOutline()` from Task 6, is unit-tested there and exposed as `syncExport`), `simulateBrowserRestart: () => Promise<void>`, `outlineCommand: (c: OutlineCommand) => Promise<void>`.
+- **Fixtures** (`tests/e2e/fixtures.ts`): `readOutline(sw)`, `outlineCommand(sw, c)` wrappers over the hooks.
 
-- [ ] **Step 1: Write the unit test** in `src/background/outline/__tests__/outlineOwner.test.ts` for the one pure function: `isFreshLaunch(undefined, 's')` true; `({ sessionId: 's' }, 's')` false; `({ sessionId: 'old' }, 's')` true. Run `npx vitest run src/background/outline/__tests__/outlineOwner.test.ts` → FAIL.
-
-- [ ] **Step 2: Write the failing e2e** in `tests/e2e/outline.spec.ts`:
+- [ ] **Step 1: Write the failing e2e** in `tests/e2e/outline.spec.ts`:
 
 ```ts
 test('the worker mirrors Chrome: windows, tabs in order, and groups get Tab Hammer IDs', async ({ sw }) => {
-  // build window A [Alpha, Bravo grouped 'Research'] Charlie; poll exportOutline until a live window
+  // build window A [Alpha, Bravo grouped 'Research'] Charlie; poll readOutline until a live window
   // with chromeWindowId === A has tab titles ['Alpha','Bravo','Charlie'], Alpha/Bravo share a groupId
   // whose group title is 'Research', and every id is a non-numeric string.
 });
@@ -600,11 +604,11 @@ test('a window opened with the same tabs as a trash entry is re-linked to it', a
 
   Run `npm run build:e2e && npm run test:e2e -- tests/e2e/outline.spec.ts` → FAIL.
 
-- [ ] **Step 3: Implement** `chromeOutline.ts`, `outlineOwner.ts`, the manifest change, `index.ts` registration and hooks, fixture helpers.
+- [ ] **Step 2: Implement** `chromeOutline.ts`, `outlineOwner.ts`, the manifest change, `index.ts` registration and hooks, fixture helpers.
 
-- [ ] **Step 4: Verify.** Unit test PASS; `npm run build:e2e && npm run test:e2e -- tests/e2e/outline.spec.ts` PASS; existing suites still green: `npm run test:e2e` (the view still uses `chromeSource` at this point).
+- [ ] **Step 3: Verify.** `npm run build:e2e && npm run test:e2e -- tests/e2e/outline.spec.ts` PASS; existing suites still green: `npm run test:e2e` (the view still uses `chromeSource` at this point).
 
-- [ ] **Step 5: Commit** — `feat(worker): service worker owns and persists the outline, re-links restored windows (SKULL-811, SKULL-822)`
+- [ ] **Step 4: Commit** — `feat(worker): service worker owns and persists the outline, re-links restored windows (SKULL-811, SKULL-822)`
 
 ---
 
@@ -622,7 +626,7 @@ test('a window opened with the same tabs as a trash entry is re-linked to it', a
 - Produces (`outlineOwner.ts`): `command(c)` implemented. Each command is one queued job: reconcile against a fresh snapshot, apply the model op, persist + broadcast, run Chrome effects, then (for `open`) `attachOpened` with what Chrome created, persist + broadcast. Holding the queue across the Chrome calls means the windows/tabs Tab Hammer creates are already attached when their events' reconcile runs, so they never become provisional.
   - `runtime.onMessage`: `isOutlineCommandRequest` → `owner.command(msg.command)` → reply `{ ok: true }` or `{ ok: false, error: String(err) }`; return `true` (async). Other messages: return `false`.
   - `hibernate`/`trash`: model first, then `runEffects` (the resulting `onRemoved` events find no live record and do nothing).
-  - `place`: `placeTabs`, `runEffects`, then for each `regroup` entry `createGroup` and `attachGroup`.
+  - `place`: `placeTabs(outline, placement, Date.now(), crypto.randomUUID)`, `runEffects`, then for each `regroup` entry `createGroup` and `attachGroup`.
 
 - [ ] **Step 1: Write the failing e2e** (append to `outline.spec.ts`, driving commands through the `outlineCommand` hook):
 
@@ -682,7 +686,7 @@ export interface OutlineView { windows: WindowNode[]; trash: WindowNode[] }
 
 - `buildTree(state: OutlineState): OutlineView` — `windows`: non-trashed records in outline order, `label = name ?? \`Window ${n}\`` (n = 1-based position among them); `trash`: trashed records sorted by `closedAt` desc, `label = name ?? first tab's title`. Group runs as today. `active/discarded/lastAccessed` from `state.live.tabs[tabId]`; `focused` = `windowId === state.live.focusedWindowId`. Tab `title` falls back to `url`; group title to `'Untitled group'`.
 - `findDuplicates`: live tabs only (skip `tabId === undefined`); the focus rule compares `TabNode.windowId` with the focused window's `windowId`.
-- `moveSelection.ts`: same algorithm, reading `GroupNode.chromeGroupId` and `TabNode.tabId!` (all tabs are live until Task 10); `isWholeGroup` compares group `id`s.
+- `moveSelection.ts`: same algorithm, reading `GroupNode.chromeGroupId` and `TabNode.tabId!`; `isWholeGroup` compares group `id`s. Hibernated tabs have no `tabId`, so until Task 10 the drag and drop handlers ignore hibernated rows: they get no drag props and are not drop targets (live rows only, as today). Task 10 lifts this.
 - `outlineClient.ts` (a view module allowed to touch `chrome.runtime`):
 
 ```ts
@@ -709,7 +713,7 @@ export function sendOutlineCommand(c: OutlineCommand): Promise<void>; // rejects
 ### Task 10: Drag and drop with hibernated rows
 
 **Files:**
-- Modify: `src/model/moveSelection.ts`, `src/model/__tests__/moveSelection.test.ts`, `src/view/App.tsx`, `src/view/components/useRowDrag.ts` (trash rows excluded — they never get drag props), `tests/e2e/move.spec.ts`
+- Modify: `src/model/moveSelection.ts`, `src/model/__tests__/moveSelection.test.ts`, `src/view/App.tsx`, `src/view/components/useRowDrag.ts` (hibernated rows and window rows get drag props; today windows have `draggable: kind !== 'window'`), `tests/e2e/move.spec.ts`
 
 **Interfaces:**
 - Consumes: `Placement` (Task 5), `sendOutlineCommand` (Task 9), view types (Task 9).
@@ -720,9 +724,10 @@ export interface DropPlan { chrome: MoveOp[]; place: Placement | null }
 export function planDrop(tree: WindowNode[], keys: readonly string[], target: DropTarget): DropPlan;
 ```
 
-  `planMove` stays (now internal or exported for its tests). `planDrop`:
+  `planMove` stays (now internal or exported for its tests). Task 9 made drag ignore hibernated rows; this task removes that restriction, so hibernated tabs/groups and window header rows are all draggable and valid targets. `planDrop`:
+  0. **Window rows are draggable.** A window row (or a selection that includes one) is a unit that expands to all of that window's tabs, live and hibernated, in outline order; they move into the target with the same live/hibernated rules as any other drag (so `place` carries every tab, and `chrome` moves the live ones). Dropping a window onto itself, or onto a row inside it, is a no-fixed-point no-op. The emptied source window follows the Task 1/5 rules (a live window closes with its last tab; a hibernated one is deleted).
   1. Resolve units, the target window, the insertion point in its tabs (hibernated included) and the joined group exactly as `planMove` does today; same "no fixed point" early returns (→ `{ chrome: [], place: null }`).
-  2. `place` is non-null when any moved tab is hibernated, the target window is hibernated, or the joined group has no `chromeGroupId`: `windowId` = target window `id`; `beforeTabId` = first non-moved tab at/after the insertion point, or null; `tabs` = moved tab IDs in unit order, `groupId` = joined group's `id`, else the moved group's `id` for group units, else null.
+  2. `place` is non-null when any moved tab is hibernated, the target window is hibernated, or the joined group has no `chromeGroupId`: `windowId` = target window `id`; `beforeTabId` = first non-moved tab at/after the insertion point, or null; `tabs` = moved tab IDs in unit order, `groupId` = joined group's `id`, else the moved group's `id` for group units, else null. The worker's `place` handler calls `placeTabs(outline, placement, Date.now(), crypto.randomUUID)` (Task 8).
   3. `chrome`: empty if the target window is hibernated. Otherwise run `planMove` on the **live projection**: the tree with hibernated tabs removed (and groups left empty dropped), keys narrowed to live tabs/groups, and the target mapped to a live row — a hibernated target tab maps to the next live tab after it in the same window (`before`), else the previous live one (`after`), else the window header (`inside`); a target group with no live tabs maps the same way from its position (the worker's `regroup` then makes the Chrome group).
   4. Pure-live drags into live windows yield exactly today's `planMove` ops with `place: null`.
 - `App.tsx`: on drop, `applyMoveOps(plan.chrome)` then, if `plan.place`, `sendOutlineCommand({ cmd: 'place', placement: plan.place })`.
@@ -736,11 +741,12 @@ it('a mixed selection moves live tabs in Chrome and places all moved tabs in ord
 it('dropping next to a hibernated tab anchors Chrome moves on the next live tab', …)
 it('live tabs dropped into a hibernated window: no Chrome moves, placed there', …)
 it('joining a group with no live tabs places the tabs into it', …)
+it('dragging a window row moves all its tabs, live and hibernated, in order, into the target', …) // chrome moves only the live tabs; place.tabs lists every tab of the window in outline order; dropping a window onto itself plans nothing
 ```
 
 - [ ] **Step 2: Run to verify they fail** — `npx vitest run src/model/__tests__/moveSelection.test.ts` → FAIL.
 - [ ] **Step 3: Implement `planDrop`, wire App.**
-- [ ] **Step 4: Add the e2e** in `move.spec.ts`: `dragging a live tab into a hibernated window hibernates it there` — hibernate window B via the `outlineCommand` hook, drag Alpha's row onto B's header, poll: Alpha's Chrome tab is gone and B's record lists Alpha's record (same id) last, hibernated.
+- [ ] **Step 4: Add the e2e** in `move.spec.ts`: `dragging a live tab into a hibernated window hibernates it there` — hibernate window B via the `outlineCommand` hook, drag Alpha's row onto B's header, poll: Alpha's Chrome tab is gone and B's record lists Alpha's record (same id) last, hibernated. Also `dragging a window row moves all its tabs into another window` — window C holds a live tab and a hibernated tab; drag C's header onto window A's header; poll `readOutline`: A's record lists C's tab records (same ids, same order) after its own, C's record is gone, and C's live tab is now in A's Chrome window.
 - [ ] **Step 5: Verify** — unit PASS; `npm run build:e2e && npm run test:e2e -- tests/e2e/move.spec.ts` PASS.
 - [ ] **Step 6: Commit** — `feat: drag and drop hibernated rows`
 
@@ -791,11 +797,11 @@ test('Delete trashes the selected tabs', …)
 
 **Files:**
 - Create: `src/view/components/RecentlyClosed.tsx`
-- Modify: `src/view/App.tsx`, `src/view/styles/theme.css`, `tests/e2e/outline.spec.ts`
+- Modify: `src/view/App.tsx`, `src/view/components/useRowDrag.ts`, `src/view/styles/theme.css`, `tests/e2e/outline.spec.ts`
 
 **Interfaces:**
 - Consumes: `OutlineView.trash` (Task 9), `RowToolbar` (Task 11), `sendOutlineCommand`.
-- Produces: `RecentlyClosed({ entries }: { entries: WindowNode[] })` rendered as the last child inside the scrolling `<main>` (after the window cards, also while searching, since search doesn't cover it — hide it while a query is active). A header row `Recently closed (N)` with a twisty, collapsed by default (local state); hidden when N is 0. Each entry: a dimmed row (`data-testid="trash-entry"`, its label and `N tabs`) with its own twisty (collapsed by default) showing its tabs as plain dimmed rows (title + favicon, no hover card, not selectable). Entry toolbar: `Restore` → `{ cmd: 'open', id }`; `Delete forever` → `{ cmd: 'deleteForever', windowId: id }`. Double-click an entry = Restore. Not `role="treeitem"` rows of the outline tree (use `role="group"`/`listitem` semantics so keyboard nav and selection ignore them).
+- Produces: `RecentlyClosed({ entries }: { entries: WindowNode[] })` rendered as the last child inside the scrolling `<main>` (after the window cards, also while searching, since search doesn't cover it — hide it while a query is active). A header row `Recently closed (N)` with a twisty, collapsed by default (local state); hidden when N is 0. Each entry: a dimmed row (`data-testid="trash-entry"`, its label and `N tabs`) with its own twisty (collapsed by default) showing its tabs as plain dimmed rows (title + favicon, no hover card, not selectable). Entry toolbar: `Restore` → `{ cmd: 'open', id }`; `Delete forever` → `{ cmd: 'deleteForever', windowId: id }`. Double-click an entry = Restore. Not `role="treeitem"` rows of the outline tree (use `role="group"`/`listitem` semantics so keyboard nav and selection ignore them). Trash rows are not drag sources or targets: `useRowDrag` (which Task 10 made accept window and hibernated rows) must never give them drag props or drop handling.
 
 - [ ] **Step 1: Write the failing e2e:**
 
@@ -822,14 +828,14 @@ test('Delete forever removes a trash entry', …)
 - Modify: `tests/e2e/fixtures.ts` (a relaunch helper), possibly `src/background/index.ts` (hooks only)
 
 **Interfaces:**
-- Consumes: `launchWithExtension(userDataDir)`, `exportOutline`, `outlineCommand` helpers (Task 7), `simulateBrowserRestart` hook (Task 7).
+- Consumes: `launchWithExtension(userDataDir)`, `readOutline`, `outlineCommand` helpers (Task 7), `simulateBrowserRestart` hook (Task 7).
 - Produces: `relaunch(userDataDir): Promise<{ context, sw }>` in `fixtures.ts` if the real restart works.
 
 - [ ] **Step 1: Feasibility check (time-boxed, ~30 min).** In a scratch spec (not committed), with a `fs.mkdtemp` profile: launch, open two windows of `data:text/html,<title>…</title>` tabs, `context.close()`, then relaunch the same dir both with `--restore-last-session` in `args` and, separately, with `Default/Preferences` containing `{"session":{"restore_on_startup":1}}` written before relaunch. Check whether the windows come back (`chrome.windows.getAll({ populate: true })` from the new worker) in headless new mode. Run it 5 times; it's "reliable" only if all 5 restore.
 - [ ] **Step 2: Write the restart test** in `restart.spec.ts`:
-  - **If real restore is reliable:** `a browser restart re-links restored windows to their rows` — build windows A (`[A1, A2]@Group`, A3) and B (`[B1, B2]`), rename A to `Work`, `exportOutline` → remember A/B record IDs; close; relaunch; poll `exportOutline` until A and B records are `live` with the same IDs, A named `Work`, no other record holds their Chrome window IDs, and neither is trashed. Don't assert on Playwright's own `about:blank` window (all-blank windows are never matched, so its old record stays in the trash).
+  - **If real restore is reliable:** `a browser restart re-links restored windows to their rows` — build windows A (`[A1, A2]@Group`, A3) and B (`[B1, B2]`), rename A to `Work`, `readOutline` → remember A/B record IDs; close; relaunch; poll `readOutline` until A and B records are `live` with the same IDs, A named `Work`, no other record holds their Chrome window IDs, and neither is trashed. Don't assert on Playwright's own `about:blank` window (all-blank windows are never matched, so its old record stays in the trash).
   - **Else (deviation, report it):** `the fresh-launch path re-links open windows to their rows` — same setup in the default fixture, then call `simulateBrowserRestart` (every live window → trash marked open-at-shutdown, Chrome IDs stripped, then the still-open Chrome windows come in as unknown windows and must re-link); same assertions.
-- [ ] **Step 3: Write `a rename survives a service-worker restart`** — rename a window via the UI, then stop the worker: `const cdp = await context.newCDPSession(view); await cdp.send('ServiceWorker.stopAllWorkers')`; wait for `context.waitForEvent('serviceworker')` (the view's reconnect wakes it). Assert: `exportOutline` (through the new worker) shows the same record ID, `state: 'live'`, the name, and no trashed records (Review Focus 3); the view row shows the name. If `stopAllWorkers` doesn't stop an extension worker in this Playwright/Chromium, use CDP `Target.getTargets` + `Target.closeTarget` on the `service_worker` target; report whichever was used.
+- [ ] **Step 3: Write `a rename survives a service-worker restart`** — rename a window via the UI, then stop the worker: `const cdp = await context.newCDPSession(view); await cdp.send('ServiceWorker.stopAllWorkers')`; wait for `context.waitForEvent('serviceworker')` (the view's reconnect wakes it). Assert: `readOutline` (through the new worker) shows the same record ID, `state: 'live'`, the name, and no trashed records (Review Focus 3); the view row shows the name. If `stopAllWorkers` doesn't stop an extension worker in this Playwright/Chromium, use CDP `Target.getTargets` + `Target.closeTarget` on the `service_worker` target; report whichever was used.
 - [ ] **Step 4: Run** — `npm run build:e2e && npm run test:e2e -- tests/e2e/restart.spec.ts` PASS, three consecutive runs.
 - [ ] **Step 5: Commit** — `test(e2e): re-link after a browser restart; outline survives a worker restart`
 
@@ -841,7 +847,7 @@ test('Delete forever removes a trash entry', …)
 - Modify: `CLAUDE.md` (repo root)
 
 - [ ] **Step 1: Update `CLAUDE.md` "Architecture in one breath":** the service worker owns the outline (`src/background/outline/`): records with Tab Hammer IDs in IndexedDB `tab-hammer-outline`, reconciled with Chrome events through a serial queue, fresh launches told apart by `browserSession` (now the single instance in `src/background/session.ts`), restored windows re-linked after a quiet period by the pure matcher. The view no longer reads Chrome for the tree: it subscribes over the `tabHammer.outline` port (`src/view/chrome/outlineClient.ts`) and sends commands as runtime messages; `buildTree` turns the outline into the view model; `chromeSource.ts` keeps only direct live actions (activate, focus, move, close). Hibernate/trash/Recently closed in one sentence. Replace the "persistence (post-MVP) must introduce Tab Hammer's own node IDs" sentence. Note the bridge stays live-only.
-- [ ] **Step 2: Update the Tests section:** unit tests now include `src/model/outline/` (lifecycle, matching, reconcile, match application, open/place) and `src/background/outline/` (store with `fake-indexeddb`, settle tracker); e2e adds `outline.spec.ts` and `restart.spec.ts` (state whether the restart test is real or simulated), the `exportOutline`/`outlineCommand`/`simulateBrowserRestart` hooks, and `data-tab-id`/`data-window-id`/`data-group-id` locators for live rows.
+- [ ] **Step 2: Update the Tests section:** unit tests now include `src/model/outline/` (lifecycle, matching, reconcile, match application, open/place) and `src/background/outline/` (store with `fake-indexeddb`, settle tracker); e2e adds `outline.spec.ts` and `restart.spec.ts` (state whether the restart test is real or simulated), the `readOutline`/`outlineCommand`/`simulateBrowserRestart` hooks, and `data-tab-id`/`data-window-id`/`data-group-id` locators for live rows.
 - [ ] **Step 3: Run the gate** — `npm run gate` from the repo root. Expected: typecheck, lint, format check, unit, `build:e2e`, e2e all green. Fix anything red, including failures that look pre-existing or flaky (diagnose the cause; no retries, timeout bumps, or sleeps). Run `npm run format` if only formatting fails, then re-run the gate.
 - [ ] **Step 4: Commit** — `docs: architecture for the persisted outline` (plus any gate fixes as their own commits). Report the gate name (`npm run gate`) and result.
 
