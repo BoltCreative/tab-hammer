@@ -61,11 +61,13 @@ body,
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   padding: 3px 10px;
 }
+/* The search box takes a full row of its own, above the buttons, so they never squeeze it. */
 .search {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   background: var(--card);
   color: var(--text);
