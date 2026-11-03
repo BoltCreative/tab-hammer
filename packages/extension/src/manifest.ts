@@ -20,6 +20,7 @@ export default defineManifest({
   // clipboardWrite: the window menu's "Copy all URLs".
   // nativeMessaging: the bridge to Claude's MCP server (packages/mcp).
   // history: deleting previews when the user clears Chrome's browsing history.
+  // system.display: reopening the view window on a visible screen if its saved spot is gone.
   permissions: [
     'tabs',
     'tabGroups',
@@ -29,6 +30,7 @@ export default defineManifest({
     'clipboardWrite',
     'nativeMessaging',
     'history',
+    'system.display',
   ],
   // captureVisibleTab (hover previews) needs host access to the page being captured.
   host_permissions: ['<all_urls>'],

@@ -37,7 +37,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font:
-    13px/1.3 -apple-system,
+    12px/1.25 -apple-system,
     system-ui,
     sans-serif;
   user-select: none;
@@ -62,8 +62,8 @@ body,
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 3px 10px;
+  gap: 3px 6px;
+  padding: 3px 6px;
 }
 /* The search box takes a full row of its own, above the buttons, so they never squeeze it. */
 .search {
@@ -73,9 +73,8 @@ body,
   color: var(--text);
   border: 1px solid var(--card-border);
   border-radius: 5px;
-  padding: 2px 7px;
+  padding: 1px 6px;
   font: inherit;
-  font-size: 12px;
 }
 .search:focus {
   outline: none;
@@ -93,10 +92,11 @@ body,
   background: none;
   color: var(--text-muted);
   border: 1px solid var(--card-border);
-  border-radius: 5px;
-  padding: 1px 7px;
+  border-radius: 4px;
+  padding: 0 6px;
   font: inherit;
   font-size: 11px;
+  line-height: 16px;
   cursor: pointer;
 }
 .toolbar-button:hover:not(:disabled) {
@@ -107,16 +107,16 @@ main.outline {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 10px;
+  padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
 }
 .card {
   background: var(--card);
   border: 1px solid var(--card-border);
-  border-radius: 8px;
-  padding: 6px;
+  border-radius: 6px;
+  padding: 2px;
 }
 .card.focused {
   border-color: var(--card-border-focused);
@@ -124,10 +124,10 @@ main.outline {
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 24px;
-  padding: 0 6px;
-  border-radius: 5px;
+  gap: 6px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 3px;
   white-space: nowrap;
   overflow: hidden;
   cursor: default;
@@ -216,8 +216,8 @@ main.outline {
   flex: none;
 }
 .group-tabs {
-  margin-left: 12px;
-  padding-left: 4px;
+  margin-left: 10px;
+  padding-left: 2px;
   border-left: 2px solid var(--group-color);
 }
 /* Tab hover preview. pointer-events: none so it never takes clicks or hover from the rows under it. */
@@ -401,6 +401,7 @@ main.outline {
 .dup-badge {
   flex: none;
   font-size: 10px;
+  line-height: 12px;
   color: var(--text-muted);
   border: 1px solid var(--card-border);
   border-radius: 3px;

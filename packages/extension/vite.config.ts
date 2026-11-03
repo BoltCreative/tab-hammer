@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './src/manifest.ts';
 import { faviconPassthrough } from './build/faviconPassthrough.ts';
+import { holdBrokenReloads } from './build/holdBrokenReloads.ts';
 
 // `npm run dev` writes to one fixed folder outside the repo, shared by the root checkout and every
 // worktree. Chrome loads it once; switching trees is just restarting the dev server in another tree
@@ -14,7 +15,12 @@ const DEV_OUT_DIR =
   process.env.TAB_HAMMER_DEV_DIR ?? path.join(os.homedir(), '.tab-hammer', 'dist');
 
 export default defineConfig(({ command }) => ({
-  plugins: [react(), crx({ manifest }), faviconPassthrough()],
+  plugins: [
+    react(),
+    crx({ manifest }),
+    faviconPassthrough(),
+    holdBrokenReloads(path.resolve(import.meta.dirname, 'src/background/index.ts')),
+  ],
   build: {
     ...(command === 'serve' && { outDir: DEV_OUT_DIR, emptyOutDir: true }),
     rollupOptions: {
