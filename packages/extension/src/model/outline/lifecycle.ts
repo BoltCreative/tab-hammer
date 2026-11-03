@@ -32,7 +32,7 @@ function stripTab(t: TabRec): TabRec {
 }
 
 /** Groups with no live tab left lose their Chrome ID. */
-function syncGroups(w: WindowRec): WindowRec {
+export function syncGroups(w: WindowRec): WindowRec {
   const liveGroups = new Set(w.tabs.filter(isLive).map((t) => t.groupId));
   if (w.groups.every((g) => g.chromeGroupId === undefined || liveGroups.has(g.id))) return w;
   return {
@@ -50,7 +50,7 @@ function syncGroups(w: WindowRec): WindowRec {
  * The window stops being live: Chrome IDs go, each tab remembers whether it was
  * live, and the caller picks the new state. Clears `provisional`.
  */
-function detach(w: WindowRec, now: number): WindowRec {
+export function detach(w: WindowRec, now: number): WindowRec {
   const next: WindowRec = {
     ...w,
     lastLiveAt: now,
@@ -75,7 +75,7 @@ function closed(w: WindowRec, now: number): WindowRec {
   return { ...next, state: 'trashed', closedAt: now };
 }
 
-function clearShutdown(w: WindowRec): WindowRec {
+export function clearShutdown(w: WindowRec): WindowRec {
   if (w.openAtShutdown === undefined) return w;
   const next = { ...w };
   delete next.openAtShutdown;
