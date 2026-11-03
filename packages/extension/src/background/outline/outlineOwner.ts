@@ -17,6 +17,7 @@ import {
 } from '../../shared/outlineMessages';
 import { browserSession } from '../session';
 import { liveDetails, readSnapshot } from './chromeOutline';
+import { createJobQueue } from './jobQueue';
 import { loadOutline, saveOutline } from './outlineStore';
 import { createSettleTracker } from './settleTracker';
 
@@ -41,6 +42,13 @@ async function readInstallId(): Promise<string> {
   return id;
 }
 
+/**
+ * chrome.storage.session key mirroring the launch-URL map, so it survives the worker idling out
+ * between a tab's creation and its window settling (session storage ends with the browser
+ * session, as tab IDs do).
+ */
+export const LAUNCH_URLS_KEY = 'outlineLaunchUrls';
+
 const newId = () => crypto.randomUUID();
 
 function sameLive(a: LiveDetails | null, b: LiveDetails): boolean {
@@ -63,18 +71,12 @@ export function registerOutline(): OutlineOwner {
   let focusedWindowId: number | null = null;
   const ports = new Set<chrome.runtime.Port>();
 
-  let tail: Promise<void> = Promise.resolve();
-  function enqueue<T>(job: () => Promise<T>): Promise<T> {
-    const run = tail.then(async () => {
-      if (!initialized) await init(); // retried by the next job if it failed
-      return job();
-    });
-    tail = run.then(
-      () => undefined,
-      (err: unknown) => console.error('[outline]', err),
-    );
-    return run;
-  }
+  // Every outline change runs here, one at a time, behind init (retried by the next job if it fails).
+  const queue = createJobQueue({
+    init: () => init(),
+    onError: (err) => console.error('[outline]', err),
+  });
+  const enqueue = queue.enqueue;
 
   const tracker = createSettleTracker({
     onSettled: (ids) => void enqueue(() => step({ after: (o) => matchSettled(o, ids) })),
@@ -100,17 +102,21 @@ export function registerOutline(): OutlineOwner {
     }
   }
 
-  /** Adopts `next` (and `nextLive`), persisting and broadcasting whatever changed. */
+  /**
+   * Adopts `next` (and `nextLive`), broadcasting and persisting whatever changed. Broadcast comes
+   * first, so a failed save doesn't hide the change from views; the next save, which diffs
+   * against what was last saved, retries it.
+   */
   async function commit(next: Outline, nextLive: LiveDetails, force = false): Promise<void> {
     const outlineChanged = next !== outline;
     const liveChanged = !sameLive(live, nextLive);
     outline = next;
     live = nextLive;
+    if (initialized && (outlineChanged || liveChanged)) for (const p of ports) post(p);
     if (force || next !== persisted) {
       await saveOutline(persisted, next, sessionId);
       persisted = next;
     }
-    if (initialized && (outlineChanged || liveChanged)) for (const p of ports) post(p);
   }
 
   function updateFocus(snapshot: ChromeSnapshot): void {
@@ -143,6 +149,7 @@ export function registerOutline(): OutlineOwner {
 
   async function init(): Promise<void> {
     installId = await readInstallId();
+    await loadLaunchUrls();
     const { meta, outline: loaded } = await loadOutline();
     outline = persisted = loaded;
     sessionId = await browserSession.current();
@@ -162,15 +169,7 @@ export function registerOutline(): OutlineOwner {
     for (const p of ports) post(p);
   }
 
-  let reconcileQueued = false;
-  function scheduleReconcile(): void {
-    if (reconcileQueued) return;
-    reconcileQueued = true;
-    void enqueue(() => {
-      reconcileQueued = false;
-      return step();
-    });
-  }
+  const scheduleReconcile = queue.coalesced(() => step());
 
   /** Tab churn in a window still waiting to be matched restarts its quiet period. */
   function touchIfProvisional(chromeWindowId: number): void {
@@ -178,8 +177,38 @@ export function registerOutline(): OutlineOwner {
       tracker.touch(chromeWindowId);
   }
 
+  // Tabs removed before the stored launch URLs were loaded, so loading doesn't bring them back.
+  let removedBeforeLoad: Set<number> | null = new Set();
+
+  async function loadLaunchUrls(): Promise<void> {
+    if (removedBeforeLoad === null) return; // a retried init already loaded them
+    const { [LAUNCH_URLS_KEY]: stored } = await chrome.storage.session.get(LAUNCH_URLS_KEY);
+    if (stored && typeof stored === 'object') {
+      for (const [id, url] of Object.entries(stored as Record<string, unknown>)) {
+        const tabId = Number(id);
+        // Stored entries were recorded first, so they win over ones noted since the worker woke.
+        if (typeof url === 'string' && !removedBeforeLoad.has(tabId)) launchUrls.set(tabId, url);
+      }
+    }
+    removedBeforeLoad = null;
+    saveLaunchUrls();
+  }
+
+  function saveLaunchUrls(): void {
+    void chrome.storage.session
+      .set({ [LAUNCH_URLS_KEY]: Object.fromEntries(launchUrls) })
+      .catch((err: unknown) => console.error('[outline] launch URLs', err));
+  }
+
   function noteLaunchUrl(tabId: number, url: string | undefined): void {
-    if (url && !launchUrls.has(tabId)) launchUrls.set(tabId, url);
+    if (!url || launchUrls.has(tabId)) return;
+    launchUrls.set(tabId, url);
+    saveLaunchUrls();
+  }
+
+  function forgetLaunchUrl(tabId: number): void {
+    removedBeforeLoad?.add(tabId);
+    if (launchUrls.delete(tabId)) saveLaunchUrls();
   }
 
   chrome.tabs.onCreated.addListener((tab) => {
@@ -193,7 +222,7 @@ export function registerOutline(): OutlineOwner {
     if (d.frameId === 0) noteLaunchUrl(d.tabId, d.url);
   });
   chrome.tabs.onRemoved.addListener((tabId, info) => {
-    launchUrls.delete(tabId);
+    forgetLaunchUrl(tabId);
     if (info.isWindowClosing) {
       // The window's own removal closes its record (with every tab) once it lands.
       closingWindowIds.add(info.windowId);
@@ -218,7 +247,7 @@ export function registerOutline(): OutlineOwner {
   chrome.tabs.onActivated.addListener(scheduleReconcile);
   chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     const launch = launchUrls.get(removedTabId);
-    launchUrls.delete(removedTabId);
+    forgetLaunchUrl(removedTabId);
     noteLaunchUrl(addedTabId, launch);
     // Reconciling too picks up the new tab's live details.
     void enqueue(() => step({ before: (o) => replaceTabId(o, addedTabId, removedTabId) }));
@@ -263,13 +292,7 @@ export function registerOutline(): OutlineOwner {
   void enqueue(async () => undefined); // runs init
 
   return {
-    async idle() {
-      for (;;) {
-        const t = tail;
-        await t;
-        if (t === tail) return;
-      }
-    },
+    idle: () => queue.idle(),
     simulateBrowserRestart: () =>
       enqueue(() => {
         closingWindowIds.clear();
