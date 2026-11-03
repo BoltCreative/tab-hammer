@@ -1,28 +1,25 @@
 import { getPreview } from '../shared/previewStore';
 import { connectBridge } from './bridge';
-import { registerPreviewCapture } from './previews';
+import { registerPreviewCapture, viewWindows } from './previews';
 import { openingBounds, trackViewBounds } from './viewBounds';
-import {
-  ensureViewWindow,
-  pingView,
-  viewTabs,
-  viewUrl,
-  viewWindowId,
-  type ViewWindowDeps,
-} from './viewWindow';
+import { ensureViewWindow, pingView, viewUrl, type ViewWindowDeps } from './viewWindow';
 
 const viewWindowDeps: ViewWindowDeps = {
-  viewTabs,
+  viewTabs: viewWindows.viewTabs,
   ping: pingView,
   reloadTab: (tabId) => chrome.tabs.reload(tabId),
+  restoreTab: async (tabId) => void (await chrome.tabs.update(tabId, { url: viewUrl() })),
   focusWindow: async (windowId) => void (await chrome.windows.update(windowId, { focused: true })),
   removeWindow: (windowId) => chrome.windows.remove(windowId),
   createWindow: async () =>
-    void (await chrome.windows.create({
-      url: viewUrl(),
-      type: 'popup',
-      ...(await openingBounds()),
-    })),
+    (
+      await chrome.windows.create({
+        url: viewUrl(),
+        type: 'popup',
+        ...(await openingBounds()),
+      })
+    )?.id,
+  remember: viewWindows.remember,
 };
 
 async function openOrFocus(): Promise<void> {
@@ -34,9 +31,9 @@ chrome.action.onClicked.addListener(() => {
   void openOrFocus();
 });
 registerPreviewCapture();
-trackViewBounds(viewWindowId);
-// An extension reload (the dev loop's build switch) can leave the view window blank, or leave
-// one behind per reload: fix it up in place without stealing focus.
+trackViewBounds(viewWindows.viewWindowId);
+// An extension reload (the dev loop's build switch or dev-server restart) orphans the view window
+// on a New Tab page, or leaves it blank: bring it back in place without stealing focus.
 chrome.runtime.onInstalled.addListener(() => void ensureViewWindow(viewWindowDeps, false));
 connectBridge();
 

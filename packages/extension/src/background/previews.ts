@@ -18,7 +18,7 @@ import {
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { clearPreviews, deletePreviews, prunePreviews, putPreview } from '../shared/previewStore';
 import { createBrowserSession } from './browserSession';
-import { viewWindowId } from './viewWindow';
+import { createViewWindowFinder } from './viewWindow';
 import { createCaptureQueue } from './captureQueue';
 import { createLoadWaiter } from './waitForLoad';
 import { createCaptureScheduler } from './captureScheduler';
@@ -79,7 +79,7 @@ const waitForComplete = createLoadWaiter({
   getStatus: async (tabId) => (await chrome.tabs.get(tabId)).status,
 });
 
-const browserSession = createBrowserSession({
+export const browserSession = createBrowserSession({
   local: {
     get: (key) => chrome.storage.local.get(key),
     set: (items) => chrome.storage.local.set(items),
@@ -90,6 +90,10 @@ const browserSession = createBrowserSession({
   },
   newId: () => crypto.randomUUID(),
 });
+// Finds Tab Hammer's own window (see viewWindow.ts); the capturers skip it.
+export const viewWindows = createViewWindowFinder(() => browserSession.current());
+const viewWindowId = viewWindows.viewWindowId;
+
 const record = (windowId: number, outcome: CaptureOutcome) =>
   recordUnder(OUTCOMES_KEY, windowId, outcome);
 

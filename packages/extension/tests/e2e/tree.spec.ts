@@ -70,6 +70,27 @@ test('after an extension reload, opening reuses the old window and closes leftov
   await expect(view.locator('main.outline')).toBeVisible();
 });
 
+test('after an extension unload orphans the window on a New Tab page, opening brings it back', async ({
+  sw,
+  view,
+}) => {
+  await expect(view.locator('main.outline')).toBeVisible();
+  const viewWindowId = await view.evaluate(async () => (await chrome.windows.getCurrent()).id);
+  // While a build is unloaded, Chrome navigates its pages to the New Tab page; the reload also
+  // wipes chrome.storage.session. (The harness can't reload the extension, so recreate that.)
+  await sw.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ windowType: 'popup' });
+    await chrome.tabs.update(tab!.id!, { url: 'chrome://newtab/' });
+    await chrome.storage.session.clear();
+  });
+  await expect.poll(() => view.url()).not.toContain('src/view/index.html');
+
+  await openOrFocus(sw);
+  expect(await popupIds(sw)).toEqual([viewWindowId]);
+  await expect.poll(() => view.url()).toContain('src/view/index.html');
+  await expect(view.locator('main.outline')).toBeVisible();
+});
+
 test('renders window cards with a group row and indented tabs, excluding itself', async ({
   sw,
   view,
