@@ -8,7 +8,7 @@ test('the Tab Hammer window reopens where the user last left it', async ({ sw, v
 
   // Move and resize the view window the way the user would, then wait for the debounced save.
   const reported = await sw.evaluate(async (b) => {
-    const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
+    const viewWindowId = (await chrome.windows.getAll({ windowTypes: ['popup'] }))[0]!.id;
     const win = await chrome.windows.update(viewWindowId as number, b);
     return { left: win.left, top: win.top, width: win.width, height: win.height };
   }, target);
@@ -24,7 +24,7 @@ test('the Tab Hammer window reopens where the user last left it', async ({ sw, v
   // Close the view, then reopen it through the toolbar path, recording the create call: headless
   // windows don't reliably report real screen positions, so assert what was asked of Chrome.
   const created = await sw.evaluate(async () => {
-    const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
+    const viewWindowId = (await chrome.windows.getAll({ windowTypes: ['popup'] }))[0]!.id;
     await chrome.windows.remove(viewWindowId as number);
     let createData: chrome.windows.CreateData | undefined;
     const original = chrome.windows.create.bind(chrome.windows);

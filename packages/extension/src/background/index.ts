@@ -2,30 +2,31 @@ import { getPreview } from '../shared/previewStore';
 import { connectBridge } from './bridge';
 import { registerPreviewCapture } from './previews';
 import { openingBounds, trackViewBounds } from './viewBounds';
+import {
+  ensureViewWindow,
+  pingView,
+  viewTabs,
+  viewUrl,
+  viewWindowId,
+  type ViewWindowDeps,
+} from './viewWindow';
 
-export const VIEW_PATH = 'src/view/index.html';
-
-async function storedViewWindowId(): Promise<number | undefined> {
-  const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
-  return typeof viewWindowId === 'number' ? viewWindowId : undefined;
-}
+const viewWindowDeps: ViewWindowDeps = {
+  viewTabs,
+  ping: pingView,
+  reloadTab: (tabId) => chrome.tabs.reload(tabId),
+  focusWindow: async (windowId) => void (await chrome.windows.update(windowId, { focused: true })),
+  removeWindow: (windowId) => chrome.windows.remove(windowId),
+  createWindow: async () =>
+    void (await chrome.windows.create({
+      url: viewUrl(),
+      type: 'popup',
+      ...(await openingBounds()),
+    })),
+};
 
 async function openOrFocus(): Promise<void> {
-  const viewWindowId = await storedViewWindowId();
-  if (viewWindowId !== undefined) {
-    try {
-      await chrome.windows.update(viewWindowId, { focused: true });
-      return;
-    } catch {
-      // The stored window was closed; fall through and open a new one.
-    }
-  }
-  const win = await chrome.windows.create({
-    url: chrome.runtime.getURL(VIEW_PATH),
-    type: 'popup',
-    ...(await openingBounds()),
-  });
-  await chrome.storage.session.set({ viewWindowId: win?.id });
+  await ensureViewWindow(viewWindowDeps, true);
 }
 
 chrome.action.onClicked.addListener(() => {
@@ -33,7 +34,10 @@ chrome.action.onClicked.addListener(() => {
   void openOrFocus();
 });
 registerPreviewCapture();
-trackViewBounds(storedViewWindowId);
+trackViewBounds(viewWindowId);
+// An extension reload (the dev loop's build switch) can leave the view window blank, or leave
+// one behind per reload: fix it up in place without stealing focus.
+chrome.runtime.onInstalled.addListener(() => void ensureViewWindow(viewWindowDeps, false));
 connectBridge();
 
 // Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and

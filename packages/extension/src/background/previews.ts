@@ -18,6 +18,7 @@ import {
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { clearPreviews, deletePreviews, prunePreviews, putPreview } from '../shared/previewStore';
 import { createBrowserSession } from './browserSession';
+import { viewWindowId } from './viewWindow';
 import { createCaptureQueue } from './captureQueue';
 import { createLoadWaiter } from './waitForLoad';
 import { createCaptureScheduler } from './captureScheduler';
@@ -91,11 +92,6 @@ const browserSession = createBrowserSession({
 });
 const record = (windowId: number, outcome: CaptureOutcome) =>
   recordUnder(OUTCOMES_KEY, windowId, outcome);
-
-const viewWindowId = async () => {
-  const { viewWindowId } = await chrome.storage.session.get('viewWindowId');
-  return typeof viewWindowId === 'number' ? viewWindowId : undefined;
-};
 
 const generations = createActivationGenerations();
 

@@ -25,27 +25,49 @@ async function buildLayout(sw: import('@playwright/test').Worker): Promise<Setup
   });
 }
 
-test('opening twice focuses the existing Tab Hammer window instead of making another', async ({
-  sw,
-  view,
-}) => {
-  // Read Chrome's own window list and the service worker's stored id, rather than Playwright's
-  // page list, which registers new pages asynchronously and could miss a second window.
-  const popupState = () =>
-    sw.evaluate(async () => ({
-      popupIds: (await chrome.windows.getAll({ windowTypes: ['popup'] })).map((w) => w.id),
-      viewWindowId: (await chrome.storage.session.get('viewWindowId')).viewWindowId as unknown,
-    }));
-  const before = await popupState();
-  const viewWindowId = await view.evaluate(async () => (await chrome.windows.getCurrent()).id);
-  expect(before).toEqual({ popupIds: [viewWindowId], viewWindowId });
-
-  await sw.evaluate(() =>
+const openOrFocus = (sw: import('@playwright/test').Worker) =>
+  sw.evaluate(() =>
     (
       globalThis as unknown as { tabHammer: { openOrFocus: () => Promise<void> } }
     ).tabHammer.openOrFocus(),
   );
-  expect(await popupState()).toEqual(before);
+// Read Chrome's own window list rather than Playwright's page list, which registers new pages
+// asynchronously and could miss a second window.
+const popupIds = (sw: import('@playwright/test').Worker) =>
+  sw.evaluate(async () =>
+    (await chrome.windows.getAll({ windowTypes: ['popup'] })).map((w) => w.id),
+  );
+
+test('opening twice focuses the existing Tab Hammer window instead of making another', async ({
+  sw,
+  view,
+}) => {
+  const viewWindowId = await view.evaluate(async () => (await chrome.windows.getCurrent()).id);
+  expect(await popupIds(sw)).toEqual([viewWindowId]);
+  await openOrFocus(sw);
+  expect(await popupIds(sw)).toEqual([viewWindowId]);
+});
+
+test('after an extension reload, opening reuses the old window and closes leftovers', async ({
+  sw,
+  view,
+}) => {
+  await expect(view.locator('main.outline')).toBeVisible();
+  const viewWindowId = await view.evaluate(async () => (await chrome.windows.getCurrent()).id);
+  // A reload wipes chrome.storage.session, and earlier reloads may have left a second window
+  // behind. (The harness can't reload a --load-extension extension, so recreate the aftermath.)
+  await sw.evaluate(async () => {
+    await chrome.storage.session.clear();
+    await chrome.windows.create({
+      url: chrome.runtime.getURL('src/view/index.html'),
+      type: 'popup',
+    });
+  });
+  expect(await popupIds(sw)).toHaveLength(2);
+
+  await openOrFocus(sw);
+  expect(await popupIds(sw)).toEqual([viewWindowId]);
+  await expect(view.locator('main.outline')).toBeVisible();
 });
 
 test('renders window cards with a group row and indented tabs, excluding itself', async ({

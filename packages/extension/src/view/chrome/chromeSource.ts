@@ -1,6 +1,16 @@
 import type { GroupColor, RawSnapshot } from '../../model/types';
 import type { MoveOp } from '../../model/moveSelection';
 import { SWAP_KEY, SWAP_MAX_AGE_MS, hiddenBySwap, isSwapRecord } from '../../shared/captureSwap';
+import { isViewPing } from '../../shared/viewPing';
+
+/** Tells the service worker this view is alive, so it reuses the window rather than reloading it. */
+export function answerPings(): void {
+  chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
+    if (!isViewPing(msg)) return false;
+    sendResponse(true);
+    return false;
+  });
+}
 
 let selfWindowIdPromise: Promise<number | null> | null = null;
 function getSelfWindowId(): Promise<number | null> {
