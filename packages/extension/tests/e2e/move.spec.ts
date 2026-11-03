@@ -46,9 +46,9 @@ function strip(sw: Worker, windowId: number) {
 }
 
 const row = (view: Page, key: string) => view.locator(`[data-key="${key}"]`);
-// Rows are 24px tall: drop in the top or bottom half.
-const TOP = { x: 40, y: 4 };
-const BOTTOM = { x: 40, y: 20 };
+// Rows are 18px tall: drop near the top or bottom edge.
+const TOP = { x: 40, y: 3 };
+const BOTTOM = { x: 40, y: 15 };
 
 test('dragging a multi-selection moves the tabs to another window, in outline order', async ({
   sw,
