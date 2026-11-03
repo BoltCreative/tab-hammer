@@ -33,6 +33,7 @@ export function TabRow({ tab, selected, duplicate, onSelect, onActivate, hover, 
       role="treeitem"
       data-key={tab.key}
       data-kind="tab"
+      data-tab-id={tab.tabId}
       {...rowProps(tab.key, 'tab')}
       aria-selected={selected}
       // The URL is no longer a native tooltip (the hover card replaced it), so name it here.

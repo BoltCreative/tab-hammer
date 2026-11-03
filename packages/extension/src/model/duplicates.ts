@@ -46,13 +46,14 @@ function better(a: TabNode, b: TabNode, focused: number | null): boolean {
   return false; // ties keep the earlier tab
 }
 
-/** Tabs that share a normalized URL with another tab, in any window. */
+/** Live tabs that share a normalized URL with another live tab, in any window. */
 export function findDuplicates(tree: WindowNode[]): Duplicates {
   const focused = tree.find((w) => w.focused)?.windowId ?? null;
   const byUrl = new Map<string, TabNode[]>();
   for (const w of tree) {
     for (const c of w.children) {
       for (const t of c.kind === 'group' ? c.tabs : [c]) {
+        if (t.tabId === undefined) continue; // hibernated: nothing to close
         const n = normalizeUrl(t.url);
         if (n === null) continue;
         const list = byUrl.get(n) ?? [];

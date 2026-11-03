@@ -8,9 +8,8 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
-import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
-import type { GroupNode, TabNode, WindowNode } from '../model/types';
+import type { GroupNode, OutlineView, TabNode, WindowNode } from '../model/types';
 import { findDuplicates } from '../model/duplicates';
 import { countTabs, filterTree } from '../model/filterTree';
 import { navIntent, outlineRows } from '../model/keyboardNav';
@@ -22,14 +21,8 @@ import {
   type CollapseState,
 } from '../model/visibleRows';
 import { planMove } from '../model/moveSelection';
-import {
-  activateTab,
-  applyMoveOps,
-  closeTabs,
-  focusWindow,
-  snapshot,
-  subscribe,
-} from './chrome/chromeSource';
+import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
+import { useOutline } from './chrome/outlineClient';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
 import type { RowPropsFor } from './components/rowProps';
@@ -41,31 +34,16 @@ import { useHoverCard } from './hover/useHoverCard';
 import { AppHeader } from './header/AppHeader';
 
 export function App() {
-  const [tree, setTree] = useState<WindowNode[]>([]);
   const [selection, dispatch] = useReducer(selectionReducer, emptySelection);
   const [collapse, setCollapse] = useState<CollapseState>({
     collapsedWindows: new Set(),
     groupOverrides: new Map(),
   });
-
-  // Snapshots can resolve out of order; only the most recently requested one may land.
-  const latestRequest = useRef(0);
-  const refresh = useCallback(() => {
-    const request = ++latestRequest.current;
-    snapshot()
-      .then((s) => {
-        if (request !== latestRequest.current) return;
-        const next = buildTree(s);
-        setTree(next);
-        setCollapse((c) => discardStaleOverrides(next, c));
-      })
-      .catch((err: unknown) => console.error('Tab Hammer: reading Chrome state failed', err));
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    return subscribe(refresh);
-  }, [refresh]);
+  // The worker's outline, re-rendered on every broadcast. Moves and other Chrome actions show up
+  // through it, so nothing here re-reads Chrome after acting.
+  const tree = useOutline(
+    useCallback((v: OutlineView) => setCollapse((c) => discardStaleOverrides(v.windows, c)), []),
+  ).windows;
 
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
@@ -113,22 +91,25 @@ export function App() {
     setCursor(key);
     dispatch(selectionActionFor(e, key, visible));
   };
+  // Until hibernated rows can be dragged, they are neither drag sources nor drop targets, and a
+  // drag leaves any selected ones behind.
+  const hibernatedKeys = useMemo(() => hibernatedRowKeys(tree), [tree]);
   const drag = useRowDrag(
     selection.selected,
     (key) => dispatch({ type: 'click', key }),
     (keys, target) => {
-      const ops = planMove(tree, keys, target);
+      const live = keys.filter((k) => !hibernatedKeys.has(k));
+      const ops = planMove(tree, live, target);
       if (ops.length === 0) return;
-      applyMoveOps(ops).catch((err: unknown) => {
-        console.error('Tab Hammer: moving tabs failed', err);
-        refresh();
-      });
+      applyMoveOps(ops).catch((err: unknown) =>
+        console.error('Tab Hammer: moving tabs failed', err),
+      );
     },
   );
   const rowProps: RowPropsFor = (key, kind) => {
     const r = rowByKey.get(key);
     return {
-      ...drag(key, kind),
+      ...(hibernatedKeys.has(key) ? {} : drag(key, kind)),
       tabIndex: key === tabStop ? 0 : -1,
       'aria-level': r?.level,
       'aria-setsize': r?.setSize,
@@ -136,8 +117,14 @@ export function App() {
       'aria-expanded': r?.expanded,
     };
   };
-  const onActivate = (t: TabNode) => void activateTab(t.tabId, t.windowId).catch(refresh);
-  const onFocusWindow = (id: number) => void focusWindow(id).catch(refresh);
+  // Hibernated rows have no Chrome tab or window to act on (opening them comes later).
+  const onActivate = (t: TabNode) => {
+    if (t.tabId === undefined || t.windowId === undefined) return;
+    activateTab(t.tabId, t.windowId).catch(logActionError);
+  };
+  const onFocusWindow = (w: WindowNode) => {
+    if (w.windowId !== undefined) focusWindow(w.windowId).catch(logActionError);
+  };
 
   // Right-click menu on a window header. Holds the window's key, not the node, so the menu always
   // acts on the window's current tabs even if they change while it is open.
@@ -203,7 +190,7 @@ export function App() {
         // Same as double-click: a tab is activated, a window focused; a group opens or closes.
         const node = findNode(shown, intent.key);
         if (node?.kind === 'tab') onActivate(node);
-        else if (node?.kind === 'window') onFocusWindow(node.windowId);
+        else if (node?.kind === 'window') onFocusWindow(node);
         else if (node?.kind === 'group' && rowByKey.get(node.key)?.expanded !== undefined) {
           onToggleGroup(node.key);
         }
@@ -226,7 +213,7 @@ export function App() {
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
         duplicateCount={duplicates.toClose.length}
-        onCloseDuplicates={() => closeTabs(duplicates.toClose.map((t) => t.tabId))}
+        onCloseDuplicates={() => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? []))}
         matchCount={filtering ? countTabs(shown) : null}
       />
       <main
@@ -274,6 +261,22 @@ export function App() {
       )}
     </div>
   );
+}
+
+function hibernatedRowKeys(tree: WindowNode[]): Set<string> {
+  const out = new Set<string>();
+  for (const w of tree) {
+    if (w.hibernated) out.add(w.key);
+    for (const c of w.children) {
+      if (c.hibernated) out.add(c.key);
+      if (c.kind === 'group') for (const t of c.tabs) if (t.hibernated) out.add(t.key);
+    }
+  }
+  return out;
+}
+
+function logActionError(err: unknown) {
+  console.error('Tab Hammer: Chrome action failed', err);
 }
 
 function findNode(tree: WindowNode[], key: string): WindowNode | GroupNode | TabNode | undefined {

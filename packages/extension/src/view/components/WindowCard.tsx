@@ -15,7 +15,7 @@ interface Props {
   onToggleGroup: (key: string) => void;
   onSelect: (e: MouseEvent, key: string) => void;
   onActivate: (tab: TabNode) => void;
-  onFocusWindow: (windowId: number) => void;
+  onFocusWindow: (win: WindowNode) => void;
   onWindowContextMenu: (e: MouseEvent, win: WindowNode) => void;
   hover: HoverHandlers;
   rowProps: RowPropsFor;
@@ -35,10 +35,11 @@ export function WindowCard(p: Props) {
         role="treeitem"
         data-key={win.key}
         data-kind="window"
+        data-window-id={win.windowId}
         {...p.rowProps(win.key, 'window')}
         aria-selected={p.selected.has(win.key)}
         onClick={(e) => p.onSelect(e, win.key)}
-        onDoubleClick={() => p.onFocusWindow(win.windowId)}
+        onDoubleClick={() => p.onFocusWindow(win)}
         onContextMenu={(e) => p.onWindowContextMenu(e, win)}
       >
         <span

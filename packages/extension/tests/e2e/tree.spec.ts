@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect, liveRow, test } from './fixtures';
 
 type Setup = { winA: number; winB: number; groupedTabIds: [number, number]; lonelyTabId: number };
 
@@ -101,7 +101,7 @@ test('renders window cards with a group row and indented tabs, excluding itself'
 
   const s = await buildLayout(sw);
   const cardA = view.locator('section[data-testid="window-card"]', {
-    has: view.locator(`[data-key="w:${s.winA}"]`),
+    has: liveRow(view, 'window', s.winA),
   });
   await expect(cardA.locator('[data-kind="group"] .title')).toHaveText('Research');
   await expect(cardA.locator('.group-tabs [data-kind="tab"] .title')).toHaveText([
@@ -109,15 +109,15 @@ test('renders window cards with a group row and indented tabs, excluding itself'
     'Bravo',
   ]);
   await expect(cardA.locator(':scope > [data-kind="tab"] .title')).toHaveText(['Charlie']);
-  await expect(view.locator(`[data-key="t:${s.lonelyTabId}"] .title`)).toHaveText('Delta');
+  await expect(liveRow(view, 'tab', s.lonelyTabId).locator('.title')).toHaveText('Delta');
 
   const selfId = await view.evaluate(async () => (await chrome.windows.getCurrent()).id);
-  await expect(view.locator(`[data-key="w:${selfId}"]`)).toHaveCount(0);
+  await expect(liveRow(view, 'window', selfId!)).toHaveCount(0);
 });
 
 test('reflects a closed tab live', async ({ sw, view }) => {
   const s = await buildLayout(sw);
-  const row = view.locator(`[data-key="t:${s.lonelyTabId}"]`);
+  const row = liveRow(view, 'tab', s.lonelyTabId);
   await expect(row).toBeVisible();
   await sw.evaluate(async (id) => {
     await chrome.tabs.create({ url: 'data:text/html,<title>Echo</title>' }); // keep window B alive
@@ -132,15 +132,15 @@ test('click selects one, cmd/ctrl-click toggles, shift-click selects a range', a
 }) => {
   const s = await buildLayout(sw);
   const [t1, t2] = s.groupedTabIds;
-  const row = (k: string) => view.locator(`[data-key="${k}"]`);
-  await row(`t:${t1}`).click();
-  await expect(row(`t:${t1}`)).toHaveAttribute('aria-selected', 'true');
-  await row(`t:${s.lonelyTabId}`).click({ modifiers: ['ControlOrMeta'] });
-  await expect(row(`t:${t1}`)).toHaveAttribute('aria-selected', 'true');
-  await expect(row(`t:${s.lonelyTabId}`)).toHaveAttribute('aria-selected', 'true');
-  await row(`t:${t2}`).click();
-  await expect(row(`t:${t1}`)).toHaveAttribute('aria-selected', 'false');
-  await row(`w:${s.winA}`).click({ modifiers: ['Shift'] });
+  const row = (tabId: number) => liveRow(view, 'tab', tabId);
+  await row(t1).click();
+  await expect(row(t1)).toHaveAttribute('aria-selected', 'true');
+  await row(s.lonelyTabId).click({ modifiers: ['ControlOrMeta'] });
+  await expect(row(t1)).toHaveAttribute('aria-selected', 'true');
+  await expect(row(s.lonelyTabId)).toHaveAttribute('aria-selected', 'true');
+  await row(t2).click();
+  await expect(row(t1)).toHaveAttribute('aria-selected', 'false');
+  await liveRow(view, 'window', s.winA).click({ modifiers: ['Shift'] });
   // anchor is t2; visible rows from w:A down to t2 are: window header, group row, t1, t2
   await expect(view.locator('[aria-selected="true"]')).toHaveCount(4);
 });
@@ -161,7 +161,7 @@ test('double-click a tab activates it and focuses its window', async ({ sw, view
       return original(windowId, updateInfo);
     }) as typeof chrome.windows.update;
   });
-  await view.locator(`[data-key="t:${t1}"]`).dblclick();
+  await liveRow(view, 'tab', t1).dblclick();
   await expect
     .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, t1))
     .toBe(true);
@@ -204,7 +204,7 @@ test("right-clicking a window header copies all its tabs' URLs in tab order", as
     s.winA,
   );
 
-  await view.locator(`[data-key="w:${s.winA}"]`).click({ button: 'right' });
+  await liveRow(view, 'window', s.winA).click({ button: 'right' });
   const item = view.getByRole('menuitem', { name: 'Copy all URLs (3)' });
   await item.click();
   await expect(view.getByTestId('context-menu')).toHaveCount(0);
@@ -227,7 +227,7 @@ test('the header search filters the outline, keeping window and group context', 
   await search.fill('bravo');
   const rows = view.locator('main.outline [role="treeitem"]');
   await expect(rows).toHaveCount(3);
-  await expect(rows.nth(0)).toHaveAttribute('data-key', `w:${s.winA}`);
+  await expect(rows.nth(0)).toHaveAttribute('data-window-id', `${s.winA}`);
   await expect(rows.locator('.title').nth(1)).toHaveText('Research');
   await expect(rows.locator('.title').nth(2)).toHaveText('Bravo');
   await expect(view.getByTestId('match-count')).toHaveText('1 tab');
@@ -238,7 +238,7 @@ test('the header search filters the outline, keeping window and group context', 
 
   await search.press('Escape');
   await expect(search).toHaveValue('');
-  await expect(view.locator(`[data-key="t:${s.lonelyTabId}"]`)).toBeVisible();
+  await expect(liveRow(view, 'tab', s.lonelyTabId)).toBeVisible();
   await expect(view.getByTestId('match-count')).toHaveCount(0);
 });
 
@@ -248,33 +248,35 @@ test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter
 }) => {
   const s = await buildLayout(sw);
   const [alpha, bravo] = s.groupedTabIds;
-  const row = (k: string) => view.locator(`[data-key="${k}"]`);
-  const selectedKeys = () =>
-    view.locator('[aria-selected="true"]').evaluateAll((els) => els.map((e) => e.dataset.key));
+  const row = (tabId: number) => liveRow(view, 'tab', tabId);
+  const winA = liveRow(view, 'window', s.winA);
+  const selectedTabIds = () =>
+    view
+      .locator('[aria-selected="true"]')
+      .evaluateAll((els) => els.map((e) => Number((e as HTMLElement).dataset.tabId)));
 
-  await row(`t:${alpha}`).click();
+  await row(alpha).click();
   await view.keyboard.press('ArrowDown');
-  await expect(row(`t:${bravo}`)).toBeFocused();
-  expect(await selectedKeys()).toEqual([`t:${bravo}`]);
+  await expect(row(bravo)).toBeFocused();
+  expect(await selectedTabIds()).toEqual([bravo]);
   await view.keyboard.press('Shift+ArrowDown'); // onto Charlie, the window's loose tab
-  const charlie = await row(`w:${s.winA}`)
-    .locator('..')
-    .locator(':scope > [data-kind="tab"]')
-    .getAttribute('data-key');
-  expect(await selectedKeys()).toEqual([`t:${bravo}`, charlie]);
-  await expect(row(charlie!)).toHaveAttribute('aria-level', '2');
-  await expect(row(`t:${bravo}`)).toHaveAttribute('aria-level', '3');
-  await expect(row(charlie!)).toHaveAttribute('tabindex', '0');
+  const charlie = Number(
+    await winA.locator('..').locator(':scope > [data-kind="tab"]').getAttribute('data-tab-id'),
+  );
+  expect(await selectedTabIds()).toEqual([bravo, charlie]);
+  await expect(row(charlie)).toHaveAttribute('aria-level', '2');
+  await expect(row(bravo)).toHaveAttribute('aria-level', '3');
+  await expect(row(charlie)).toHaveAttribute('tabindex', '0');
 
   await view.keyboard.press('ArrowLeft'); // to the window
-  await expect(row(`w:${s.winA}`)).toBeFocused();
-  await expect(row(`w:${s.winA}`)).toHaveAttribute('aria-expanded', 'true');
+  await expect(winA).toBeFocused();
+  await expect(winA).toHaveAttribute('aria-expanded', 'true');
   await view.keyboard.press('ArrowLeft'); // collapse it
-  await expect(row(`w:${s.winA}`)).toHaveAttribute('aria-expanded', 'false');
-  await expect(row(`t:${alpha}`)).toHaveCount(0);
+  await expect(winA).toHaveAttribute('aria-expanded', 'false');
+  await expect(row(alpha)).toHaveCount(0);
   await view.keyboard.press('ArrowRight'); // expand
   await view.keyboard.press('ArrowRight'); // into the group
-  await expect(row(`g:${await groupIdOf(sw, alpha)}`)).toBeFocused();
+  await expect(liveRow(view, 'group', await groupIdOf(sw, alpha))).toBeFocused();
   await view.keyboard.press('ArrowDown');
   await view.keyboard.press('Enter');
   await expect
@@ -284,7 +286,7 @@ test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter
   // Down arrow from the search box lands in the outline.
   await view.getByRole('searchbox').focus();
   await view.keyboard.press('ArrowDown');
-  await expect(row(`t:${alpha}`)).toBeFocused();
+  await expect(row(alpha)).toBeFocused();
 });
 
 async function groupIdOf(sw: import('@playwright/test').Worker, tabId: number) {

@@ -35,6 +35,7 @@ export function GroupRow({
         role="treeitem"
         data-key={group.key}
         data-kind="group"
+        data-group-id={group.chromeGroupId}
         {...rowProps(group.key, 'group')}
         aria-selected={selected.has(group.key)}
         onClick={(e) => onSelect(e, group.key)}

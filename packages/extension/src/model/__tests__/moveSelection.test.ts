@@ -1,42 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { buildTree } from '../buildTree';
 import { dragKeys, dropPositionFor, planMove, type MoveOp } from '../moveSelection';
-import type { RawGroup, RawTab, WindowNode } from '../types';
+import type { WindowNode } from '../types';
+import { group, state, tab, win } from './outlineState';
 
-// Window 1: [g:10 (1, 2)] 3 4 ; Window 2: 5 [g:20 (6, 7)]
+// Window 1: [g:10 (1, 2)] 3 4 ; Window 2: 5 [g:20 (6, 7)]. Record IDs match the Chrome IDs.
 function layout(): WindowNode[] {
-  const tab = (id: number, windowId: number, index: number, groupId = -1): RawTab => ({
-    id,
-    windowId,
-    index,
-    groupId,
-    title: `T${id}`,
-    url: `https://e.test/${id}`,
-    active: false,
-    discarded: false,
-  });
-  const group = (id: number, windowId: number): RawGroup => ({
-    id,
-    windowId,
-    title: `G${id}`,
-    color: 'blue',
-    collapsed: false,
-  });
-  return buildTree({
-    windows: [{ id: 1 }, { id: 2 }],
-    tabs: [
-      tab(1, 1, 0, 10),
-      tab(2, 1, 1, 10),
-      tab(3, 1, 2),
-      tab(4, 1, 3),
-      tab(5, 2, 0),
-      tab(6, 2, 1, 20),
-      tab(7, 2, 2, 20),
-    ],
-    groups: [group(10, 1), group(20, 2)],
-    selfWindowId: null,
-    lastFocusedWindowId: null,
-  });
+  const t = (id: number, groupId?: string) =>
+    tab(`${id}`, { chromeTabId: id, title: `T${id}`, groupId });
+  return buildTree(
+    state({
+      windows: [
+        win('1', {
+          chromeWindowId: 1,
+          groups: [group('10', { chromeGroupId: 10 })],
+          tabs: [t(1, '10'), t(2, '10'), t(3), t(4)],
+        }),
+        win('2', {
+          chromeWindowId: 2,
+          groups: [group('20', { chromeGroupId: 20 })],
+          tabs: [t(5), t(6, '20'), t(7, '20')],
+        }),
+      ],
+    }),
+  ).windows;
 }
 
 // Replays ops on a model of Chrome's strips the way Chrome applies them (remove, then insert at
@@ -45,11 +32,11 @@ function apply(tree: WindowNode[], ops: MoveOp[]) {
   const strips = new Map<number, { id: number; group: number }[]>();
   for (const w of tree) {
     strips.set(
-      w.windowId,
+      w.windowId!,
       w.children.flatMap((c) =>
         c.kind === 'group'
-          ? c.tabs.map((t) => ({ id: t.tabId, group: c.groupId }))
-          : [{ id: c.tabId, group: -1 }],
+          ? c.tabs.map((t) => ({ id: t.tabId!, group: c.chromeGroupId! }))
+          : [{ id: c.tabId!, group: -1 }],
       ),
     );
   }
@@ -192,5 +179,19 @@ describe('planMove', () => {
   it('does nothing when dropping into a group whose every tab is being moved', () => {
     const tree = layout();
     expect(planMove(tree, ['t:6', 't:7'], { key: 'g:20', position: 'inside' })).toEqual([]);
+  });
+
+  it('does nothing with hibernated rows, which have no Chrome tabs to move', () => {
+    const tree = buildTree(
+      state({
+        windows: [
+          win('1', { chromeWindowId: 1, tabs: [tab('1', { chromeTabId: 1 })] }),
+          win('h', { tabs: [tab('x')] }),
+        ],
+      }),
+    ).windows;
+    expect(planMove(tree, ['t:x'], { key: 't:1', position: 'after' })).toEqual([]);
+    expect(planMove(tree, ['t:1'], { key: 't:x', position: 'after' })).toEqual([]);
+    expect(planMove(tree, ['t:1'], { key: 'w:h', position: 'inside' })).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
-import type { Page, Worker } from '@playwright/test';
-import { expect, test } from './fixtures';
+import type { Worker } from '@playwright/test';
+import { expect, liveRow, test } from './fixtures';
 
 // Window A: [Research: Alpha, Bravo] Charlie ; Window B: Delta
 async function buildLayout(sw: Worker) {
@@ -45,7 +45,6 @@ function strip(sw: Worker, windowId: number) {
   }, windowId);
 }
 
-const row = (view: Page, key: string) => view.locator(`[data-key="${key}"]`);
 // Rows are 18px tall: drop near the top or bottom edge.
 const TOP = { x: 40, y: 3 };
 const BOTTOM = { x: 40, y: 15 };
@@ -55,14 +54,16 @@ test('dragging a multi-selection moves the tabs to another window, in outline or
   view,
 }) => {
   const s = await buildLayout(sw);
-  await row(view, `t:${s.alpha}`).click();
-  await row(view, `t:${s.charlie}`).click({ modifiers: ['ControlOrMeta'] });
-  await row(view, `t:${s.charlie}`).dragTo(row(view, `t:${s.delta}`), { targetPosition: BOTTOM });
+  await liveRow(view, 'tab', s.alpha).click();
+  await liveRow(view, 'tab', s.charlie).click({ modifiers: ['ControlOrMeta'] });
+  await liveRow(view, 'tab', s.charlie).dragTo(liveRow(view, 'tab', s.delta), {
+    targetPosition: BOTTOM,
+  });
   await expect.poll(() => strip(sw, s.winB)).toEqual(['Delta', 'Alpha', 'Charlie']);
   await expect.poll(() => strip(sw, s.winA)).toEqual(['Bravo@Research']);
   // The outline follows Chrome.
   await expect(
-    row(view, `w:${s.winB}`).locator('..').locator('[data-kind="tab"] .title'),
+    liveRow(view, 'window', s.winB).locator('..').locator('[data-kind="tab"] .title'),
   ).toHaveText(['Delta', 'Alpha', 'Charlie']);
 });
 
@@ -71,14 +72,14 @@ test('dragging a group onto another window header moves the whole group there', 
   view,
 }) => {
   const s = await buildLayout(sw);
-  await row(view, `g:${s.groupId}`).dragTo(row(view, `w:${s.winB}`));
+  await liveRow(view, 'group', s.groupId).dragTo(liveRow(view, 'window', s.winB));
   await expect.poll(() => strip(sw, s.winB)).toEqual(['Delta', 'Alpha@Research', 'Bravo@Research']);
   await expect.poll(() => strip(sw, s.winA)).toEqual(['Charlie']);
 });
 
 test('dragging a group later in its own window keeps it a group', async ({ sw, view }) => {
   const s = await buildLayout(sw);
-  await row(view, `g:${s.groupId}`).dragTo(row(view, `t:${s.charlie}`), {
+  await liveRow(view, 'group', s.groupId).dragTo(liveRow(view, 'tab', s.charlie), {
     targetPosition: BOTTOM,
   });
   await expect
@@ -88,7 +89,9 @@ test('dragging a group later in its own window keeps it a group', async ({ sw, v
 
 test('dropping a tab between grouped tabs puts it in that group', async ({ sw, view }) => {
   const s = await buildLayout(sw);
-  await row(view, `t:${s.delta}`).dragTo(row(view, `t:${s.bravo}`), { targetPosition: TOP });
+  await liveRow(view, 'tab', s.delta).dragTo(liveRow(view, 'tab', s.bravo), {
+    targetPosition: TOP,
+  });
   await expect
     .poll(() => strip(sw, s.winA))
     .toEqual(['Alpha@Research', 'Delta@Research', 'Bravo@Research', 'Charlie']);
@@ -99,9 +102,11 @@ test("dropping tabs from two windows after a group's last tab adds them to its e
   view,
 }) => {
   const s = await buildLayout(sw);
-  await row(view, `t:${s.delta}`).click();
-  await row(view, `t:${s.charlie}`).click({ modifiers: ['ControlOrMeta'] });
-  await row(view, `t:${s.delta}`).dragTo(row(view, `t:${s.bravo}`), { targetPosition: BOTTOM });
+  await liveRow(view, 'tab', s.delta).click();
+  await liveRow(view, 'tab', s.charlie).click({ modifiers: ['ControlOrMeta'] });
+  await liveRow(view, 'tab', s.delta).dragTo(liveRow(view, 'tab', s.bravo), {
+    targetPosition: BOTTOM,
+  });
   await expect
     .poll(() => strip(sw, s.winA))
     .toEqual(['Alpha@Research', 'Bravo@Research', 'Charlie@Research', 'Delta@Research']);
@@ -112,6 +117,8 @@ test('dropping a grouped tab before the group header takes it out of the group',
   view,
 }) => {
   const s = await buildLayout(sw);
-  await row(view, `t:${s.bravo}`).dragTo(row(view, `g:${s.groupId}`), { targetPosition: TOP });
+  await liveRow(view, 'tab', s.bravo).dragTo(liveRow(view, 'group', s.groupId), {
+    targetPosition: TOP,
+  });
   await expect.poll(() => strip(sw, s.winA)).toEqual(['Bravo', 'Alpha@Research', 'Charlie']);
 });

@@ -40,7 +40,7 @@ export function dragKeys(selected: ReadonlySet<string>, startKey: string): strin
 }
 
 // One thing that moves as a block: a loose tab, or a whole group run.
-type Unit = { kind: 'tab'; tab: TabNode; groupId: number } | { kind: 'group'; group: GroupNode };
+type Unit = { kind: 'tab'; tab: TabNode } | { kind: 'group'; group: GroupNode };
 
 interface Located {
   win: WindowNode;
@@ -64,6 +64,11 @@ function locate(tree: WindowNode[]): Map<string, Located> {
   return out;
 }
 
+// Hibernated rows have no Chrome tabs to move; until they can be dragged, only live rows take part.
+function isLive(n: WindowNode | GroupNode | TabNode): boolean {
+  return !n.hibernated;
+}
+
 function tabsOf(win: WindowNode): TabNode[] {
   return win.children.flatMap((c) => (c.kind === 'group' ? c.tabs : [c]));
 }
@@ -79,10 +84,10 @@ function unitsFor(tree: WindowNode[], keys: ReadonlySet<string>): Unit[] {
           continue;
         }
         for (const t of c.tabs) {
-          if (keys.has(t.key)) units.push({ kind: 'tab', tab: t, groupId: c.groupId });
+          if (keys.has(t.key)) units.push({ kind: 'tab', tab: t });
         }
       } else if (keys.has(c.key)) {
-        units.push({ kind: 'tab', tab: c, groupId: -1 });
+        units.push({ kind: 'tab', tab: c });
       }
     }
   }
@@ -90,14 +95,13 @@ function unitsFor(tree: WindowNode[], keys: ReadonlySet<string>): Unit[] {
 }
 
 function unitTabIds(u: Unit): number[] {
-  return u.kind === 'tab' ? [u.tab.tabId] : u.group.tabs.map((t) => t.tabId);
+  return u.kind === 'tab' ? [u.tab.tabId!] : u.group.tabs.map((t) => t.tabId!);
 }
 
 // Whether this group run is all of its group (Chrome can then move the group as one piece).
 function isWholeGroup(tree: WindowNode[], g: GroupNode): boolean {
   let runs = 0;
-  for (const w of tree)
-    for (const c of w.children) if (c.kind === 'group' && c.groupId === g.groupId) runs++;
+  for (const w of tree) for (const c of w.children) if (c.kind === 'group' && c.id === g.id) runs++;
   return runs === 1;
 }
 
@@ -119,15 +123,18 @@ export function planMove(
   const units = unitsFor(tree, keySet);
   const at = where.get(target.key);
   if (units.length === 0 || !at) return [];
+  if (!isLive(at.win) || !isLive(at.node)) return [];
+  if (units.some((u) => (u.kind === 'tab' ? !isLive(u.tab) : u.group.tabs.some((t) => !isLive(t)))))
+    return [];
 
   // Dropping onto a moved row, or into/beside a moved group, has no fixed point to land at.
   const moved = new Set(units.flatMap(unitTabIds));
   if (keySet.has(target.key)) return [];
   if (at.group && keySet.has(at.group.key)) return [];
-  if (at.node.kind === 'tab' && moved.has(at.node.tabId)) return [];
+  if (at.node.kind === 'tab' && moved.has(at.node.tabId!)) return [];
 
   const win = at.win;
-  const remaining = tabsOf(win).filter((t) => !moved.has(t.tabId));
+  const remaining = tabsOf(win).filter((t) => !moved.has(t.tabId!));
 
   // Where, in the target window's tabs that stay put, the moved tabs go; and which group they join.
   let insertAt: number; // index into `remaining`
@@ -136,7 +143,7 @@ export function planMove(
   if (node.kind === 'window') {
     insertAt = remaining.length;
   } else if (node.kind === 'group') {
-    const staying = node.tabs.filter((t) => !moved.has(t.tabId));
+    const staying = node.tabs.filter((t) => !moved.has(t.tabId!));
     if (staying.length === 0) return []; // the group would vanish under the drop
     // Before the group (outside it), or into it at its start.
     insertAt = remaining.indexOf(staying[0]!);
@@ -152,7 +159,7 @@ export function planMove(
   // Simulate Chrome's tab strips so each call's index is right at the moment it runs: every move
   // removes the tabs from where they are, then inserts them at the index.
   const strips = new Map<number, number[]>(
-    tree.map((w) => [w.windowId, tabsOf(w).map((t) => t.tabId)]),
+    tree.filter(isLive).map((w) => [w.windowId!, tabsOf(w).flatMap((t) => t.tabId ?? [])]),
   );
   const removeFrom = (ids: number[]) => {
     for (const strip of strips.values()) {
@@ -162,8 +169,9 @@ export function planMove(
       }
     }
   };
-  const dest = strips.get(win.windowId)!;
-  const anchor = insertAt < remaining.length ? remaining[insertAt]!.tabId : null;
+  const windowId = win.windowId!;
+  const dest = strips.get(windowId)!;
+  const anchor = insertAt < remaining.length ? remaining[insertAt]!.tabId! : null;
 
   const ops: MoveOp[] = [];
   let prev: number | null = null; // the last tab placed so far
@@ -175,22 +183,20 @@ export function planMove(
     dest.splice(index, 0, ...ids);
     prev = ids[ids.length - 1]!;
     if (u.kind === 'group' && isWholeGroup(tree, u.group)) {
-      ops.push({ op: 'moveGroup', groupId: u.group.groupId, windowId: win.windowId, index });
+      ops.push({ op: 'moveGroup', groupId: u.group.chromeGroupId!, windowId, index });
     } else {
-      ids.forEach((tabId, i) =>
-        ops.push({ op: 'moveTab', tabId, windowId: win.windowId, index: index + i }),
-      );
+      ids.forEach((tabId, i) => ops.push({ op: 'moveTab', tabId, windowId, index: index + i }));
     }
   }
 
   // Settle group membership explicitly: Chrome's own choice after a move depends on where the tab
   // landed relative to group edges, and moving across windows drops a tab's group.
-  const loose = units.flatMap((u) => (u.kind === 'tab' ? [u.tab.tabId] : []));
+  const loose = units.flatMap((u) => (u.kind === 'tab' ? [u.tab.tabId!] : []));
   if (loose.length > 0) ops.push({ op: 'ungroup', tabIds: loose });
   // A split group run, moved tab by tab, is put back into its own group.
   for (const u of units) {
     if (u.kind === 'group' && !isWholeGroup(tree, u.group)) {
-      ops.push({ op: 'group', tabIds: unitTabIds(u), groupId: u.group.groupId });
+      ops.push({ op: 'group', tabIds: unitTabIds(u), groupId: u.group.chromeGroupId! });
     }
   }
   return ops;
@@ -205,18 +211,18 @@ function planJoin(
   group: GroupNode,
 ): MoveOp[] {
   const ids = units.flatMap(unitTabIds);
-  const inGroup = new Set(group.tabs.map((t) => t.tabId));
+  const inGroup = new Set(group.tabs.map((t) => t.tabId!));
   const next = remaining[insertAt];
   const first: MoveOp & { op: 'moveNextTo' } =
-    next && inGroup.has(next.tabId)
-      ? { op: 'moveNextTo', tabId: ids[0]!, anchorTabId: next.tabId, side: 'before' }
+    next && inGroup.has(next.tabId!)
+      ? { op: 'moveNextTo', tabId: ids[0]!, anchorTabId: next.tabId!, side: 'before' }
       : {
           op: 'moveNextTo',
           tabId: ids[0]!,
-          anchorTabId: remaining[insertAt - 1]!.tabId,
+          anchorTabId: remaining[insertAt - 1]!.tabId!,
           side: 'after',
         };
-  const ops: MoveOp[] = [{ op: 'group', tabIds: ids, groupId: group.groupId }, first];
+  const ops: MoveOp[] = [{ op: 'group', tabIds: ids, groupId: group.chromeGroupId! }, first];
   for (let i = 1; i < ids.length; i++) {
     ops.push({ op: 'moveNextTo', tabId: ids[i]!, anchorTabId: ids[i - 1]!, side: 'after' });
   }

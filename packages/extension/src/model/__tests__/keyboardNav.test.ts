@@ -1,29 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { buildTree } from '../buildTree';
 import { navIntent, outlineRows } from '../keyboardNav';
-import type { RawTab } from '../types';
 import { EXPAND_ALL, type CollapseState } from '../visibleRows';
+import { group, state, tab, win } from './outlineState';
 
 // Window 1: [g:10 (1, 2)] 3 ; Window 2: 4
-const tree = buildTree({
-  windows: [{ id: 1 }, { id: 2 }],
-  tabs: [
-    [1, 1, 10],
-    [2, 1, 10],
-    [3, 1, -1],
-    [4, 2, -1],
-  ].map(([id, windowId, groupId], index): RawTab => ({
-    id: id!,
-    windowId: windowId!,
-    index,
-    groupId: groupId!,
-    active: false,
-    discarded: false,
-  })),
-  groups: [{ id: 10, windowId: 1, title: 'G', color: 'red', collapsed: false }],
-  selfWindowId: null,
-  lastFocusedWindowId: null,
-});
+const tree = buildTree(
+  state({
+    windows: [
+      win('1', {
+        chromeWindowId: 1,
+        groups: [group('10', { chromeGroupId: 10 })],
+        tabs: [
+          tab('1', { chromeTabId: 1, groupId: '10' }),
+          tab('2', { chromeTabId: 2, groupId: '10' }),
+          tab('3', { chromeTabId: 3 }),
+        ],
+      }),
+      win('2', { chromeWindowId: 2, tabs: [tab('4', { chromeTabId: 4 })] }),
+    ],
+  }),
+).windows;
 const open: CollapseState = { collapsedWindows: new Set(), groupOverrides: new Map() };
 const rows = outlineRows(tree, open);
 

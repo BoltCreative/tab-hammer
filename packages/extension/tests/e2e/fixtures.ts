@@ -81,4 +81,9 @@ export function outlineCommand(sw: Worker, c: OutlineCommand): Promise<void> {
   );
 }
 
+/** The outline row of a live Chrome window, group, or tab, found by its Chrome ID. */
+export function liveRow(view: Page, kind: 'window' | 'group' | 'tab', chromeId: number) {
+  return view.locator(`[data-${kind}-id="${chromeId}"]`);
+}
+
 export { expect } from '@playwright/test';
