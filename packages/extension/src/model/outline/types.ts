@@ -42,6 +42,34 @@ export interface Outline {
   windows: WindowRec[];
 }
 
+export interface LiveTab {
+  id: number;
+  windowId: number;
+  index: number;
+  groupId: number; // -1 = ungrouped
+  url: string;
+  title: string;
+  launchUrl?: string;
+  active: boolean;
+  discarded: boolean;
+  lastAccessed?: number;
+}
+
+export interface LiveGroup {
+  id: number;
+  windowId: number;
+  title: string;
+  color: GroupColor;
+  collapsed: boolean;
+}
+
+/** Chrome's normal windows (Tab Hammer's popup excluded), their tabs (capture swap tab excluded), groups. */
+export interface ChromeSnapshot {
+  windowIds: number[];
+  tabs: LiveTab[];
+  groups: LiveGroup[];
+}
+
 /** Chrome IDs the caller must close. */
 export interface Effects {
   closeWindows: number[];
