@@ -21,6 +21,9 @@ export default defineManifest({
   // nativeMessaging: the bridge to Claude's MCP server (packages/mcp).
   // history: deleting previews when the user clears Chrome's browsing history.
   // system.display: reopening the view window on a visible screen if its saved spot is gone.
+  // webNavigation: each tab's launch URL (its first committed address), for re-linking windows
+  // Chrome restores to their saved rows. Its "Read your browsing history" warning is already
+  // covered by history's (and tabs') warning, so it adds no install prompt line.
   permissions: [
     'tabs',
     'tabGroups',
@@ -31,6 +34,7 @@ export default defineManifest({
     'nativeMessaging',
     'history',
     'system.display',
+    'webNavigation',
   ],
   // captureVisibleTab (hover previews) needs host access to the page being captured.
   host_permissions: ['<all_urls>'],

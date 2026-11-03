@@ -6,6 +6,8 @@ import {
   type Worker,
 } from '@playwright/test';
 import path from 'node:path';
+import type { WindowRec } from '../../src/model/outline/types';
+import type { OutlineCommand } from '../../src/shared/outlineMessages';
 
 // Built by `npm run build:e2e`. Kept apart from ~/.tab-hammer/dist, which the user's dev server
 // writes and their own Chrome loads, so gate runs never clobber it.
@@ -54,5 +56,29 @@ export const test = base.extend<Fixtures>({
     await use(view);
   },
 });
+
+/** The service worker's in-memory outline (Chrome IDs included), once its queued work is done. */
+export function readOutline(sw: Worker): Promise<{ schemaVersion: number; windows: WindowRec[] }> {
+  return sw.evaluate(() =>
+    (
+      globalThis as unknown as {
+        tabHammer: { readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }> };
+      }
+    ).tabHammer.readOutline(),
+  );
+}
+
+/** Runs an outline command in the service worker, as the view's runtime message would. */
+export function outlineCommand(sw: Worker, c: OutlineCommand): Promise<void> {
+  return sw.evaluate(
+    (cmd) =>
+      (
+        globalThis as unknown as {
+          tabHammer: { outlineCommand: (c: OutlineCommand) => Promise<void> };
+        }
+      ).tabHammer.outlineCommand(cmd),
+    c,
+  );
+}
 
 export { expect } from '@playwright/test';
