@@ -40,6 +40,13 @@ export interface OutlineOwner {
   /** Resolves once the job queue is empty. */
   idle(): Promise<void>;
   command(c: OutlineCommand): Promise<void>;
+  /**
+   * Runs `create` (which opens a Chrome window) in the job queue and records the window it opens as
+   * known: Tab Hammer opened it, so it isn't a candidate for re-linking to a closed window.
+   */
+  openWindow(
+    create: () => Promise<chrome.windows.Window | undefined>,
+  ): Promise<chrome.windows.Window | undefined>;
   /** The in-memory outline, Chrome IDs included. */
   outline(): Outline;
 }
@@ -81,6 +88,7 @@ export function registerOutline(): OutlineOwner {
   );
   const closingWindowIds = new Set<number>();
   const selfClosing = createSelfClosing(); // windows and tabs this worker is closing
+  const selfOpened = new Set<number>(); // windows this worker opened, not yet recorded
   let focusEvent: number | undefined; // latest onFocusChanged window, not yet checked
   let focusedWindowId: number | null = null;
   const ports = new Set<chrome.runtime.Port>();
@@ -141,6 +149,18 @@ export function registerOutline(): OutlineOwner {
     if (focusedWindowId !== null && !present.has(focusedWindowId)) focusedWindowId = null;
   }
 
+  /** `o` with the window Chrome has as `chromeWindowId` no longer provisional. */
+  function known(o: Outline, chromeWindowId: number): Outline {
+    return {
+      windows: o.windows.map((w) => {
+        if (!w.provisional || w.chromeWindowId !== chromeWindowId) return w;
+        const next = { ...w };
+        delete next.provisional;
+        return next;
+      }),
+    };
+  }
+
   type Op = (o: Outline) => Outline;
   const same: Op = (o) => o;
 
@@ -157,8 +177,12 @@ export function registerOutline(): OutlineOwner {
     updateFocus(snapshot);
     const now = Date.now();
     const r = reconcile(before(outline), { snapshot, closingWindowIds, now, newId, installId });
-    for (const id of r.newProvisional) tracker.touch(id);
-    await commit(after(expireTrash(r.outline, now)), liveDetails(snapshot, focusedWindowId), force);
+    let next = r.outline;
+    for (const id of r.newProvisional) {
+      if (selfOpened.delete(id)) next = known(next, id);
+      else tracker.touch(id);
+    }
+    await commit(after(expireTrash(next, now)), liveDetails(snapshot, focusedWindowId), force);
   }
 
   async function init(): Promise<void> {
@@ -313,6 +337,7 @@ export function registerOutline(): OutlineOwner {
     void enqueue(() => {
       closingWindowIds.delete(windowId);
       selfClosing.windowRemoved(windowId);
+      selfOpened.delete(windowId);
       tracker.forget(windowId);
       return step({
         before: (o) => {
@@ -357,5 +382,15 @@ export function registerOutline(): OutlineOwner {
     idle: () => queue.idle(),
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
+    // Holding the queue across the create means the window's own events reconcile after it's noted.
+    openWindow: (create) =>
+      enqueue(async () => {
+        const w = await create();
+        if (w?.id !== undefined) {
+          selfOpened.add(w.id);
+          await step();
+        }
+        return w;
+      }),
   };
 }

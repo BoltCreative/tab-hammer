@@ -5,6 +5,7 @@ import { connectBridge } from './bridge';
 import { registerOutline } from './outline/outlineOwner';
 import { OUTLINE_SCHEMA_VERSION, exportOutline, type SyncWindow } from './outline/outlineStore';
 import { registerPreviewCapture, viewWindows } from './previews';
+import { setWindowCreator } from './tabCommands';
 import { openingBounds, trackViewBounds } from './viewBounds';
 import { ensureViewWindow, pingView, viewUrl, type ViewWindowDeps } from './viewWindow';
 
@@ -36,6 +37,7 @@ chrome.action.onClicked.addListener(() => {
 });
 registerPreviewCapture();
 const outline = registerOutline();
+setWindowCreator((data) => outline.openWindow(() => chrome.windows.create(data)));
 trackViewBounds(viewWindows.viewWindowId);
 // An extension reload (the dev loop's build switch or dev-server restart) orphans the view window
 // on a New Tab page, or leaves it blank: bring it back in place without stealing focus.

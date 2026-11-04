@@ -64,6 +64,17 @@ async function listTabs(): Promise<{ windows: WindowInfo[] }> {
   };
 }
 
+type CreateWindow = (data: chrome.windows.CreateData) => Promise<chrome.windows.Window | undefined>;
+let createWindow: CreateWindow = (data) => chrome.windows.create(data);
+
+/**
+ * Has new windows opened through `create`: the service worker routes them through the outline, so
+ * it records a window Tab Hammer opened as known rather than as one to re-link to a closed window.
+ */
+export function setWindowCreator(create: CreateWindow): void {
+  createWindow = create;
+}
+
 function nonEmpty(ids: number[]): [number, ...number[]] {
   if (ids.length === 0) throw new Error('tabIds is empty');
   return ids as [number, ...number[]];
@@ -80,7 +91,7 @@ const handlers: Handlers = {
 
   open_tabs: async ({ urls, windowId }) => {
     if (windowId === undefined) {
-      const win = await chrome.windows.create({ url: urls });
+      const win = await createWindow({ url: urls });
       return { windowId: win!.id!, tabIds: (win!.tabs ?? []).map((t) => t.id!) };
     }
     const tabs = [];
@@ -93,7 +104,7 @@ const handlers: Handlers = {
     let rest = tabIds;
     if (target === undefined) {
       // A new window takes its first tab at creation; the rest follow it in order.
-      const win = await chrome.windows.create({ tabId: tabIds[0] });
+      const win = await createWindow({ tabId: tabIds[0] });
       target = win!.id!;
       rest = tabIds.slice(1);
     }
