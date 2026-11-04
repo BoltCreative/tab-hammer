@@ -79,12 +79,21 @@ export function liveDetails(snapshot: ChromeSnapshot, focusedWindowId: number | 
  */
 const DISCARD_BACKGROUND_TABS = import.meta.env.MODE !== 'e2e';
 
-/** Closes what a model op says to close. Each error is ignored: the window or tab is already gone. */
-export async function runEffects(e: Effects): Promise<void> {
+/**
+ * Closes what a model op says to close, and hands back what Chrome refused to close: already
+ * gone, or a page cancelled the close.
+ */
+export async function runEffects(e: Effects): Promise<Effects> {
+  const failed: Effects = { closeWindows: [], closeTabs: [] };
   await Promise.all([
-    ...e.closeWindows.map((id) => chrome.windows.remove(id).catch(() => undefined)),
-    ...(e.closeTabs.length > 0 ? [chrome.tabs.remove(e.closeTabs).catch(() => undefined)] : []),
+    ...e.closeWindows.map((id) =>
+      chrome.windows.remove(id).catch(() => void failed.closeWindows.push(id)),
+    ),
+    ...(e.closeTabs.length > 0
+      ? [chrome.tabs.remove(e.closeTabs).catch(() => void failed.closeTabs.push(...e.closeTabs))]
+      : []),
   ]);
+  return failed;
 }
 
 /** A new Chrome group in `chromeWindowId` holding `chromeTabIds`, styled like `group`. */

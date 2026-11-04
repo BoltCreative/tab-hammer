@@ -124,6 +124,15 @@ function chromeWindows(sw: Worker, except: number[] = []) {
   }, except);
 }
 
+/**
+ * How many window records the outline holds, and how many are in the trash. A window Tab Hammer
+ * closes itself must not come back as a second record (a provisional one Chrome's removal trashes).
+ */
+async function recordCounts(sw: Worker): Promise<{ records: number; trashed: number }> {
+  const { windows } = await readOutline(sw);
+  return { records: windows.length, trashed: windows.filter((w) => w.state === 'trashed').length };
+}
+
 /** Opens window A and waits for its record. Returns the Chrome window ID and the record. */
 async function windowARecord(sw: Worker): Promise<{ a: number; rec: WindowRec }> {
   const a = await buildWindowA(sw);
@@ -142,10 +151,12 @@ test('hibernating a window closes it and keeps its rows; opening it restores ord
   const others = (await chromeWindows(sw)).map((w) => w.id);
   const { a, rec } = await windowARecord(sw);
   const tabIds = rec.tabs.map((t) => t.id);
+  const counts = await recordCounts(sw);
 
   await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.id] });
 
-  expect((await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+  await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+  expect(await recordCounts(sw)).toEqual({ records: counts.records, trashed: 0 });
   const hibernated = await recordById(sw, rec.id);
   expect({
     state: hibernated?.state,
@@ -178,6 +189,8 @@ test('hibernating a window closes it and keeps its rows; opening it restores ord
       };
     })
     .toEqual({ state: 'live', chromeWindowId: reopened!.id, tabIds, live: true, holders: 1 });
+  // By now Chrome has long reported the hibernated window removed.
+  expect(await recordCounts(sw)).toEqual({ records: counts.records, trashed: 0 });
 });
 
 test('hibernating one tab keeps its row in place; opening it puts it back at its position', async ({
@@ -255,10 +268,12 @@ test('hover toolbar hibernates a window; it stays dimmed; double-click reopens i
   const { a, rec } = await windowARecord(sw);
   const header = recordRow(view, 'w', rec.id);
   const rows = [header, ...rec.tabs.map((t) => recordRow(view, 't', t.id))];
+  const counts = await recordCounts(sw);
 
   await toolbar(header, 'Hibernate');
 
   await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+  expect(await recordCounts(sw)).toEqual({ records: counts.records, trashed: 0 });
   for (const row of rows) await expect(row).toHaveClass(/\bhibernated\b/);
   await header.hover();
   await expect(header.getByRole('button', { name: 'Hibernate', exact: true })).toHaveCount(0);
@@ -269,6 +284,7 @@ test('hover toolbar hibernates a window; it stays dimmed; double-click reopens i
     .poll(async () => (await chromeWindows(sw, others)).map(titlesOf))
     .toEqual([['Alpha', 'Bravo', 'Charlie']]);
   for (const row of rows) await expect(row).not.toHaveClass(/\bhibernated\b/);
+  expect(await recordCounts(sw)).toEqual({ records: counts.records, trashed: 0 });
 });
 
 test('hibernate one tab, open just it, then open the rest of its window', async ({ sw, view }) => {

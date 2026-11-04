@@ -18,7 +18,7 @@ import {
 import { attachOpened, planOpen } from '../../model/outline/open';
 import { attachGroup, placeTabs } from '../../model/outline/place';
 import { reconcile, replaceTabId } from '../../model/outline/reconcile';
-import type { ChromeSnapshot, Outline } from '../../model/outline/types';
+import type { ChromeSnapshot, Effects, Outline } from '../../model/outline/types';
 import { SWAP_KEY } from '../../shared/captureSwap';
 import {
   OUTLINE_PORT,
@@ -33,6 +33,7 @@ import { createGroup, liveDetails, openPlanned, readSnapshot, runEffects } from 
 import { createJobQueue } from './jobQueue';
 import { createLaunchUrls } from './launchUrls';
 import { loadOutline, saveOutline } from './outlineStore';
+import { createSelfClosing } from './selfClosing';
 import { createSettleTracker } from './settleTracker';
 
 export interface OutlineOwner {
@@ -79,6 +80,7 @@ export function registerOutline(): OutlineOwner {
     (err) => console.error('[outline] launch URLs', err),
   );
   const closingWindowIds = new Set<number>();
+  const selfClosing = createSelfClosing(); // windows and tabs this worker is closing
   let focusEvent: number | undefined; // latest onFocusChanged window, not yet checked
   let focusedWindowId: number | null = null;
   const ports = new Set<chrome.runtime.Port>();
@@ -151,7 +153,7 @@ export function registerOutline(): OutlineOwner {
     after = same,
     force = false,
   }: { before?: Op; after?: Op; force?: boolean } = {}): Promise<void> {
-    const snapshot = await readSnapshot(launchUrls.urls);
+    const snapshot = selfClosing.filter(await readSnapshot(launchUrls.urls));
     updateFocus(snapshot);
     const now = Date.now();
     const r = reconcile(before(outline), { snapshot, closingWindowIds, now, newId, installId });
@@ -183,6 +185,12 @@ export function registerOutline(): OutlineOwner {
 
   const scheduleReconcile = queue.coalesced(() => step());
 
+  /** Closes what a model op let go of, keeping it out of reconcile until Chrome reports it gone. */
+  async function close(effects: Effects): Promise<void> {
+    selfClosing.add(effects);
+    selfClosing.release(await runEffects(effects));
+  }
+
   /**
    * One command, run as a single job: reconcile, apply the model op, persist and broadcast, then
    * act in Chrome. Holding the queue across the Chrome calls means the windows and tabs this
@@ -197,7 +205,7 @@ export function registerOutline(): OutlineOwner {
         // The onRemoved events that follow find no live record and do nothing.
         const r = (c.cmd === 'hibernate' ? hibernate : trash)(outline, c.ids, now);
         await commit(r.outline, live!);
-        await runEffects(r.effects);
+        await close(r.effects);
         return;
       }
       case 'rename':
@@ -219,7 +227,7 @@ export function registerOutline(): OutlineOwner {
       case 'place': {
         const r = placeTabs(outline, c.placement, now, newId);
         await commit(r.outline, live!);
-        await runEffects(r.effects);
+        await close(r.effects);
         const attached: [string, number][] = [];
         for (const g of r.regroup) {
           const rec = findRow(outline, g.groupId)?.group;
@@ -265,6 +273,7 @@ export function registerOutline(): OutlineOwner {
   });
   chrome.tabs.onRemoved.addListener((tabId, info) => {
     launchUrls.forget(tabId);
+    selfClosing.tabRemoved(tabId);
     if (info.isWindowClosing) {
       // The window's own removal closes its record (with every tab) once it lands.
       closingWindowIds.add(info.windowId);
@@ -303,6 +312,7 @@ export function registerOutline(): OutlineOwner {
   chrome.windows.onRemoved.addListener((windowId) => {
     void enqueue(() => {
       closingWindowIds.delete(windowId);
+      selfClosing.windowRemoved(windowId);
       tracker.forget(windowId);
       return step({
         before: (o) => {
