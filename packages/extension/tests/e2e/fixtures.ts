@@ -28,7 +28,11 @@ export function launchWithExtension(
 ): Promise<BrowserContext> {
   return chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
-    args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`, ...(extra.args ?? [])],
+    args: [
+      `--disable-extensions-except=${DIST}`,
+      `--load-extension=${DIST}`,
+      ...(extra.args ?? []),
+    ],
     ...(extra.ignoreDefaultArgs && { ignoreDefaultArgs: extra.ignoreDefaultArgs }),
     ...(env && { env: { ...(process.env as Record<string, string>), ...env } }),
   });
