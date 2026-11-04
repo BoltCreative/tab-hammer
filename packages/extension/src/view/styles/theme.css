@@ -112,6 +112,11 @@ main.outline {
   flex-direction: column;
   gap: 4px;
 }
+.outline-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .card {
   background: var(--card);
   border: 1px solid var(--card-border);
@@ -141,7 +146,20 @@ main.outline {
   opacity: 0.5;
 }
 /* Recently closed: dimmed like hibernated rows, but plain (no selection, drag, or hover card). */
+button.trash-header,
+button.twisty {
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0 4px;
+  text-align: left;
+}
+button.twisty {
+  padding: 0;
+  color: var(--text-muted);
+}
 .trash-header {
+  width: 100%;
   cursor: pointer;
   color: var(--text-muted);
 }

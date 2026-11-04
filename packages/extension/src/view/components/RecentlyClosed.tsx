@@ -18,10 +18,9 @@ export function RecentlyClosed({ entries, restore, deleteForever }: Props) {
   if (entries.length === 0) return null;
   return (
     <section className="card trash" role="group" aria-label="Recently closed">
-      <div
+      <button
+        type="button"
         className="row trash-header"
-        role="button"
-        tabIndex={-1}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
@@ -29,7 +28,7 @@ export function RecentlyClosed({ entries, restore, deleteForever }: Props) {
           {open ? '▾' : '▸'}
         </span>
         <span className="title">Recently closed ({entries.length})</span>
-      </div>
+      </button>
       {open && (
         <div role="list">
           {entries.map((w) => (
@@ -59,8 +58,11 @@ function TrashEntry({
         data-testid="trash-entry"
         onDoubleClick={() => restore(win.id)}
       >
-        <span
+        <button
+          type="button"
           className="twisty"
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+          aria-expanded={expanded}
           onClick={(e) => {
             e.stopPropagation();
             setExpanded((x) => !x);
@@ -68,9 +70,11 @@ function TrashEntry({
           onDoubleClick={(e) => e.stopPropagation()}
         >
           {expanded ? '▾' : '▸'}
-        </span>
+        </button>
         <span className="title">{win.label}</span>
-        <span className="count">{win.tabCount} tabs</span>
+        <span className="count">
+          {win.tabCount} {win.tabCount === 1 ? 'tab' : 'tabs'}
+        </span>
         <RowToolbar actions={actions} />
       </div>
       {expanded && tabs.map((t) => <TrashTab key={t.key} tab={t} />)}

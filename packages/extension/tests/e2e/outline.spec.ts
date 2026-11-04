@@ -435,8 +435,30 @@ test('a trash entry expands to its tabs, which are plain rows', async ({ sw, vie
   await view.getByRole('button', { name: /^Recently closed \(1\)/ }).click();
   const entry = view.getByTestId('trash-entry');
 
-  await entry.getByText('▸').click();
+  await entry.getByRole('button', { name: 'Expand' }).click();
   await expect(view.locator('.trash-tab .title')).toHaveText(['Echo', 'Foxtrot']);
   await expect(view.locator('.trash-tab').first()).not.toHaveAttribute('role', 'treeitem');
   await expect(view.locator('.trash-tab .row-toolbar')).toHaveCount(0);
+});
+
+test('keys on the Recently closed header do not act on the outline selection', async ({
+  sw,
+  view,
+}) => {
+  const { a, rec } = await windowARecord(sw);
+  await closedEchoWindow(sw);
+  await recordRow(view, 't', rec.tabs[2]!.id).click();
+  const header = view.getByRole('button', { name: /^Recently closed \(1\)/ });
+  await header.focus();
+
+  await view.keyboard.press('Delete');
+  await header.press('Enter'); // toggles the section, nothing else
+  await expect(view.getByTestId('trash-entry')).toHaveCount(1);
+
+  expect(titlesOf(await recordById(sw, rec.id))).toEqual(['Alpha', 'Bravo', 'Charlie']);
+  expect(titlesOf((await chromeWindows(sw)).find((w) => w.id === a))).toEqual([
+    'Alpha',
+    'Bravo',
+    'Charlie',
+  ]);
 });

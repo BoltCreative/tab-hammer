@@ -250,37 +250,39 @@ export function App() {
         onCloseDuplicates={() => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? []))}
         matchCount={filtering ? countTabs(shown) : null}
       />
-      <main
-        ref={listRef}
-        className="outline"
-        role="tree"
-        aria-label="Windows and tabs"
-        aria-multiselectable="true"
-        onKeyDown={onTreeKeyDown}
-      >
-        {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
-        {shown.map((w) => (
-          <WindowCard
-            key={w.key}
-            win={w}
-            collapse={shownCollapse}
-            selected={selection.selected}
-            duplicates={duplicates.keys}
-            onToggleWindow={onToggleWindow}
-            onToggleGroup={onToggleGroup}
-            onSelect={onSelect}
-            onActivate={onActivate}
-            onFocusWindow={onFocusWindow}
-            onWindowContextMenu={onWindowContextMenu}
-            hover={hover}
-            rowProps={rowProps}
-            commands={commands}
-            renaming={renaming === w.key}
-            onStartRename={setRenaming}
-            onEndRename={onEndRename}
-          />
-        ))}
-        {/* Search doesn't cover the trash, so it hides while a query is active. */}
+      <main ref={listRef} className="outline">
+        <div
+          className="outline-tree"
+          role="tree"
+          aria-label="Windows and tabs"
+          aria-multiselectable="true"
+          onKeyDown={onTreeKeyDown}
+        >
+          {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
+          {shown.map((w) => (
+            <WindowCard
+              key={w.key}
+              win={w}
+              collapse={shownCollapse}
+              selected={selection.selected}
+              duplicates={duplicates.keys}
+              onToggleWindow={onToggleWindow}
+              onToggleGroup={onToggleGroup}
+              onSelect={onSelect}
+              onActivate={onActivate}
+              onFocusWindow={onFocusWindow}
+              onWindowContextMenu={onWindowContextMenu}
+              hover={hover}
+              rowProps={rowProps}
+              commands={commands}
+              renaming={renaming === w.key}
+              onStartRename={setRenaming}
+              onEndRename={onEndRename}
+            />
+          ))}
+        </div>
+        {/* Beside the tree, not in it: its keys and ARIA roles are not the outline's. Search
+            doesn't cover the trash, so it hides while a query is active. */}
         {!filtering && (
           <RecentlyClosed
             entries={trash}

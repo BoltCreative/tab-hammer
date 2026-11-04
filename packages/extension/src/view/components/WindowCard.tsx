@@ -77,7 +77,9 @@ export function WindowCard(p: Props) {
         ) : (
           <span className="title">{win.label}</span>
         )}
-        <span className="count">{win.tabCount} tabs</span>
+        <span className="count">
+          {win.tabCount} {win.tabCount === 1 ? 'tab' : 'tabs'}
+        </span>
         {!p.renaming && <RowToolbar actions={actions} />}
       </div>
       {!collapsed &&
