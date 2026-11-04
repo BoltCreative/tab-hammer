@@ -60,19 +60,6 @@ export function createBrowserSession(opts: {
     await opts.local.set({ [BROWSER_SESSION_KEY]: opts.newId() });
   };
 
-  const whenConfirmed = () =>
-    (confirmed ??= (async () => {
-      const { [SESSION_CONFIRMED_KEY]: marker } = await opts.session
-        .get(SESSION_CONFIRMED_KEY)
-        .catch(() => ({}) as Record<string, unknown>);
-      if (marker === true) return;
-      const gaveUp = new Promise<'timeout'>((r) => setTimer(() => r('timeout'), waitMs));
-      if ((await Promise.race([confirmedByEvent, gaveUp])) === 'timeout') {
-        await renew();
-        await markConfirmed();
-      }
-    })());
-
   // A launch event renews only while this session isn't confirmed yet, so a second launch event
   // (onInstalled then onStartup, possibly in a new worker instance) or a current() that already
   // gave up waiting never starts a second session for the same launch.
@@ -82,6 +69,16 @@ export function createBrowserSession(opts: {
       .catch(() => ({}) as Record<string, unknown>);
     return marker === true;
   };
+
+  const whenConfirmed = () =>
+    (confirmed ??= (async () => {
+      if (await isConfirmed()) return;
+      const gaveUp = new Promise<'timeout'>((r) => setTimer(() => r('timeout'), waitMs));
+      if ((await Promise.race([confirmedByEvent, gaveUp])) === 'timeout') {
+        await renew();
+        await markConfirmed();
+      }
+    })());
 
   return {
     async current() {

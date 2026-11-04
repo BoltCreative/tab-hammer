@@ -38,8 +38,6 @@ import { createSettleTracker } from './settleTracker';
 export interface OutlineOwner {
   /** Resolves once the job queue is empty. */
   idle(): Promise<void>;
-  /** Test hook: the fresh-launch path (startFresh + reconcile) without relaunching Chrome. */
-  simulateBrowserRestart(): Promise<void>;
   command(c: OutlineCommand): Promise<void>;
   /** The in-memory outline, Chrome IDs included. */
   outline(): Outline;
@@ -347,11 +345,6 @@ export function registerOutline(): OutlineOwner {
 
   return {
     idle: () => queue.idle(),
-    simulateBrowserRestart: () =>
-      enqueue(() => {
-        closingWindowIds.clear();
-        return step({ before: (o) => startFresh(o, Date.now()) });
-      }),
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
   };

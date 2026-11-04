@@ -50,7 +50,6 @@ export interface TestHooks {
   hasPreview: (url: string) => Promise<boolean>;
   readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>;
   syncExport: () => Promise<{ schemaVersion: number; windows: SyncWindow[] }>;
-  simulateBrowserRestart: () => Promise<void>;
   outlineCommand: (c: OutlineCommand) => Promise<void>;
 }
 (globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
@@ -61,6 +60,5 @@ export interface TestHooks {
     return { schemaVersion: OUTLINE_SCHEMA_VERSION, windows: outline.outline().windows };
   },
   syncExport: exportOutline,
-  simulateBrowserRestart: () => outline.simulateBrowserRestart(),
   outlineCommand: (c) => outline.command(c),
 };
