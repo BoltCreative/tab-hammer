@@ -54,11 +54,9 @@ export function createBrowserSession(opts: {
   let confirm!: () => void;
   const confirmedByEvent = new Promise<void>((r) => (confirm = r));
   let confirmed: Promise<void> | undefined;
-  let renewedHere = false;
 
   const markConfirmed = () => opts.session.set({ [SESSION_CONFIRMED_KEY]: true });
   const renew = async () => {
-    renewedHere = true;
     await opts.local.set({ [BROWSER_SESSION_KEY]: opts.newId() });
   };
 
@@ -75,6 +73,16 @@ export function createBrowserSession(opts: {
       }
     })());
 
+  // A launch event renews only while this session isn't confirmed yet, so a second launch event
+  // (onInstalled then onStartup, possibly in a new worker instance) or a current() that already
+  // gave up waiting never starts a second session for the same launch.
+  const isConfirmed = async () => {
+    const { [SESSION_CONFIRMED_KEY]: marker } = await opts.session
+      .get(SESSION_CONFIRMED_KEY)
+      .catch(() => ({}) as Record<string, unknown>);
+    return marker === true;
+  };
+
   return {
     async current() {
       await whenConfirmed();
@@ -85,13 +93,14 @@ export function createBrowserSession(opts: {
       return fresh as string;
     },
     async launched() {
-      // If current() already gave up waiting and started a session, that one is this launch's.
-      if (!renewedHere) await renew();
+      if (!(await isConfirmed())) await renew();
       await markConfirmed();
       confirm();
     },
     async installed(reason) {
-      if ((reason === 'install' || reason === 'chrome_update') && !renewedHere) await renew();
+      if ((reason === 'install' || reason === 'chrome_update') && !(await isConfirmed())) {
+        await renew();
+      }
       await markConfirmed();
       confirm();
     },

@@ -119,6 +119,35 @@ describe('createBrowserSession', () => {
     expect(await w.current()).not.toBe(old);
   });
 
+  it('renews once for a launch even if a second launch event reaches a new worker instance', async () => {
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    const old = await first.current();
+
+    b.restartBrowser();
+    const w = b.worker();
+    await w.installed('install');
+    const fresh = await w.current();
+    expect(fresh).not.toBe(old);
+    // The worker was torn down and rebuilt; storage.session still carries the confirmed marker.
+    const next = b.worker();
+    await next.launched();
+    await next.installed('chrome_update');
+    expect(await next.current()).toBe(fresh);
+  });
+
+  it("an 'update' never renews, even in an unconfirmed session", async () => {
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    const id = await first.current();
+    b.reloadExtension();
+    const w = b.worker();
+    await w.installed('update');
+    expect(await w.current()).toBe(id);
+  });
+
   it('starts a new session if no lifecycle event comes (extension re-enabled)', async () => {
     const b = browser();
     const first = b.worker();
