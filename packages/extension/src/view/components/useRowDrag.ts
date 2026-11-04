@@ -17,8 +17,9 @@ export type RowDrag = (key: string, kind: Kind) => RowDragProps;
 const MIME = 'application/x-tab-hammer-rows';
 
 /**
- * Drag-and-drop for outline rows. Tab rows and group headers drag (the selection, if the drag
- * starts on a selected row); every row is a drop target, marked with `data-drop` while hovered.
+ * Drag-and-drop for outline rows. Every row drags (the selection, if the drag starts on a selected
+ * row; a window header carries its whole window) and is a drop target, marked with `data-drop`
+ * while hovered.
  */
 export function useRowDrag(
   selected: ReadonlySet<string>,
@@ -40,18 +41,15 @@ export function useRowDrag(
   };
 
   return (key, kind) => ({
-    draggable: kind !== 'window',
+    draggable: true,
     'data-drop': target?.key === key ? target.position : undefined,
-    onDragStart:
-      kind === 'window'
-        ? undefined
-        : (e) => {
-            const keys = dragKeys(selected, key);
-            if (!selected.has(key)) onSelectOnly(key);
-            dragging.current = keys;
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData(MIME, keys.join(' '));
-          },
+    onDragStart: (e) => {
+      const keys = dragKeys(selected, key);
+      if (!selected.has(key)) onSelectOnly(key);
+      dragging.current = keys;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData(MIME, keys.join(' '));
+    },
     onDragOver: (e) => {
       if (!dragging.current) return; // not one of our rows (e.g. a link dragged in)
       e.preventDefault();

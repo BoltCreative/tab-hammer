@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTree } from '../buildTree';
-import { dragKeys, dropPositionFor, planMove, type MoveOp } from '../moveSelection';
+import { dragKeys, dropPositionFor, planDrop, planMove, type MoveOp } from '../moveSelection';
 import type { WindowNode } from '../types';
 import { group, state, tab, win } from './outlineState';
 
@@ -31,12 +31,15 @@ function layout(): WindowNode[] {
 function apply(tree: WindowNode[], ops: MoveOp[]) {
   const strips = new Map<number, { id: number; group: number }[]>();
   for (const w of tree) {
+    if (w.hibernated) continue;
     strips.set(
       w.windowId!,
       w.children.flatMap((c) =>
         c.kind === 'group'
-          ? c.tabs.map((t) => ({ id: t.tabId!, group: c.chromeGroupId! }))
-          : [{ id: c.tabId!, group: -1 }],
+          ? c.tabs.flatMap((t) => (t.hibernated ? [] : [{ id: t.tabId!, group: c.chromeGroupId! }]))
+          : c.hibernated
+            ? []
+            : [{ id: c.tabId!, group: -1 }],
       ),
     );
   }
@@ -90,10 +93,11 @@ describe('dropPositionFor', () => {
 });
 
 describe('dragKeys', () => {
-  it('drags the selection from a selected row, else only the row, never windows', () => {
+  it('drags the selection from a selected row, else only the row', () => {
     const sel = new Set(['t:1', 'w:1', 'g:20']);
-    expect(dragKeys(sel, 't:1').sort()).toEqual(['g:20', 't:1']);
+    expect(dragKeys(sel, 't:1').sort()).toEqual(['g:20', 't:1', 'w:1']);
     expect(dragKeys(sel, 't:4')).toEqual(['t:4']);
+    expect(dragKeys(sel, 'w:2')).toEqual(['w:2']);
   });
 });
 
@@ -193,5 +197,133 @@ describe('planMove', () => {
     expect(planMove(tree, ['t:x'], { key: 't:1', position: 'after' })).toEqual([]);
     expect(planMove(tree, ['t:1'], { key: 't:x', position: 'after' })).toEqual([]);
     expect(planMove(tree, ['t:1'], { key: 'w:h', position: 'inside' })).toEqual([]);
+  });
+});
+
+// Window 1: 1 hA 2 [g (hB, hC)] 3 ; Window 2: 5 hD 6 hG ; Window h (hibernated): hE hF.
+// Tabs named h* are hibernated; group g has no live tabs (no Chrome group).
+function mixed(): WindowNode[] {
+  const t = (id: number) => tab(`${id}`, { chromeTabId: id, title: `T${id}` });
+  return buildTree(
+    state({
+      windows: [
+        win('1', {
+          chromeWindowId: 1,
+          groups: [group('g')],
+          tabs: [
+            t(1),
+            tab('hA'),
+            t(2),
+            tab('hB', { groupId: 'g' }),
+            tab('hC', { groupId: 'g' }),
+            t(3),
+          ],
+        }),
+        win('2', { chromeWindowId: 2, tabs: [t(5), tab('hD'), t(6), tab('hG')] }),
+        win('h', { tabs: [tab('hE'), tab('hF')] }),
+      ],
+    }),
+  ).windows;
+}
+
+const loose = (...ids: string[]) => ids.map((id) => ({ id, groupId: null }));
+
+describe('planDrop', () => {
+  it('pure-live drags plan exactly what planMove plans, with no placement', () => {
+    const tree = layout();
+    const cases: [string[], { key: string; position: 'before' | 'after' | 'inside' }][] = [
+      [['t:3'], { key: 't:4', position: 'after' }],
+      [['t:3', 't:1'], { key: 't:6', position: 'after' }],
+      [['g:10'], { key: 'w:2', position: 'inside' }],
+      [['t:5'], { key: 'g:20', position: 'inside' }],
+      [['g:10', 't:1', 't:3'], { key: 'w:2', position: 'inside' }],
+    ];
+    for (const [keys, target] of cases) {
+      expect(planDrop(tree, keys, target)).toEqual({
+        chrome: planMove(tree, keys, target),
+        place: null,
+      });
+    }
+  });
+
+  it('a hibernated tab moves in the outline only', () => {
+    expect(planDrop(mixed(), ['t:hA'], { key: 't:5', position: 'after' })).toEqual({
+      chrome: [],
+      place: { windowId: '2', beforeTabId: 'hD', tabs: loose('hA') },
+    });
+  });
+
+  it('a mixed selection moves live tabs in Chrome and places all moved tabs in order', () => {
+    const tree = mixed();
+    const plan = planDrop(tree, ['t:2', 't:hA', 't:1'], { key: 't:6', position: 'before' });
+    expect(apply(tree, plan.chrome)).toEqual({ 1: ['3'], 2: ['5', '1', '2', '6'] });
+    expect(plan.place).toEqual({ windowId: '2', beforeTabId: '6', tabs: loose('1', 'hA', '2') });
+  });
+
+  it('dropping next to a hibernated tab anchors Chrome moves on the next live tab', () => {
+    const tree = mixed();
+    const plan = planDrop(tree, ['t:6'], { key: 't:hA', position: 'before' });
+    expect(apply(tree, plan.chrome)).toEqual({ 1: ['1', '6', '2', '3'], 2: ['5'] });
+    // Chrome's order can't say the tab goes before hA rather than after it: the outline is told.
+    expect(plan.place).toEqual({ windowId: '1', beforeTabId: 'hA', tabs: loose('6') });
+
+    // Past the last live tab, the moves anchor on the window's end.
+    const end = planDrop(tree, ['t:1'], { key: 't:hG', position: 'after' });
+    expect(end).toEqual({
+      chrome: planMove(tree, ['t:1'], { key: 'w:2', position: 'inside' }),
+      place: null,
+    });
+    expect(apply(tree, end.chrome)).toEqual({ 1: ['2', '3'], 2: ['5', '6', '1'] });
+  });
+
+  it('live tabs dropped into a hibernated window: no Chrome moves, placed there', () => {
+    expect(planDrop(mixed(), ['t:5', 't:1'], { key: 'w:h', position: 'inside' })).toEqual({
+      chrome: [],
+      place: { windowId: 'h', beforeTabId: null, tabs: loose('1', '5') },
+    });
+  });
+
+  it('joining a group with no live tabs places the tabs into it', () => {
+    const tree = mixed();
+    const plan = planDrop(tree, ['t:5', 't:hE'], { key: 'g:g', position: 'inside' });
+    // In Chrome the tab goes where the group is (before 3), loose; the worker then groups it.
+    expect(apply(tree, plan.chrome)).toEqual({ 1: ['1', '2', '5', '3'], 2: ['6'] });
+    expect(plan.place).toEqual({
+      windowId: '1',
+      beforeTabId: 'hB',
+      tabs: [
+        { id: '5', groupId: 'g' },
+        { id: 'hE', groupId: 'g' },
+      ],
+    });
+  });
+
+  it('dragging a window row moves all its tabs, live and hibernated, in order, into the target', () => {
+    const tree = mixed();
+    const plan = planDrop(tree, ['w:2'], { key: 'w:1', position: 'inside' });
+    expect(apply(tree, plan.chrome)).toEqual({ 1: ['1', '2', '3', '5', '6'], 2: [] });
+    expect(plan.place).toEqual({
+      windowId: '1',
+      beforeTabId: null,
+      tabs: loose('5', 'hD', '6', 'hG'),
+    });
+
+    // A window's groups travel as groups.
+    expect(planDrop(tree, ['w:1'], { key: 'w:h', position: 'inside' }).place).toEqual({
+      windowId: 'h',
+      beforeTabId: null,
+      tabs: [
+        ...loose('1', 'hA', '2'),
+        { id: 'hB', groupId: 'g' },
+        { id: 'hC', groupId: 'g' },
+        ...loose('3'),
+      ],
+    });
+
+    // Onto itself, or onto a row inside it: nothing to do.
+    const nothing = { chrome: [], place: null };
+    expect(planDrop(tree, ['w:2'], { key: 'w:2', position: 'inside' })).toEqual(nothing);
+    expect(planDrop(tree, ['w:2'], { key: 't:hD', position: 'after' })).toEqual(nothing);
+    expect(planDrop(tree, ['w:1', 't:5'], { key: 'g:g', position: 'inside' })).toEqual(nothing);
   });
 });

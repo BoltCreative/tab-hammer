@@ -20,9 +20,9 @@ import {
   toggleGroup,
   type CollapseState,
 } from '../model/visibleRows';
-import { planMove } from '../model/moveSelection';
+import { planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
-import { useOutline } from './chrome/outlineClient';
+import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
 import type { RowPropsFor } from './components/rowProps';
@@ -91,25 +91,23 @@ export function App() {
     setCursor(key);
     dispatch(selectionActionFor(e, key, visible));
   };
-  // Until hibernated rows can be dragged, they are neither drag sources nor drop targets, and a
-  // drag leaves any selected ones behind.
-  const hibernatedKeys = useMemo(() => hibernatedRowKeys(tree), [tree]);
   const drag = useRowDrag(
     selection.selected,
     (key) => dispatch({ type: 'click', key }),
     (keys, target) => {
-      const live = keys.filter((k) => !hibernatedKeys.has(k));
-      const ops = planMove(tree, live, target);
-      if (ops.length === 0) return;
-      applyMoveOps(ops).catch((err: unknown) =>
-        console.error('Tab Hammer: moving tabs failed', err),
-      );
+      const { chrome, place } = planDrop(tree, keys, target);
+      // Chrome first: the worker reconciles with Chrome before placing, so the live tabs are
+      // already where the placement expects them.
+      void (async () => {
+        await applyMoveOps(chrome);
+        if (place) await sendOutlineCommand({ cmd: 'place', placement: place });
+      })().catch((err: unknown) => console.error('Tab Hammer: moving tabs failed', err));
     },
   );
   const rowProps: RowPropsFor = (key, kind) => {
     const r = rowByKey.get(key);
     return {
-      ...(hibernatedKeys.has(key) ? {} : drag(key, kind)),
+      ...drag(key, kind),
       tabIndex: key === tabStop ? 0 : -1,
       'aria-level': r?.level,
       'aria-setsize': r?.setSize,
@@ -261,18 +259,6 @@ export function App() {
       )}
     </div>
   );
-}
-
-function hibernatedRowKeys(tree: WindowNode[]): Set<string> {
-  const out = new Set<string>();
-  for (const w of tree) {
-    if (w.hibernated) out.add(w.key);
-    for (const c of w.children) {
-      if (c.hibernated) out.add(c.key);
-      if (c.kind === 'group') for (const t of c.tabs) if (t.hibernated) out.add(t.key);
-    }
-  }
-  return out;
 }
 
 function logActionError(err: unknown) {
