@@ -30,10 +30,8 @@ describe('settle tracker', () => {
     tracker.touch(2);
     expect(timers.size).toBe(1);
     expect([...timers.values()][0]?.ms).toBe(SETTLE_QUIET_MS);
-    expect(tracker.pending()).toEqual([1, 2]);
     fire();
     expect(settled).toEqual([[1, 2]]);
-    expect(tracker.pending()).toEqual([]);
   });
 
   it('a touch restarts the quiet period', () => {

@@ -109,7 +109,7 @@ export function registerOutline(): OutlineOwner {
     const ids = o.windows
       .filter((w) => w.provisional && settled.has(w.chromeWindowId!))
       .map((w) => w.id);
-    return ids.length === 0 ? o : matchRestored(o, ids, Date.now(), newId).outline;
+    return ids.length === 0 ? o : matchRestored(o, ids, Date.now());
   }
 
   function message(): OutlineStateMessage {

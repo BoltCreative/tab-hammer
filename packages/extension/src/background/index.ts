@@ -3,7 +3,7 @@ import type { OutlineCommand } from '../shared/outlineMessages';
 import { getPreview } from '../shared/previewStore';
 import { connectBridge } from './bridge';
 import { registerOutline } from './outline/outlineOwner';
-import { OUTLINE_SCHEMA_VERSION, exportOutline, type SyncWindow } from './outline/outlineStore';
+import { OUTLINE_SCHEMA_VERSION } from './outline/outlineStore';
 import { registerPreviewCapture, viewWindows } from './previews';
 import { setWindowCreator } from './tabCommands';
 import { openingBounds, trackViewBounds } from './viewBounds';
@@ -51,7 +51,6 @@ export interface TestHooks {
   openOrFocus: () => Promise<void>;
   hasPreview: (url: string) => Promise<boolean>;
   readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>;
-  syncExport: () => Promise<{ schemaVersion: number; windows: SyncWindow[] }>;
   outlineCommand: (c: OutlineCommand) => Promise<void>;
 }
 (globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
@@ -61,6 +60,5 @@ export interface TestHooks {
     await outline.idle();
     return { schemaVersion: OUTLINE_SCHEMA_VERSION, windows: outline.outline().windows };
   },
-  syncExport: exportOutline,
   outlineCommand: (c) => outline.command(c),
 };

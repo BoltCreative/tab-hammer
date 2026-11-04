@@ -5,7 +5,6 @@ export const SETTLE_QUIET_MS = 1500;
 export interface SettleTracker {
   touch(chromeWindowId: number): void;
   forget(chromeWindowId: number): void;
-  pending(): number[];
 }
 
 export function createSettleTracker(opts: {
@@ -45,6 +44,5 @@ export function createSettleTracker(opts: {
       ids.delete(id);
       if (ids.size === 0) disarm();
     },
-    pending: () => [...ids],
   };
 }

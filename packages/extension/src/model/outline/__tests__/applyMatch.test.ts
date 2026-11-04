@@ -3,9 +3,6 @@ import { matchRestored } from '../applyMatch';
 import type { Outline } from '../types';
 import { group, tab, win } from './recs';
 
-const noId = (): string => {
-  throw new Error('no ids expected');
-};
 const NOW = 1000;
 const url = (id: string) => `https://e.test/${id}`;
 
@@ -36,10 +33,10 @@ describe('matchRestored', () => {
     const o: Outline = {
       windows: [x, trashed('C', ['a', 'b']), prov('P', 9, [ptab("a'", 11), ptab("b'", 12)])],
     };
-    const r = matchRestored(o, ['P'], NOW, noId);
-    expect(r.outline.windows.map((w) => w.id)).toEqual(['X', 'C']);
-    expect(r.outline.windows[0]).toBe(x);
-    const c = r.outline.windows[1]!;
+    const r = matchRestored(o, ['P'], NOW);
+    expect(r.windows.map((w) => w.id)).toEqual(['X', 'C']);
+    expect(r.windows[0]).toBe(x);
+    const c = r.windows[1]!;
     expect(c).toMatchObject({ state: 'live', chromeWindowId: 9, name: 'Work', lastLiveAt: NOW });
     expect(c).not.toHaveProperty('closedAt');
     expect(c).not.toHaveProperty('openAtShutdown');
@@ -48,7 +45,6 @@ describe('matchRestored', () => {
       ['a', 11],
       ['b', 12],
     ]);
-    expect(r.matched).toEqual([{ restoredId: 'P', windowId: 'C' }]);
   });
 
   it('partial match: extra restored tabs become new rows, missing saved tabs stay hibernated in place', () => {
@@ -58,7 +54,7 @@ describe('matchRestored', () => {
         prov('P', 9, [ptab('a', 11), ptab('n', 12), ptab('b', 13)]),
       ],
     };
-    const c = matchRestored(o, ['P'], NOW, noId).outline.windows[0]!;
+    const c = matchRestored(o, ['P'], NOW).windows[0]!;
     expect(c.tabs.map((t) => t.id)).toEqual(['a', 'm', 'n', 'b']);
     expect(c.tabs.find((t) => t.id === 'm')!.chromeTabId).toBeUndefined();
   });
@@ -74,7 +70,7 @@ describe('matchRestored', () => {
       ],
     });
     const o: Outline = { windows: [cw, prov('P', 9, [ptab('a', 11), ptab('b', 12)])] };
-    const c = matchRestored(o, ['P'], NOW, noId).outline.windows[0]!;
+    const c = matchRestored(o, ['P'], NOW).windows[0]!;
     expect(c.tabs.map((t) => t.id)).toEqual(['a', 'h', 'b']);
     expect(c.tabs[1]!.chromeTabId).toBeUndefined();
   });
@@ -84,9 +80,8 @@ describe('matchRestored', () => {
       tabs: [tab('a', { liveAtClose: true }), tab('b', { liveAtClose: true })],
     });
     const o: Outline = { windows: [h, prov('P', 9, [ptab('a', 11), ptab('b', 12)])] };
-    const r = matchRestored(o, ['P'], NOW, noId);
-    expect(r.matched).toEqual([]);
-    expect(r.outline.windows[0]).toBe(h);
+    const r = matchRestored(o, ['P'], NOW);
+    expect(r.windows[0]).toBe(h);
   });
 
   it('a restored group re-attaches to the saved group holding most of its tabs', () => {
@@ -111,7 +106,7 @@ describe('matchRestored', () => {
         group('PH', { chromeGroupId: 6, title: 'G2' }),
       ],
     );
-    const c = matchRestored({ windows: [cw, p] }, ['P'], NOW, noId).outline.windows[0]!;
+    const c = matchRestored({ windows: [cw, p] }, ['P'], NOW).windows[0]!;
     expect(c.groups.map((g) => [g.id, g.chromeGroupId, g.title, g.color])).toEqual([
       ['G1', 5, 'new', 'red'],
       ['G2', 6, 'G2', 'blue'],
@@ -121,9 +116,8 @@ describe('matchRestored', () => {
 
   it('an unmatched provisional window just loses the flag', () => {
     const p = prov('P', 9, [ptab('z', 11), ptab('y', 12)]);
-    const r = matchRestored({ windows: [trashed('C', ['a', 'b']), p] }, ['P'], NOW, noId);
-    expect(r.matched).toEqual([]);
-    const out = r.outline.windows[1]!;
+    const r = matchRestored({ windows: [trashed('C', ['a', 'b']), p] }, ['P'], NOW);
+    const out = r.windows[1]!;
     expect(out).not.toHaveProperty('provisional');
     expect(out).toMatchObject({ id: 'P', chromeWindowId: 9, modifiedAt: p.modifiedAt });
   });
@@ -137,8 +131,8 @@ describe('matchRestored', () => {
         prov('P1', 9, [ptab('a', 11), ptab('b', 12)]),
       ],
     };
-    const r = matchRestored(o, ['P1', 'P2'], NOW, noId);
-    expect(r.outline.windows.map((w) => [w.id, w.chromeWindowId])).toEqual([
+    const r = matchRestored(o, ['P1', 'P2'], NOW);
+    expect(r.windows.map((w) => [w.id, w.chromeWindowId])).toEqual([
       ['C1', 9],
       ['C2', 8],
     ]);
@@ -158,7 +152,7 @@ describe('matchRestored', () => {
         prov('P', 9, [ptab('a', 11, { title: 'a' }), ptab('b', 12, { title: 'renamed' })]),
       ],
     };
-    const c = matchRestored(o, ['P'], NOW, noId).outline.windows[0]!;
+    const c = matchRestored(o, ['P'], NOW).windows[0]!;
     expect(c.modifiedAt).toBe(NOW);
     expect(Object.fromEntries(c.tabs.map((t) => [t.id, t.modifiedAt]))).toEqual({
       a: 7,

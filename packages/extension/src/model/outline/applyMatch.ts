@@ -1,15 +1,10 @@
 // Folds a restored Chrome window into the saved row it matches. Pure: the caller
-// passes the clock and the ID source.
+// passes the clock.
 
 import { assignMatches, type Alignment } from './matching';
 import type { MatchCandidate, MatchRestored } from './matching';
 import { mergeHibernated } from './reconcile';
 import type { GroupRec, Outline, TabRec, WindowRec } from './types';
-
-export interface MatchResult {
-  outline: Outline;
-  matched: { restoredId: string; windowId: string }[];
-}
 
 function isCandidate(w: WindowRec): boolean {
   return w.state === 'trashed' || (w.state === 'hibernated' && w.openAtShutdown === true);
@@ -111,16 +106,10 @@ function applyOne(c: WindowRec, p: WindowRec, alignment: Alignment, now: number)
 
 /** Matches the given provisional windows against the outline's candidates and applies every
  *  assignment. Unmatched provisional windows just lose the flag. */
-export function matchRestored(
-  o: Outline,
-  provisionalIds: string[],
-  now: number,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- part of the model-operation signature
-  _newId: () => string,
-): MatchResult {
+export function matchRestored(o: Outline, provisionalIds: string[], now: number): Outline {
   const wanted = new Set(provisionalIds);
   const provisional = o.windows.filter((w) => wanted.has(w.id) && w.state === 'live');
-  if (provisional.length === 0) return { outline: o, matched: [] };
+  if (provisional.length === 0) return o;
 
   const restored: MatchRestored[] = provisional.map((w) => ({
     id: w.id,
@@ -157,8 +146,5 @@ export function matchRestored(
       windows.push(rest);
     } else windows.push(w);
   }
-  return {
-    outline: { windows },
-    matched: assignments.map((a) => ({ restoredId: a.restoredId, windowId: a.candidateId })),
-  };
+  return { windows };
 }
