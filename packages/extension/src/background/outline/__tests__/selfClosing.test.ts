@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChromeSnapshot, LiveTab } from '../../../model/outline/types';
-import { createSelfClosing } from '../selfClosing';
+import { CLOSE_GIVE_UP_MS, createSelfClosing } from '../selfClosing';
 
 const tab = (id: number, windowId: number, groupId = -1): LiveTab => ({
   id,
@@ -42,6 +42,19 @@ describe('createSelfClosing', () => {
     closing.add(effects);
     closing.release(effects);
     expect(closing.filter(snapshot)).toEqual(snapshot);
+  });
+
+  it('shows them again once a close has hung past the give-up time (a page cancelled it quietly)', () => {
+    let now = 1000;
+    const closing = createSelfClosing({ now: () => now });
+    closing.add({ closeWindows: [2], closeTabs: [10] });
+    now += CLOSE_GIVE_UP_MS - 1;
+    expect(closing.filter(snapshot).windowIds).toEqual([1]);
+    now += 1;
+    expect(closing.filter(snapshot)).toEqual(snapshot);
+    // Released for good: a later close of the same IDs starts its own clock.
+    closing.add({ closeWindows: [2], closeTabs: [] });
+    expect(closing.filter(snapshot).windowIds).toEqual([1]);
   });
 
   it('passes the snapshot through untouched when nothing is closing', () => {
