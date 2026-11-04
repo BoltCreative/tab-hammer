@@ -28,6 +28,7 @@ import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
 import type { RowCommands, RowPropsFor } from './components/rowProps';
 import { useRowDrag } from './components/useRowDrag';
+import { RecentlyClosed } from './components/RecentlyClosed';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
@@ -42,9 +43,9 @@ export function App() {
   });
   // The worker's outline, re-rendered on every broadcast. Moves and other Chrome actions show up
   // through it, so nothing here re-reads Chrome after acting.
-  const tree = useOutline(
+  const { windows: tree, trash } = useOutline(
     useCallback((v: OutlineView) => setCollapse((c) => discardStaleOverrides(v.windows, c)), []),
-  ).windows;
+  );
 
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
@@ -121,6 +122,7 @@ export function App() {
     hibernate: (id) => send({ cmd: 'hibernate', ids: [id] }),
     trash: (id) => send({ cmd: 'trash', ids: [id] }),
     open: (id) => send({ cmd: 'open', id }),
+    deleteForever: (windowId) => send({ cmd: 'deleteForever', windowId }),
   };
   // Enter or double-click. A hibernated row opens; a live tab is activated, a live window focused.
   const onActivate = (t: TabNode) => {
@@ -278,6 +280,14 @@ export function App() {
             onEndRename={onEndRename}
           />
         ))}
+        {/* Search doesn't cover the trash, so it hides while a query is active. */}
+        {!filtering && (
+          <RecentlyClosed
+            entries={trash}
+            restore={commands.open}
+            deleteForever={commands.deleteForever}
+          />
+        )}
       </main>
       {hovered && hoveredTab && (
         <HoverCard tab={hoveredTab} row={hovered.row} list={listRef} previewEpoch={previewEpoch} />

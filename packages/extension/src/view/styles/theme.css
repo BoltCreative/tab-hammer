@@ -137,7 +137,16 @@ main.outline {
   background: var(--row-hover);
 }
 /* A hibernated window, group, or tab: in the outline, with nothing open in Chrome. */
-.row.hibernated {
+.row.hibernated > :not(.row-toolbar) {
+  opacity: 0.5;
+}
+/* Recently closed: dimmed like hibernated rows, but plain (no selection, drag, or hover card). */
+.trash-header {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.trash-entry > :not(.row-toolbar),
+.trash-tab > * {
   opacity: 0.5;
 }
 /* The hover toolbar: icon buttons overlaid at the row's right edge, over the row's own background

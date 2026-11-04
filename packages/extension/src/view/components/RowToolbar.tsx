@@ -83,3 +83,9 @@ export const TrashIcon = (
     <path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 8.5h6.6l.7-8.5" />
   </Icon>
 );
+
+export const RestoreIcon = (
+  <Icon>
+    <path d="M3 8a5 5 0 1 0 1.8-3.8M3 2.5v3h3" />
+  </Icon>
+);

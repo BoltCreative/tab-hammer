@@ -16,4 +16,5 @@ export interface RowCommands {
   hibernate: (id: string) => void;
   trash: (id: string) => void;
   open: (id: string) => void;
+  deleteForever: (windowId: string) => void;
 }

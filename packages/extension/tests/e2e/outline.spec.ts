@@ -375,3 +375,68 @@ test('Delete trashes the selected tabs', async ({ sw, view }) => {
   await expect.poll(async () => titlesOf(await recordById(sw, rec.id))).toEqual(['Bravo']);
   await expect(recordRow(view, 't', alpha!.id)).toHaveCount(0);
 });
+
+/** Closes a two-tab window [Echo, Foxtrot] and returns its record ID, once it is in the trash. */
+async function closedEchoWindow(sw: Worker): Promise<string> {
+  const w = await sw.evaluate(
+    async (urls) => (await chrome.windows.create({ url: urls }))!.id!,
+    [page('Echo'), page('Foxtrot')],
+  );
+  await expect.poll(async () => titlesOf(await liveRecord(sw, w))).toEqual(['Echo', 'Foxtrot']);
+  const id = (await liveRecord(sw, w))!.id;
+  await sw.evaluate((windowId) => chrome.windows.remove(windowId), w);
+  await expect.poll(async () => (await recordById(sw, id))?.state).toBe('trashed');
+  return id;
+}
+
+test('a closed window lands in Recently closed and Restore brings it back at the bottom', async ({
+  sw,
+  view,
+}) => {
+  const others = (await chromeWindows(sw)).map((w) => w.id);
+  await closedEchoWindow(sw);
+
+  const section = view.getByRole('button', { name: /^Recently closed \(1\)/ });
+  await expect(view.getByTestId('trash-entry')).toHaveCount(0); // collapsed by default
+  await section.click();
+  const entry = view.getByTestId('trash-entry');
+  await expect(entry).toContainText('Echo');
+  await expect(entry).toContainText('2 tabs');
+  // Trash rows are plain: no drag, not in the outline tree.
+  await expect(entry).not.toHaveAttribute('draggable', 'true');
+  await expect(entry).not.toHaveAttribute('role', 'treeitem');
+
+  await entry.hover();
+  await entry.getByRole('button', { name: 'Restore', exact: true }).click();
+
+  await expect
+    .poll(async () => (await chromeWindows(sw, others)).map(titlesOf))
+    .toEqual([['Echo', 'Foxtrot']]);
+  const lastCard = view.getByTestId('window-card').last();
+  await expect(lastCard.locator('[data-kind="tab"] .title')).toHaveText(['Echo', 'Foxtrot']);
+  await expect(section).toHaveCount(0);
+});
+
+test('Delete forever removes a trash entry', async ({ sw, view }) => {
+  const id = await closedEchoWindow(sw);
+
+  await view.getByRole('button', { name: /^Recently closed \(1\)/ }).click();
+  const entry = view.getByTestId('trash-entry');
+  await entry.hover();
+  await entry.getByRole('button', { name: 'Delete forever', exact: true }).click();
+
+  await expect.poll(async () => await recordById(sw, id)).toBeUndefined();
+  await expect(view.getByTestId('trash-entry')).toHaveCount(0);
+  await expect(view.getByRole('button', { name: /^Recently closed/ })).toHaveCount(0);
+});
+
+test('a trash entry expands to its tabs, which are plain rows', async ({ sw, view }) => {
+  await closedEchoWindow(sw);
+  await view.getByRole('button', { name: /^Recently closed \(1\)/ }).click();
+  const entry = view.getByTestId('trash-entry');
+
+  await entry.getByText('▸').click();
+  await expect(view.locator('.trash-tab .title')).toHaveText(['Echo', 'Foxtrot']);
+  await expect(view.locator('.trash-tab').first()).not.toHaveAttribute('role', 'treeitem');
+  await expect(view.locator('.trash-tab .row-toolbar')).toHaveCount(0);
+});
