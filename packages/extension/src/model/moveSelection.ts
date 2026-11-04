@@ -273,7 +273,8 @@ export function planDrop(
 ): DropPlan {
   const keySet = withWindowRows(tree, keys);
   const units = unitsFor(tree, keySet);
-  const at = locate(tree).get(target.key);
+  const where = locate(tree);
+  const at = where.get(target.key);
   if (units.length === 0 || !at) return NOTHING;
   const land = landing(keySet, units, at, target);
   if (!land) return NOTHING;
@@ -286,8 +287,19 @@ export function planDrop(
       groupId: joinGroup?.id ?? (u.kind === 'group' ? u.group.id : null),
     })),
   );
+
+  // Joining a Chrome group whose only live tabs are among the moved ones: those tabs already are
+  // the group's whole live run in Chrome, so they stay put and the other moved tabs join them.
+  const chromeGroupOf = (t: TabNode) => where.get(t.key)!.group?.chromeGroupId;
+  const joinCg = joinGroup?.chromeGroupId;
+  const movedLive = placed.map((p) => p.tab).filter(isLive);
+  const alreadyIn = movedLive.filter((t) => joinCg !== undefined && chromeGroupOf(t) === joinCg);
+  const joinsOwnRun =
+    alreadyIn.length > 0 && !remaining.some((t) => isLive(t) && chromeGroupOf(t) === joinCg);
+
   const needsPlace =
     win.hibernated ||
+    joinsOwnRun ||
     placed.some((p) => p.tab.hibernated) ||
     (joinGroup !== null && joinGroup.chromeGroupId === undefined) ||
     next?.hibernated === true;
@@ -299,20 +311,42 @@ export function planDrop(
       }
     : null;
   if (win.hibernated) return { chrome: [], place };
+  if (joinsOwnRun) return { chrome: planJoinOwnRun(movedLive, alreadyIn, joinCg!), place };
 
   const live = liveProjection(tree);
-  const liveKeys = units.flatMap((u) =>
-    u.kind === 'tab'
-      ? u.tab.hibernated
-        ? []
-        : [u.tab.key]
-      : u.group.hibernated
-        ? []
-        : [u.group.key],
-  );
+  const liveKeys = units
+    .filter((u) => !(u.kind === 'tab' ? u.tab : u.group).hibernated)
+    .map((u) => (u.kind === 'tab' ? u.tab.key : u.group.key));
   const chrome =
     liveKeys.length === 0 ? [] : planMove(live, liveKeys, liveTarget(live, land, target));
   return { chrome, place };
+}
+
+// The moved live tabs `moved` (in final order) end up as group `groupId`'s live run, where the
+// ones `alreadyIn` it are now: the others join the group, then each is set next to its neighbour.
+function planJoinOwnRun(moved: TabNode[], alreadyIn: TabNode[], groupId: number): MoveOp[] {
+  const joining = moved.filter((t) => !alreadyIn.includes(t)).map((t) => t.tabId!);
+  if (joining.length === 0) return []; // already the group's live run, in outline order
+  const ops: MoveOp[] = [];
+  if (joining.length > 0) ops.push({ op: 'group', tabIds: joining, groupId });
+  const k = moved.indexOf(alreadyIn[0]!);
+  for (let i = k - 1; i >= 0; i--) {
+    ops.push({
+      op: 'moveNextTo',
+      tabId: moved[i]!.tabId!,
+      anchorTabId: moved[i + 1]!.tabId!,
+      side: 'before',
+    });
+  }
+  for (let i = k + 1; i < moved.length; i++) {
+    ops.push({
+      op: 'moveNextTo',
+      tabId: moved[i]!.tabId!,
+      anchorTabId: moved[i - 1]!.tabId!,
+      side: 'after',
+    });
+  }
+  return ops;
 }
 
 // The selected keys plus every row of each selected window.

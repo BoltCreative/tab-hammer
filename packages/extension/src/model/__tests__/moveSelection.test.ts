@@ -326,4 +326,55 @@ describe('planDrop', () => {
     expect(planDrop(tree, ['w:2'], { key: 't:hD', position: 'after' })).toEqual(nothing);
     expect(planDrop(tree, ['w:1', 't:5'], { key: 'g:g', position: 'inside' })).toEqual(nothing);
   });
+
+  // Window 9: 9 ; Window 1: [G (1, hX)] 3 ; Window 2: 5. Group G's only live tab is 1.
+  function ownRun(): WindowNode[] {
+    return buildTree(
+      state({
+        windows: [
+          win('9', { chromeWindowId: 9, tabs: [tab('9', { chromeTabId: 9 })] }),
+          win('1', {
+            chromeWindowId: 1,
+            groups: [group('G', { chromeGroupId: 7 })],
+            tabs: [
+              tab('1', { chromeTabId: 1, groupId: 'G' }),
+              tab('hX', { groupId: 'G' }),
+              tab('3', { chromeTabId: 3 }),
+            ],
+          }),
+          win('2', { chromeWindowId: 2, tabs: [tab('5', { chromeTabId: 5 })] }),
+        ],
+      }),
+    ).windows;
+  }
+
+  it("reordering a group's only live tab past its hibernated ones keeps it in the group", () => {
+    const tree = ownRun();
+    expect(planDrop(tree, ['t:1'], { key: 't:hX', position: 'after' })).toEqual({
+      chrome: [],
+      place: { windowId: '1', beforeTabId: '3', tabs: [{ id: '1', groupId: 'G' }] },
+    });
+    // Dropped on the group's header: into it, at its start (before hX).
+    expect(planDrop(tree, ['t:1'], { key: 'g:G', position: 'inside' })).toEqual({
+      chrome: [],
+      place: { windowId: '1', beforeTabId: 'hX', tabs: [{ id: '1', groupId: 'G' }] },
+    });
+  });
+
+  it('other tabs moved along join the group next to its only live tab', () => {
+    const tree = ownRun();
+    const plan = planDrop(tree, ['t:5', 't:1'], { key: 't:hX', position: 'after' });
+    expect(apply(tree, plan.chrome)).toEqual({ 9: ['9'], 1: ['1g7', '5g7', '3'], 2: [] });
+    expect(plan.place).toEqual({
+      windowId: '1',
+      beforeTabId: '3',
+      tabs: [
+        { id: '1', groupId: 'G' },
+        { id: '5', groupId: 'G' },
+      ],
+    });
+    // A tab ahead of it in outline order lands before it.
+    const ahead = planDrop(tree, ['t:9', 't:1'], { key: 't:hX', position: 'after' });
+    expect(apply(tree, ahead.chrome)).toEqual({ 9: [], 1: ['9g7', '1g7', '3'], 2: ['5'] });
+  });
 });

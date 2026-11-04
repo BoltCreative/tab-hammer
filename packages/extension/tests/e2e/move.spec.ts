@@ -265,3 +265,30 @@ test('a mixed drop moves live tabs in Chrome and hibernated rows in the outline,
 function chromeWindowIds(sw: Worker): Promise<number[]> {
   return sw.evaluate(async () => (await chrome.windows.getAll()).map((w) => w.id!));
 }
+
+test("moving a group's only live tab past its hibernated tab keeps it in the group", async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw);
+  const a = await liveRecord(sw, s.winA, 3);
+  const [alpha, bravo, charlie] = a.tabs;
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [bravo!.id] });
+
+  const bravoRow = recordRow(view, 't', bravo!.id);
+  await liveRow(view, 'tab', s.alpha).dragTo(bravoRow, {
+    targetPosition: await edge(bravoRow, 'bottom'),
+  });
+
+  await expect
+    .poll(async () => {
+      const recA = await recordById(sw, a.id);
+      return recA?.tabs.map((t) => [t.id, t.groupId === alpha!.groupId]);
+    })
+    .toEqual([
+      [bravo!.id, true],
+      [alpha!.id, true],
+      [charlie!.id, false],
+    ]);
+  expect(await strip(sw, s.winA)).toEqual(['Alpha@Research', 'Charlie']);
+});
