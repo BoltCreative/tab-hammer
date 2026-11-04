@@ -1,4 +1,4 @@
-import type { Worker } from '@playwright/test';
+import type { Page, Worker } from '@playwright/test';
 import type { WindowRec } from '../../src/model/outline/types';
 import { expect, outlineCommand, readOutline, test } from './fixtures';
 
@@ -232,4 +232,146 @@ test('rename and delete forever', async ({ sw }) => {
 
   await outlineCommand(sw, { cmd: 'deleteForever', windowId: rec.id });
   expect(await recordById(sw, rec.id)).toBeUndefined();
+});
+
+/** An outline row by its Tab Hammer record ID (works for hibernated rows, which have no Chrome ID). */
+function recordRow(view: Page, kind: 't' | 'w', id: string) {
+  return view.locator(`[data-key="${kind}:${id}"]`);
+}
+
+/** Hovers a row and clicks one of its toolbar buttons. */
+async function toolbar(row: ReturnType<typeof recordRow>, label: string) {
+  await row.hover();
+  await row.getByRole('button', { name: label, exact: true }).click();
+}
+
+const titlesOf = (w: { tabs: { title?: string }[] } | undefined) => w?.tabs.map((t) => t.title);
+
+test('hover toolbar hibernates a window; it stays dimmed; double-click reopens it', async ({
+  sw,
+  view,
+}) => {
+  const others = (await chromeWindows(sw)).map((w) => w.id);
+  const { a, rec } = await windowARecord(sw);
+  const header = recordRow(view, 'w', rec.id);
+  const rows = [header, ...rec.tabs.map((t) => recordRow(view, 't', t.id))];
+
+  await toolbar(header, 'Hibernate');
+
+  await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+  for (const row of rows) await expect(row).toHaveClass(/\bhibernated\b/);
+  await header.hover();
+  await expect(header.getByRole('button', { name: 'Hibernate', exact: true })).toHaveCount(0);
+
+  await header.dblclick();
+
+  await expect
+    .poll(async () => (await chromeWindows(sw, others)).map(titlesOf))
+    .toEqual([['Alpha', 'Bravo', 'Charlie']]);
+  for (const row of rows) await expect(row).not.toHaveClass(/\bhibernated\b/);
+});
+
+test('hibernate one tab, open just it, then open the rest of its window', async ({ sw, view }) => {
+  const others = (await chromeWindows(sw)).map((w) => w.id);
+  const a = await sw.evaluate(
+    async (urls) => (await chrome.windows.create({ url: urls }))!.id!,
+    [page('A'), page('B'), page('C')],
+  );
+  await expect.poll(async () => titlesOf(await liveRecord(sw, a))).toEqual(['A', 'B', 'C']);
+  const rec = (await liveRecord(sw, a))!;
+  const header = recordRow(view, 'w', rec.id);
+  const [rowA, rowB, rowC] = rec.tabs.map((t) => recordRow(view, 't', t.id)) as [
+    ReturnType<typeof recordRow>,
+    ReturnType<typeof recordRow>,
+    ReturnType<typeof recordRow>,
+  ];
+
+  await toolbar(rowB, 'Hibernate');
+  await expect(rowB).toHaveClass(/\bhibernated\b/);
+  await expect
+    .poll(async () => titlesOf((await chromeWindows(sw)).find((w) => w.id === a)))
+    .toEqual(['A', 'C']);
+
+  await toolbar(header, 'Hibernate');
+  for (const row of [header, rowA, rowB, rowC]) await expect(row).toHaveClass(/\bhibernated\b/);
+
+  await rowB.dblclick();
+  await expect.poll(async () => (await chromeWindows(sw, others)).map(titlesOf)).toEqual([['B']]);
+  await expect(rowB).not.toHaveClass(/\bhibernated\b/);
+  // A and C stay dimmed rows of the same window.
+  const card = header.locator('..');
+  await expect(card.locator('[data-kind="tab"] .title')).toHaveText(['A', 'B', 'C']);
+  await expect(rowA).toHaveClass(/\bhibernated\b/);
+  await expect(rowC).toHaveClass(/\bhibernated\b/);
+
+  await header.dblclick();
+  await expect
+    .poll(async () => (await chromeWindows(sw, others)).map(titlesOf))
+    .toEqual([['A', 'B', 'C']]);
+});
+
+test('rename field: Enter saves, Escape cancels, empty clears to Window N', async ({
+  sw,
+  view,
+}) => {
+  const { rec } = await windowARecord(sw);
+  const header = recordRow(view, 'w', rec.id);
+  const label = header.locator('.title');
+  const field = header.getByRole('textbox');
+  await expect(label).toHaveText(/^Window \d+$/);
+  const defaultLabel = await label.textContent();
+
+  await toolbar(header, 'Rename window');
+  await expect(field).toBeFocused();
+  await field.fill('Reading');
+  await field.press('Enter');
+  await expect(label).toHaveText('Reading');
+  await expect.poll(async () => (await recordById(sw, rec.id))?.name).toBe('Reading');
+
+  await toolbar(header, 'Rename window');
+  await expect(field).toHaveValue('Reading');
+  await field.fill('Other');
+  await field.press('Escape');
+  await expect(field).toHaveCount(0);
+  await expect(label).toHaveText('Reading');
+
+  await toolbar(header, 'Rename window');
+  await field.fill('');
+  await field.press('Enter');
+  await expect(label).toHaveText(defaultLabel!);
+  await expect.poll(async () => (await recordById(sw, rec.id))?.name).toBeUndefined();
+});
+
+test('rename field keystrokes stay in the field', async ({ sw, view }) => {
+  const { a, rec } = await windowARecord(sw);
+  const header = recordRow(view, 'w', rec.id);
+  await recordRow(view, 't', rec.tabs[2]!.id).click();
+
+  await toolbar(header, 'Rename window');
+  await expect(header.getByRole('textbox')).toBeFocused();
+  await view.keyboard.type('ab');
+  for (const key of ['Backspace', 'Delete', 'Enter']) await view.keyboard.press(key);
+
+  await expect(header.locator('.title')).toHaveText('a');
+  await expect.poll(async () => (await recordById(sw, rec.id))?.name).toBe('a');
+  expect(titlesOf((await chromeWindows(sw)).find((w) => w.id === a))).toEqual([
+    'Alpha',
+    'Bravo',
+    'Charlie',
+  ]);
+});
+
+test('Delete trashes the selected tabs', async ({ sw, view }) => {
+  const { a, rec } = await windowARecord(sw);
+  const [alpha, , charlie] = rec.tabs;
+  await recordRow(view, 't', alpha!.id).click();
+  await recordRow(view, 't', charlie!.id).click({ modifiers: ['ControlOrMeta'] });
+
+  await view.keyboard.press('Delete');
+
+  await expect
+    .poll(async () => titlesOf((await chromeWindows(sw)).find((w) => w.id === a)))
+    .toEqual(['Bravo']);
+  await expect.poll(async () => titlesOf(await recordById(sw, rec.id))).toEqual(['Bravo']);
+  await expect(recordRow(view, 't', alpha!.id)).toHaveCount(0);
 });

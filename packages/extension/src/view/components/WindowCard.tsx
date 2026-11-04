@@ -4,7 +4,9 @@ import { isGroupCollapsed, type CollapseState } from '../../model/visibleRows';
 import type { HoverHandlers } from '../hover/useHoverCard';
 import { GroupRow } from './GroupRow';
 import { TabRow } from './TabRow';
-import type { RowPropsFor } from './rowProps';
+import { RenameField } from './RenameField';
+import { EditIcon, HibernateIcon, RowToolbar, TrashIcon, type RowAction } from './RowToolbar';
+import type { RowCommands, RowPropsFor } from './rowProps';
 
 interface Props {
   win: WindowNode;
@@ -19,11 +21,22 @@ interface Props {
   onWindowContextMenu: (e: MouseEvent, win: WindowNode) => void;
   hover: HoverHandlers;
   rowProps: RowPropsFor;
+  commands: RowCommands;
+  renaming: boolean; // the label is an inline text field
+  onStartRename: (key: string) => void;
+  onEndRename: (win: WindowNode, name: string | null) => void; // null: cancelled
 }
 
 export function WindowCard(p: Props) {
   const { win } = p;
   const collapsed = p.collapse.collapsedWindows.has(win.key);
+  const actions: RowAction[] = [
+    { label: 'Rename window', icon: EditIcon, onClick: () => p.onStartRename(win.key) },
+    ...(win.hibernated
+      ? []
+      : [{ label: 'Hibernate', icon: HibernateIcon, onClick: () => p.commands.hibernate(win.id) }]),
+    { label: 'Move to trash', icon: TrashIcon, onClick: () => p.commands.trash(win.id) },
+  ];
   return (
     <section
       role="none"
@@ -31,12 +44,14 @@ export function WindowCard(p: Props) {
       className={win.focused ? 'card focused' : 'card'}
     >
       <div
-        className="row window-header"
+        className={win.hibernated ? 'row window-header hibernated' : 'row window-header'}
         role="treeitem"
         data-key={win.key}
         data-kind="window"
         data-window-id={win.windowId}
         {...p.rowProps(win.key, 'window')}
+        // While renaming, a drag in the field selects text instead of moving the window.
+        {...(p.renaming && { draggable: false })}
         aria-selected={p.selected.has(win.key)}
         onClick={(e) => p.onSelect(e, win.key)}
         onDoubleClick={() => p.onFocusWindow(win)}
@@ -52,8 +67,18 @@ export function WindowCard(p: Props) {
         >
           {collapsed ? '▸' : '▾'}
         </span>
-        <span className="title">{win.label}</span>
+        {p.renaming ? (
+          <RenameField
+            initial={win.name ?? ''}
+            placeholder={win.name === undefined ? win.label : undefined}
+            onSave={(name) => p.onEndRename(win, name)}
+            onCancel={() => p.onEndRename(win, null)}
+          />
+        ) : (
+          <span className="title">{win.label}</span>
+        )}
         <span className="count">{win.tabCount} tabs</span>
+        {!p.renaming && <RowToolbar actions={actions} />}
       </div>
       {!collapsed &&
         win.children.map((c) =>
@@ -69,6 +94,7 @@ export function WindowCard(p: Props) {
               onActivate={p.onActivate}
               hover={p.hover}
               rowProps={p.rowProps}
+              commands={p.commands}
             />
           ) : (
             <TabRow
@@ -80,6 +106,7 @@ export function WindowCard(p: Props) {
               onActivate={p.onActivate}
               hover={p.hover}
               rowProps={p.rowProps}
+              commands={p.commands}
             />
           ),
         )}

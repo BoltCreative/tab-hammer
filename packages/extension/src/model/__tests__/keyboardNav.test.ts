@@ -101,4 +101,9 @@ describe('navIntent', () => {
     expect(navIntent(rows, 't:3', ' ', false)).toEqual({ type: 'toggleSelect', key: 't:3' });
     expect(navIntent(rows, 't:3', 'x', false)).toBeNull();
   });
+
+  it('Delete and Backspace mean trash the cursor row', () => {
+    expect(navIntent(rows, 't:3', 'Delete', false)).toEqual({ type: 'trash', key: 't:3' });
+    expect(navIntent(rows, 'w:1', 'Backspace', false)).toEqual({ type: 'trash', key: 'w:1' });
+  });
 });

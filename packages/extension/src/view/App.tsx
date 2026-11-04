@@ -23,9 +23,10 @@ import {
 import { planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
+import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
-import type { RowPropsFor } from './components/rowProps';
+import type { RowCommands, RowPropsFor } from './components/rowProps';
 import { useRowDrag } from './components/useRowDrag';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
@@ -115,13 +116,41 @@ export function App() {
       'aria-expanded': r?.expanded,
     };
   };
-  // Hibernated rows have no Chrome tab or window to act on (opening them comes later).
-  const onActivate = (t: TabNode) => {
-    if (t.tabId === undefined || t.windowId === undefined) return;
-    activateTab(t.tabId, t.windowId).catch(logActionError);
+  const send = (c: OutlineCommand) => sendOutlineCommand(c).catch(logCommandError);
+  const commands: RowCommands = {
+    hibernate: (id) => send({ cmd: 'hibernate', ids: [id] }),
+    trash: (id) => send({ cmd: 'trash', ids: [id] }),
+    open: (id) => send({ cmd: 'open', id }),
   };
+  // Enter or double-click. A hibernated row opens; a live tab is activated, a live window focused.
+  const onActivate = (t: TabNode) => {
+    if (t.hibernated) commands.open(t.id);
+    else if (t.tabId !== undefined && t.windowId !== undefined) {
+      activateTab(t.tabId, t.windowId).catch(logActionError);
+    }
+  };
+  // A window holding any hibernated rows opens them (into it, when it's live).
   const onFocusWindow = (w: WindowNode) => {
-    if (w.windowId !== undefined) focusWindow(w.windowId).catch(logActionError);
+    if (w.hibernated || hasHibernatedRows(w)) commands.open(w.id);
+    else if (w.windowId !== undefined) focusWindow(w.windowId).catch(logActionError);
+  };
+  // Delete/Backspace: the selected rows, or the cursor row when nothing is selected.
+  const trashRows = (cursorKey: string) => {
+    const keys = selection.selected.size > 0 ? [...selection.selected] : [cursorKey];
+    const ids = keys.flatMap((k) => findNode(tree, k)?.id ?? []);
+    if (ids.length > 0) send({ cmd: 'trash', ids });
+  };
+
+  // The window whose label is an inline rename field, if any.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const onEndRename = (w: WindowNode, name: string | null) => {
+    setRenaming(null);
+    if (name !== null && name.trim() !== (w.name ?? '')) {
+      send({ cmd: 'rename', windowId: w.id, name });
+    }
+    // Enter or Escape: keyboard focus goes back to the row. Leaving the field by clicking elsewhere
+    // has already moved focus, so it stays where the click put it.
+    if (document.activeElement?.classList.contains('rename-field')) focusRow(w.key);
   };
 
   // Right-click menu on a window header. Holds the window's key, not the node, so the menu always
@@ -185,15 +214,20 @@ export function App() {
         else onToggleGroup(intent.key);
         break;
       case 'activate': {
-        // Same as double-click: a tab is activated, a window focused; a group opens or closes.
+        // Same as double-click: a tab is activated, a window focused, a hibernated row opened; a
+        // live group expands or collapses.
         const node = findNode(shown, intent.key);
         if (node?.kind === 'tab') onActivate(node);
         else if (node?.kind === 'window') onFocusWindow(node);
+        else if (node?.kind === 'group' && node.hibernated) commands.open(node.id);
         else if (node?.kind === 'group' && rowByKey.get(node.key)?.expanded !== undefined) {
           onToggleGroup(node.key);
         }
         break;
       }
+      case 'trash':
+        trashRows(intent.key);
+        break;
     }
   };
   // Down arrow in the search box moves into the outline.
@@ -238,6 +272,10 @@ export function App() {
             onWindowContextMenu={onWindowContextMenu}
             hover={hover}
             rowProps={rowProps}
+            commands={commands}
+            renaming={renaming === w.key}
+            onStartRename={setRenaming}
+            onEndRename={onEndRename}
           />
         ))}
       </main>
@@ -263,6 +301,14 @@ export function App() {
 
 function logActionError(err: unknown) {
   console.error('Tab Hammer: Chrome action failed', err);
+}
+
+function logCommandError(err: unknown) {
+  console.error('Tab Hammer: outline command failed', err);
+}
+
+function hasHibernatedRows(w: WindowNode): boolean {
+  return w.children.some((c) => (c.kind === 'group' ? c.tabs : [c]).some((t) => t.hibernated));
 }
 
 function findNode(tree: WindowNode[], key: string): WindowNode | GroupNode | TabNode | undefined {

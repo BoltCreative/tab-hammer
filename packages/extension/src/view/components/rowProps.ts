@@ -10,3 +10,10 @@ export type RowPropsFor = (
   key: string,
   kind: RowKind,
 ) => HTMLAttributes<HTMLDivElement> & { 'data-drop'?: string };
+
+/** Outline commands a row's toolbar and double-click send to the worker, by record ID. */
+export interface RowCommands {
+  hibernate: (id: string) => void;
+  trash: (id: string) => void;
+  open: (id: string) => void;
+}

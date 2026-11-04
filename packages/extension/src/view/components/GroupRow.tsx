@@ -2,7 +2,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 import type { GroupNode, TabNode } from '../../model/types';
 import type { HoverHandlers } from '../hover/useHoverCard';
 import { TabRow } from './TabRow';
-import type { RowPropsFor } from './rowProps';
+import type { RowCommands, RowPropsFor } from './rowProps';
 
 interface Props {
   group: GroupNode;
@@ -14,6 +14,7 @@ interface Props {
   onActivate: (tab: TabNode) => void;
   hover: HoverHandlers;
   rowProps: RowPropsFor;
+  commands: RowCommands;
 }
 
 export function GroupRow({
@@ -26,12 +27,13 @@ export function GroupRow({
   onActivate,
   hover,
   rowProps,
+  commands,
 }: Props) {
   const style = { '--group-color': `var(--group-${group.color})` } as CSSProperties;
   return (
     <div role="none" style={style}>
       <div
-        className="row group-header"
+        className={group.hibernated ? 'row group-header hibernated' : 'row group-header'}
         role="treeitem"
         data-key={group.key}
         data-kind="group"
@@ -39,6 +41,7 @@ export function GroupRow({
         {...rowProps(group.key, 'group')}
         aria-selected={selected.has(group.key)}
         onClick={(e) => onSelect(e, group.key)}
+        onDoubleClick={() => group.hibernated && commands.open(group.id)}
       >
         <span
           className="twisty"
@@ -46,6 +49,7 @@ export function GroupRow({
             e.stopPropagation();
             onToggleCollapse(group.key);
           }}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
           {collapsed ? '▸' : '▾'}
         </span>
@@ -65,6 +69,7 @@ export function GroupRow({
               onActivate={onActivate}
               hover={hover}
               rowProps={rowProps}
+              commands={commands}
             />
           ))}
         </div>

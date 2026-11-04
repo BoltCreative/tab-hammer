@@ -67,12 +67,13 @@ export type NavIntent =
   | { type: 'move'; key: string; extend: boolean } // put the cursor on key (and select it)
   | { type: 'toggleSelect'; key: string } // add/remove the cursor row from the selection
   | { type: 'toggleExpand'; key: string }
-  | { type: 'activate'; key: string };
+  | { type: 'activate'; key: string }
+  | { type: 'trash'; key: string }; // trash the selection, or the cursor row if none
 
 /**
  * What a key press in the outline means, following the ARIA tree pattern: Up/Down (Shift extends
  * the selection), Home/End, Right expands or steps into a row's children, Left collapses or steps
- * out to the parent, Enter activates, Space toggles the row in the selection. Null for any other
+ * out to the parent, Enter activates, Space toggles the row in the selection, Delete/Backspace trash. Null for any other
  * key, or when there's nothing to do.
  */
 export function navIntent(
@@ -117,6 +118,9 @@ export function navIntent(
       return { type: 'activate', key: row.key };
     case ' ':
       return { type: 'toggleSelect', key: row.key };
+    case 'Delete':
+    case 'Backspace':
+      return { type: 'trash', key: row.key };
     default:
       return null;
   }
