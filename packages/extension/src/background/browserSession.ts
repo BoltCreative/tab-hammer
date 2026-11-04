@@ -8,9 +8,10 @@
 // before onStartup does, and would read the previous session's ID. So the ID is only handed out
 // once this session is confirmed: by a marker in chrome.storage.session (in memory, so gone after a
 // browser restart, and also after an extension reload or disable), or by onStartup or onInstalled
-// firing. Without the marker, current() waits for one of those. If neither comes (the extension was
-// re-enabled, which fires nothing), it starts a new session after a few seconds: dropping an old
-// swap record is safe, acting on a stale one is not.
+// firing (onInstalled for a Chrome update or an install starts a new session too, see
+// installed()). Without the marker, current() waits for one of those. If neither comes (the
+// extension was re-enabled, which fires nothing), it starts a new session after a few seconds:
+// dropping an old swap record is safe, acting on a stale one is not.
 
 export interface KeyValueStore {
   get: (key: string) => Promise<Record<string, unknown>>;
@@ -28,8 +29,14 @@ export interface BrowserSession {
   current(): Promise<string>;
   /** runtime.onStartup: the browser launched, so start a new session. */
   launched(): Promise<void>;
-  /** runtime.onInstalled: the extension reloaded or updated in the same session; keep the ID. */
-  installed(): Promise<void>;
+  /**
+   * runtime.onInstalled with its reason. An extension reload or update ('update') happens within
+   * the session, so the ID is kept. 'chrome_update' means Chrome just launched, and 'install'
+   * either comes with no earlier session at all or means Chrome re-installed the extension at
+   * launch (one loaded with --load-extension, as the e2e tests run it, gets no onStartup): both
+   * start a new session, so a launch is recognized even when onInstalled beats onStartup.
+   */
+  installed(reason: string): Promise<void>;
 }
 
 export function createBrowserSession(opts: {
@@ -83,7 +90,8 @@ export function createBrowserSession(opts: {
       await markConfirmed();
       confirm();
     },
-    async installed() {
+    async installed(reason) {
+      if ((reason === 'install' || reason === 'chrome_update') && !renewedHere) await renew();
       await markConfirmed();
       confirm();
     },

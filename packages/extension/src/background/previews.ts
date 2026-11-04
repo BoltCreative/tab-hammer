@@ -250,8 +250,8 @@ export function registerPreviewCapture(): void {
   chrome.history.onVisitRemoved.addListener(({ allHistory, urls }) =>
     quietly(allHistory ? clearAll() : deletePreviews(urls ?? [])),
   );
-  chrome.runtime.onInstalled.addListener(() => {
-    quietly(browserSession.installed());
+  chrome.runtime.onInstalled.addListener(({ reason }) => {
+    quietly(browserSession.installed(reason));
     quietly(cleanUpOnce());
   });
 

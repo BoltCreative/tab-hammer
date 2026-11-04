@@ -32,6 +32,29 @@ export function launchWithExtension(
   });
 }
 
+/**
+ * Relaunches Chromium on a profile a previous launch closed, restoring that session's windows the
+ * way Chrome does after a restart. `--restore-last-session` is what restores them (the profile's
+ * "continue where you left off" pref alone doesn't in headless Chromium), and dropping
+ * Playwright's own `about:blank` startup URL keeps Chrome from adding it as a tab to a restored
+ * window.
+ */
+export async function relaunch(
+  userDataDir: string,
+): Promise<{ context: BrowserContext; sw: Worker }> {
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    channel: 'chromium',
+    ignoreDefaultArgs: ['about:blank'],
+    args: [
+      `--disable-extensions-except=${DIST}`,
+      `--load-extension=${DIST}`,
+      '--restore-last-session',
+    ],
+  });
+  const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+  return { context, sw };
+}
+
 export const test = base.extend<Fixtures>({
   // eslint-disable-next-line no-empty-pattern
   context: async ({}, use) => {
