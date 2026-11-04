@@ -30,6 +30,10 @@ async function recordById(sw: Worker, id: string): Promise<WindowRec | undefined
   return (await readOutline(sw)).windows.find((w) => w.id === id);
 }
 
+// A new window is matched only after its tabs have been quiet for 1.5s, once they've loaded:
+// allow for that on top of the default poll timeout.
+const MATCH_TIMEOUT = 10_000;
+
 const isUuidLike = (id: string) => typeof id === 'string' && !/^\d+$/.test(id) && id.length > 0;
 
 test('the worker mirrors Chrome: windows, tabs in order, and groups get Tab Hammer IDs', async ({
@@ -94,15 +98,18 @@ test('a window opened with the same tabs as a trash entry is re-linked to it', a
 
   // The new window settles (1.5s of quiet), then matches the trash entry.
   await expect
-    .poll(async () => {
-      const { windows } = await readOutline(sw);
-      const rec = windows.find((w) => w.id === id);
-      return {
-        state: rec?.state,
-        chromeWindowId: rec?.chromeWindowId,
-        holders: windows.filter((w) => w.chromeWindowId === second).length,
-      };
-    })
+    .poll(
+      async () => {
+        const { windows } = await readOutline(sw);
+        const rec = windows.find((w) => w.id === id);
+        return {
+          state: rec?.state,
+          chromeWindowId: rec?.chromeWindowId,
+          holders: windows.filter((w) => w.chromeWindowId === second).length,
+        };
+      },
+      { timeout: MATCH_TIMEOUT },
+    )
     .toEqual({ state: 'live', chromeWindowId: second, holders: 1 });
 });
 
