@@ -11,8 +11,13 @@ import {
   outlineCommand,
   readOutline,
   relaunch,
+  serviceWorkerOf,
   test,
 } from './fixtures';
+
+// These tests close and relaunch a real (headless) Chromium on one profile. A fresh launch is
+// detected here through onInstalled('install') (--load-extension reinstalls on each launch);
+// onStartup and chrome_update are covered by the browserSession unit tests.
 
 // A restored window settles (1.5s of quiet) before it is matched, after Chrome has started and
 // restored every tab: allow for that on top of the default.
@@ -48,10 +53,6 @@ async function withProfile(body: (dir: string, pages: PageServer) => Promise<voi
     await pages.close();
     await fs.rm(dir, { recursive: true, force: true });
   }
-}
-
-async function firstWorker(context: Awaited<ReturnType<typeof launchWithExtension>>) {
-  return context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
 }
 
 /** Opens a window of the given URLs, grouping the first `group.size` tabs; returns its Chrome ID. */
@@ -107,7 +108,7 @@ const liveTabs = (rec: WindowRec) => rec.tabs.map((t) => ({ id: t.id, live: true
 test('a browser restart re-links restored windows to their rows', async () => {
   await withProfile(async (dir, pages) => {
     const first = await launchWithExtension(dir);
-    let sw = await firstWorker(first);
+    let sw = await serviceWorkerOf(first);
     const a = await openWindow(sw, ['A1', 'A2', 'A3'].map(pages.url), { size: 2, title: 'Group' });
     const b = await openWindow(sw, ['B1', 'B2'].map(pages.url));
     const recA = await loadedRecord(sw, a, ['A1', 'A2', 'A3']);
@@ -145,7 +146,7 @@ test('a browser restart re-links restored windows to their rows', async () => {
 test('a restored window with a hibernated tab re-links, and that tab stays hibernated', async () => {
   await withProfile(async (dir, pages) => {
     const first = await launchWithExtension(dir);
-    let sw = await firstWorker(first);
+    let sw = await serviceWorkerOf(first);
     const d = await openWindow(sw, ['D1', 'D2', 'D3'].map(pages.url));
     const recD = await loadedRecord(sw, d, ['D1', 'D2', 'D3']);
     const [d1, d2, d3] = recD.tabs;

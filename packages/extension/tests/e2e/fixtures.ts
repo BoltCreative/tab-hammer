@@ -24,12 +24,19 @@ type Fixtures = { context: BrowserContext; sw: Worker; view: Page };
 export function launchWithExtension(
   userDataDir = '',
   env?: Record<string, string>,
+  extra: { args?: string[]; ignoreDefaultArgs?: string[] } = {},
 ): Promise<BrowserContext> {
   return chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
-    args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
+    args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`, ...(extra.args ?? [])],
+    ...(extra.ignoreDefaultArgs && { ignoreDefaultArgs: extra.ignoreDefaultArgs }),
     ...(env && { env: { ...(process.env as Record<string, string>), ...env } }),
   });
+}
+
+/** The extension's service worker in this context, waiting for it to start if it hasn't. */
+export async function serviceWorkerOf(context: BrowserContext): Promise<Worker> {
+  return context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
 }
 
 /**
@@ -42,17 +49,11 @@ export function launchWithExtension(
 export async function relaunch(
   userDataDir: string,
 ): Promise<{ context: BrowserContext; sw: Worker }> {
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    channel: 'chromium',
+  const context = await launchWithExtension(userDataDir, undefined, {
+    args: ['--restore-last-session'],
     ignoreDefaultArgs: ['about:blank'],
-    args: [
-      `--disable-extensions-except=${DIST}`,
-      `--load-extension=${DIST}`,
-      '--restore-last-session',
-    ],
   });
-  const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
-  return { context, sw };
+  return { context, sw: await serviceWorkerOf(context) };
 }
 
 export const test = base.extend<Fixtures>({
@@ -63,8 +64,7 @@ export const test = base.extend<Fixtures>({
     await context.close();
   },
   sw: async ({ context }, use) => {
-    const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
-    await use(sw);
+    await use(await serviceWorkerOf(context));
   },
   view: async ({ context, sw }, use) => {
     // Open the view exactly as the toolbar click does, then attach to that page.
