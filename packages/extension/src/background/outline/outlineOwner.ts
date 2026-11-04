@@ -41,8 +41,9 @@ export interface OutlineOwner {
   idle(): Promise<void>;
   command(c: OutlineCommand): Promise<void>;
   /**
-   * Runs `create` (which opens a Chrome window) in the job queue and records the window it opens as
-   * known: Tab Hammer opened it, so it isn't a candidate for re-linking to a closed window.
+   * Runs `create` (which opens a Chrome window) and records the window it opens as known: Tab
+   * Hammer opened it, so it isn't a candidate for re-linking to a closed window. The window is
+   * returned even if recording it fails (the error is logged).
    */
   openWindow(
     create: () => Promise<chrome.windows.Window | undefined>,
@@ -151,6 +152,7 @@ export function registerOutline(): OutlineOwner {
 
   /** `o` with the window Chrome has as `chromeWindowId` no longer provisional. */
   function known(o: Outline, chromeWindowId: number): Outline {
+    if (!o.windows.some((w) => w.provisional && w.chromeWindowId === chromeWindowId)) return o;
     return {
       windows: o.windows.map((w) => {
         if (!w.provisional || w.chromeWindowId !== chromeWindowId) return w;
@@ -382,15 +384,25 @@ export function registerOutline(): OutlineOwner {
     idle: () => queue.idle(),
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
-    // Holding the queue across the create means the window's own events reconcile after it's noted.
-    openWindow: (create) =>
-      enqueue(async () => {
-        const w = await create();
-        if (w?.id !== undefined) {
-          selfOpened.add(w.id);
-          await step();
-        }
-        return w;
-      }),
+    async openWindow(create) {
+      // The create runs outside the queue, so a failing outline never blocks or fails it.
+      const w = await create();
+      const id = w?.id;
+      if (id === undefined) return w;
+      selfOpened.add(id);
+      // A reconcile may already have recorded it as provisional: make that record known now, or
+      // leave the ID for the reconcile that first finds the window's tabs.
+      await enqueue(() =>
+        step({
+          before: (o) => {
+            if (!o.windows.some((r) => r.state === 'live' && r.chromeWindowId === id)) return o;
+            selfOpened.delete(id);
+            tracker.forget(id);
+            return known(o, id);
+          },
+        }),
+      ).catch((err: unknown) => console.error('[outline] record opened window', err));
+      return w;
+    },
   };
 }
