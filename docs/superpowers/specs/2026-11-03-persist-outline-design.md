@@ -90,7 +90,7 @@ A saved window is scored only against the tabs that were **live at shutdown** (o
 
 ### Which address each tab is compared on
 
-Each tab's **launch URL** is the address Chrome created or restored it with. It's captured from `chrome.webNavigation` (the first committed navigation in that tab) and from `tabs.onCreated`'s `url`/`pendingUrl`, whichever arrives first. Chrome queues these events for the service worker even if it wakes late, so redirects (an expired login, a Cloudflare challenge) never replace it. A restored tab that hasn't loaded keeps its URL anyway. Each tab's current URL is also compared, as a fallback.
+Each tab's **launch URL** is the address Chrome created or restored it with. It's captured from `chrome.webNavigation` (the first committed navigation in that tab) and from `tabs.onCreated`'s `url`/`pendingUrl`, whichever arrives first. The launch URL is captured when those events reach the worker. When they don't (for example the worker starts after Chrome has restored the tabs), matching falls back to each tab's current URL, exact or loose (host and path). That still handles tabs that haven't loaded and error-page tabs; a redirected tab (an expired login, a Cloudflare challenge) then only lowers its score.
 
 `webNavigation` is a new permission. Builder: confirm it doesn't add an install warning beyond the existing `history` warning ("Read and change your browsing history"). If it would, fall back to `tabs.onCreated` alone and note it as a deviation.
 
