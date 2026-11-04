@@ -103,6 +103,18 @@ async function comeback(sw: Worker, id: string) {
   };
 }
 
+/**
+ * How many window records the test's own windows have, and how many of those are in the trash: a
+ * restored window that came back as a second record (live, or trashed) shows up here. Playwright's
+ * about:blank startup window has records of its own (see relaunch), so it's left out.
+ */
+async function ownRecords(sw: Worker): Promise<{ records: number; trashed: number }> {
+  const own = (await readOutline(sw)).windows.filter(
+    (w) => !w.tabs.every((t) => t.url === 'about:blank'),
+  );
+  return { records: own.length, trashed: own.filter((w) => w.state === 'trashed').length };
+}
+
 const liveTabs = (rec: WindowRec) => rec.tabs.map((t) => ({ id: t.id, live: true }));
 
 test('a browser restart re-links restored windows to their rows', async () => {
@@ -137,6 +149,7 @@ test('a browser restart re-links restored windows to their rows', async () => {
           },
           { state: 'live', name: undefined, tabs: liveTabs(recB), groups: [], holders: 1 },
         ]);
+      expect(await ownRecords(sw)).toEqual({ records: 2, trashed: 0 });
     } finally {
       await second.context.close();
     }
@@ -166,6 +179,7 @@ test('a restored window with a hibernated tab re-links, and that tab stays hiber
       await expect
         .poll(async () => comeback(sw, recD.id), { timeout: RESTORE_TIMEOUT })
         .toEqual({ state: 'live', name: undefined, tabs, groups: [], holders: 1 });
+      expect(await ownRecords(sw)).toEqual({ records: 1, trashed: 0 });
     } finally {
       await second.context.close();
     }
