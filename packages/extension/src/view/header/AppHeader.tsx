@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { ContextMenu } from '../components/ContextMenu';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
 import type { HeaderActions } from './useHeaderActions';
@@ -9,6 +9,7 @@ interface Props {
   onQueryChange: (query: string) => void;
   onSearchArrowDown: () => void;
   matchCount: number | null; // tabs matching the search, or null when not searching
+  banner?: ReactNode; // under the permission banner (another device's outline, say)
 }
 
 /**
@@ -16,7 +17,14 @@ interface Props {
  * the Actions menu (the same actions as a right-click on the outline's background), the live
  * status line with Stop while a Refresh runs, and the permission banner go here.
  */
-export function AppHeader({ actions, query, onQueryChange, onSearchArrowDown, matchCount }: Props) {
+export function AppHeader({
+  actions,
+  query,
+  onQueryChange,
+  onSearchArrowDown,
+  matchCount,
+  banner,
+}: Props) {
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; keyboard: boolean } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -29,6 +37,7 @@ export function AppHeader({ actions, query, onQueryChange, onSearchArrowDown, ma
   return (
     <header className="app-header">
       <PreviewPermissionBanner />
+      {banner}
       <div className="toolbar" role="toolbar" aria-label="Tab Hammer tools">
         <input
           type="search"

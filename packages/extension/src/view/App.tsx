@@ -34,9 +34,20 @@ import { PreviewPanel } from './preview/PreviewPanel';
 import { usePreviewTarget } from './preview/usePreviewTarget';
 import { AppHeader } from './header/AppHeader';
 import { useHeaderActions } from './header/useHeaderActions';
+import type { SyncSource } from '../shared/syncMessages';
+import { useRemoteOutline } from './sync/RemoteOutline';
+import { useSyncState } from './sync/syncClient';
 
 export function App() {
   const [selection, dispatch] = useReducer(selectionReducer, emptySelection);
+  // Another device's outline (or a checkpoint) shown read-only in place of this computer's.
+  const syncState = useSyncState();
+  const [remoteSource, setRemoteSource] = useState<SyncSource | null>(null);
+  const remote = useRemoteOutline({
+    source: remoteSource,
+    state: syncState,
+    onBack: useCallback(() => setRemoteSource(null), []),
+  });
   const [collapse, setCollapse] = useState<CollapseState>({
     collapsedWindows: new Set(),
     groupOverrides: new Map(),
@@ -261,8 +272,15 @@ export function App() {
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
         matchCount={filtering ? countTabs(shown) : null}
+        banner={remote.banner}
       />
-      <main ref={listRef} className="outline" onContextMenu={onBackgroundContextMenu}>
+      {remote.list}
+      <main
+        ref={listRef}
+        className="outline"
+        hidden={remote.list !== null}
+        onContextMenu={onBackgroundContextMenu}
+      >
         <div
           className="outline-tree"
           role="tree"

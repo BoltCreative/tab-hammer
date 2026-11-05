@@ -646,3 +646,117 @@ button.twisty {
   border-radius: 3px;
   padding: 0 3px;
 }
+/* Device picker (src/view/sync/): a dropdown in the header, and the read-only banner that names
+   the device or checkpoint being shown. */
+.device-picker {
+  position: relative;
+  margin-right: auto; /* the picker sits at the left; the other buttons stay right */
+}
+.picker-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  min-width: 240px;
+  max-height: 70vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+  background: var(--card);
+  border: 1px solid var(--card-border-focused);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--hover-card-shadow);
+}
+.picker-self {
+  display: flex;
+  align-items: center;
+}
+.picker-item,
+.picker-rename {
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 2px 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.picker-item {
+  flex: 1;
+}
+.picker-item:hover:not(:disabled),
+.picker-rename:hover {
+  background: var(--row-hover);
+}
+.picker-item:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.picker-item[aria-checked='true'] {
+  color: var(--text-focused);
+}
+.picker-rename {
+  color: var(--text-muted);
+}
+.picker-sub {
+  padding-left: 16px;
+}
+.picker-sub2 {
+  padding-left: 26px;
+}
+.picker-meta,
+.picker-empty,
+.picker-heading,
+.picker-status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.picker-heading {
+  padding: 6px 6px 1px;
+}
+.picker-empty {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.picker-status {
+  border-top: 1px solid var(--card-border);
+  margin-top: 3px;
+  padding: 4px 6px 2px;
+}
+.picker-skipped {
+  margin-top: 2px;
+}
+.remote-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 3px 6px;
+  background: var(--banner-bg);
+  border-bottom: 1px solid var(--banner-border);
+}
+.remote-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-banner-actions {
+  display: flex;
+  gap: 6px;
+}
+.remote-notice {
+  flex: 1 1 100%;
+  font-size: 11px;
+}
+.remote-notice.error {
+  color: var(--group-red);
+}
+/* This computer's outline stays mounted (keeping its scroll) while another device is shown. */
+main.outline[hidden] {
+  display: none;
+}
