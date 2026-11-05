@@ -331,6 +331,7 @@ export function registerOutline(): OutlineOwner {
   });
 
   chrome.windows.onCreated.addListener(scheduleReconcile);
+  chrome.windows.onBoundsChanged.addListener(scheduleReconcile);
   chrome.windows.onFocusChanged.addListener((windowId) => {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) focusEvent = windowId;
     scheduleReconcile();

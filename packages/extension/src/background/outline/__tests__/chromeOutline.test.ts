@@ -15,13 +15,15 @@ const GROUP: GroupRec = {
  * A stand-in for the chrome.* calls openPlanned makes. Tab IDs count up from 100; creates of a
  * url in `refuse` reject. Any other call (a discard, say) is recorded too, so tests see it.
  */
-function fakeChrome(opts: { refuse?: string[] } = {}) {
+function fakeChrome(opts: { refuse?: string[]; refuseBounds?: boolean } = {}) {
   let next = 100;
   const calls: unknown[][] = [];
   const chrome = {
     windows: {
-      create: vi.fn(async (p: { url: string }) => {
+      create: vi.fn(async (p: { url: string; left?: number; state?: string }) => {
         calls.push(['windows.create', p]);
+        if (opts.refuseBounds && (p.left !== undefined || p.state !== undefined))
+          throw new Error('Invalid value for bounds');
         return { id: 9, tabs: [{ id: next++ }] };
       }),
     },
@@ -131,6 +133,46 @@ describe('openPlanned', () => {
       ['tabs.group', { groupId: 7, tabIds: [100] }],
     ]);
     expect(opened.groups).toEqual([{ groupId: 'G', chromeGroupId: 7 }]);
+  });
+});
+
+describe('openPlanned window bounds', () => {
+  const plan = (bounds: OpenPlan['bounds']): OpenPlan => ({
+    windowId: 'W',
+    chromeWindowId: null,
+    tabs: [{ tabId: 'a', url: 'u1', index: 0 }],
+    groups: [],
+    ...(bounds && { bounds }),
+  });
+  const creates = (calls: unknown[][]) =>
+    calls.filter((c) => c[0] === 'windows.create').map((c) => c[1]);
+  const at = { left: 10, top: 20, width: 800, height: 600 };
+
+  it('reopens a normal or minimized window at its saved position and size', async () => {
+    let calls = fakeChrome();
+    await openPlanned(plan({ ...at, state: 'normal' }));
+    expect(creates(calls)).toEqual([{ url: 'u1', focused: true, ...at }]);
+    calls = fakeChrome();
+    await openPlanned(plan({ ...at, state: 'minimized' }));
+    expect(creates(calls)).toEqual([{ url: 'u1', focused: true, ...at }]);
+  });
+
+  it('reopens a maximized or fullscreen window in that state, without bounds', async () => {
+    for (const state of ['maximized', 'fullscreen'] as const) {
+      const calls = fakeChrome();
+      await openPlanned(plan({ ...at, state }));
+      expect(creates(calls)).toEqual([{ url: 'u1', focused: true, state }]);
+    }
+  });
+
+  it('retries without bounds when Chrome rejects them', async () => {
+    const calls = fakeChrome({ refuseBounds: true });
+    const opened = await openPlanned(plan({ ...at, state: 'normal' }));
+    expect(creates(calls)).toEqual([
+      { url: 'u1', focused: true, ...at },
+      { url: 'u1', focused: true },
+    ]);
+    expect(opened.chromeWindowId).toBe(9);
   });
 });
 

@@ -2,7 +2,15 @@
 // a Chrome snapshot, the clock, the ID source, and this install's ID.
 
 import { closeWindow } from './lifecycle';
-import type { ChromeSnapshot, GroupRec, LiveTab, Outline, TabRec, WindowRec } from './types';
+import type {
+  ChromeSnapshot,
+  GroupRec,
+  LiveTab,
+  Outline,
+  TabRec,
+  WindowBounds,
+  WindowRec,
+} from './types';
 
 export interface ReconcileInput {
   snapshot: ChromeSnapshot;
@@ -48,6 +56,17 @@ export function mergeHibernated(old: TabRec[], live: TabRec[]): TabRec[] {
   const out = [...(after.get(null) ?? [])];
   for (const t of live) out.push(t, ...(after.get(t.id) ?? []));
   return out;
+}
+
+function sameBounds(a: WindowBounds | undefined, b: WindowBounds): boolean {
+  return (
+    a !== undefined &&
+    a.left === b.left &&
+    a.top === b.top &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.state === b.state
+  );
 }
 
 export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
@@ -260,6 +279,12 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
     return closeWindow({ windows: [rest] }, rest.id, now).windows[0];
   }
 
+  /** `w` with the bounds Chrome reports for it. Machine-local, so modifiedAt stays. */
+  function withBounds(w: WindowRec, chromeWindowId: number): WindowRec {
+    const b = snapshot.windowBounds?.[chromeWindowId];
+    return b === undefined || sameBounds(w.bounds, b) ? w : { ...w, bounds: b };
+  }
+
   let changed = false;
   const windows: WindowRec[] = [];
   const known = new Set<number>();
@@ -276,6 +301,7 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
         // Rule 3: no tabs this round (e.g. its last tab just moved out); keep the rest.
         next = withoutMoved(w, chromeId);
       }
+      if (next && present.has(chromeId) && !isClosing(w)) next = withBounds(next, chromeId);
     }
     if (next !== w) changed = true;
     if (next) windows.push(next);
@@ -296,6 +322,8 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
       tabs,
       groups,
     };
+    const bounds = snapshot.windowBounds?.[chromeId];
+    if (bounds !== undefined) rec.bounds = bounds;
     if (!draggedOut) {
       rec.provisional = true;
       newProvisional.push(chromeId);

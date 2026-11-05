@@ -111,6 +111,21 @@ describe('planOpen', () => {
     expect(planOpen(o, 'w')!.groups).toEqual([live, group('g')]);
   });
 
+  it('carries a closed window’s last bounds into the plan for a new window', () => {
+    const bounds = { left: 5, top: 6, width: 700, height: 500, state: 'normal' as const };
+    const o: Outline = {
+      windows: [
+        win('w', { bounds, tabs: [tab('a'), tab('b')] }),
+        win('t', { state: 'trashed', closedAt: 1, bounds, tabs: [tab('c')] }),
+        win('l', { chromeWindowId: 3, bounds, tabs: [tab('d', { chromeTabId: 1 }), tab('e')] }),
+      ],
+    };
+    expect(planOpen(o, 'w')?.bounds).toEqual(bounds);
+    expect(planOpen(o, 'b')?.bounds).toEqual(bounds); // one tab of a hibernated window
+    expect(planOpen(o, 't')?.bounds).toEqual(bounds);
+    expect(planOpen(o, 'e')).not.toHaveProperty('bounds'); // into a live window
+  });
+
   it('returns null when there is nothing to open', () => {
     const o: Outline = {
       windows: [win('w', { chromeWindowId: 7, tabs: [tab('a', { chromeTabId: 1 })] })],

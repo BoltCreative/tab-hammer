@@ -1,7 +1,13 @@
 // Reads what Chrome has open into the pure model's ChromeSnapshot, and the live-only details the
 // view renders alongside the outline; carries out the Chrome side of outline commands.
 import type { OpenPlan, Opened } from '../../model/outline/open';
-import type { ChromeSnapshot, Effects, GroupRec, LiveGroup } from '../../model/outline/types';
+import type {
+  ChromeSnapshot,
+  Effects,
+  GroupRec,
+  LiveGroup,
+  WindowBounds,
+} from '../../model/outline/types';
 import type { GroupColor } from '../../model/types';
 import { SWAP_KEY, hiddenBySwap, isSwapRecord } from '../../shared/captureSwap';
 import type { LiveDetails } from '../../shared/outlineMessages';
@@ -24,8 +30,17 @@ export async function readSnapshot(
   const now = Date.now();
   const windowIds = windows.flatMap((w) => (w.id === undefined ? [] : [w.id]));
   const normal = new Set(windowIds);
+  const windowBounds: Record<number, WindowBounds> = {};
+  for (const w of windows) {
+    const { id, left, top, width, height, state } = w;
+    if (id === undefined || left === undefined || top === undefined) continue;
+    if (width === undefined || height === undefined) continue;
+    const s = state === 'maximized' || state === 'fullscreen' || state === 'minimized';
+    windowBounds[id] = { left, top, width, height, state: s ? state : 'normal' };
+  }
   return {
     windowIds,
+    windowBounds,
     tabs: tabs.flatMap((t) => {
       if (t.id === undefined || !normal.has(t.windowId)) return [];
       if (hiddenBySwap(swap, { id: t.id, windowId: t.windowId }, now)) return [];
@@ -109,6 +124,17 @@ export async function createGroup(
 }
 
 /**
+ * Where a reopened window goes. Chrome won't take a maximized or fullscreen state together with
+ * bounds, so those reopen in that state on Chrome's choice of screen; a minimized one reopens as a
+ * normal window where it was.
+ */
+function placement(b: WindowBounds | undefined): Partial<chrome.windows.CreateData> | undefined {
+  if (b === undefined) return undefined;
+  if (b.state === 'maximized' || b.state === 'fullscreen') return { state: b.state };
+  return { left: b.left, top: b.top, width: b.width, height: b.height };
+}
+
+/**
  * Opens `plan`'s tabs in Chrome, in order, then their groups. A tab Chrome refuses is skipped (its
  * record stays hibernated) and the tabs after it shift left by one. Every tab loads right away.
  * Throws only if a new window can't be created.
@@ -119,7 +145,12 @@ export async function openPlanned(plan: OpenPlan): Promise<Opened> {
   let chromeWindowId = plan.chromeWindowId;
   if (chromeWindowId === null) {
     const [first, ...rest] = plan.tabs;
-    const w = await chrome.windows.create({ url: first!.url, focused: true });
+    const base: chrome.windows.CreateData = { url: first!.url, focused: true };
+    const placed = placement(plan.bounds);
+    // Bounds Chrome rejects (off every screen since a monitor change, say) don't stop the open.
+    const w = placed
+      ? await chrome.windows.create({ ...base, ...placed }).catch(() => chrome.windows.create(base))
+      : await chrome.windows.create(base);
     const firstTabId = w?.tabs?.[0]?.id;
     if (w?.id === undefined || firstTabId === undefined) throw new Error('window create failed');
     chromeWindowId = w.id;

@@ -472,3 +472,38 @@ describe('replaceTabId', () => {
     expect(replaceTabId(o, 99, 404)).toBe(o);
   });
 });
+
+describe('reconcile window bounds', () => {
+  const B = { left: 10, top: 20, width: 800, height: 600, state: 'normal' as const };
+
+  it('records a live window’s bounds without stamping modifiedAt', () => {
+    const o: Outline = { windows: [win('w', { chromeWindowId: 1, tabs: [live('a', 1)] })] };
+    const s = { ...snap({ windows: { 1: [t(1)] } }), windowBounds: { 1: B } };
+    const w = reconcile(o, input(s)).outline.windows[0]!;
+    expect(w.bounds).toEqual(B);
+    expect(w.modifiedAt).toBe(0);
+  });
+
+  it('updates changed bounds and leaves the outline as is when they match', () => {
+    const o: Outline = {
+      windows: [win('w', { chromeWindowId: 1, bounds: B, tabs: [live('a', 1)] })],
+    };
+    const same = { ...snap({ windows: { 1: [t(1)] } }), windowBounds: { 1: { ...B } } };
+    expect(reconcile(o, input(same)).outline).toBe(o);
+    const moved = { ...B, left: 300, state: 'maximized' as const };
+    const s = { ...snap({ windows: { 1: [t(1)] } }), windowBounds: { 1: moved } };
+    const w = reconcile(o, input(s)).outline.windows[0]!;
+    expect(w.bounds).toEqual(moved);
+    expect(w.modifiedAt).toBe(0);
+  });
+
+  it('records bounds on a new window and keeps them when a window closes', () => {
+    const o: Outline = {
+      windows: [win('w', { chromeWindowId: 1, bounds: B, tabs: [live('a', 1)] })],
+    };
+    const s = { ...snap({ windows: { 2: [t(2)] } }), windowBounds: { 2: { ...B, top: 99 } } };
+    const out = reconcile(o, input(s)).outline.windows;
+    expect(out.find((w) => w.id === 'w')).toMatchObject({ bounds: B });
+    expect(out.find((w) => w.chromeWindowId === 2)?.bounds).toEqual({ ...B, top: 99 });
+  });
+});

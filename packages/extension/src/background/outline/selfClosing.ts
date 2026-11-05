@@ -45,6 +45,7 @@ export function createSelfClosing(opts: { now?: () => number } = {}): SelfClosin
       expire(tabs);
       if (windows.size === 0 && tabs.size === 0) return snapshot;
       return {
+        ...snapshot,
         windowIds: snapshot.windowIds.filter((id) => !windows.has(id)),
         tabs: snapshot.tabs.filter((t) => !tabs.has(t.id) && !windows.has(t.windowId)),
         groups: snapshot.groups.filter((g) => !windows.has(g.windowId)),

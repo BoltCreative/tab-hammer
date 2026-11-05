@@ -47,6 +47,19 @@ describe('matchRestored', () => {
     ]);
   });
 
+  it('the re-linked row takes the restored window’s bounds over its saved ones', () => {
+    const at = (left: number) => ({
+      left,
+      top: 0,
+      width: 500,
+      height: 400,
+      state: 'normal' as const,
+    });
+    const p = { ...prov('P', 9, [ptab('a', 11)]), bounds: at(200) };
+    const o: Outline = { windows: [trashed('C', ['a'], { bounds: at(1) }), p] };
+    expect(matchRestored(o, ['P'], NOW).windows[0]!.bounds).toEqual(at(200));
+  });
+
   it('partial match: extra restored tabs become new rows, missing saved tabs stay hibernated in place', () => {
     const o: Outline = {
       windows: [

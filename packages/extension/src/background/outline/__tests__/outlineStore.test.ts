@@ -61,6 +61,7 @@ describe('outline store', () => {
       chromeWindowId: 11,
       provisional: true,
       openAtShutdown: true,
+      bounds: { left: 1, top: 2, width: 3, height: 4, state: 'maximized' },
       tabs: [
         {
           id: 't1',
@@ -84,6 +85,7 @@ describe('outline store', () => {
       'chromeWindowId',
       'provisional',
       'openAtShutdown',
+      'bounds',
       'chromeTabId',
       'launchUrl',
       'liveAtClose',

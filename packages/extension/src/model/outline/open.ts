@@ -2,7 +2,7 @@
 // created. Pure: the caller runs the plan and passes the clock.
 
 import { findRow } from './lifecycle';
-import type { GroupRec, Outline, TabRec, WindowRec } from './types';
+import type { GroupRec, Outline, TabRec, WindowBounds, WindowRec } from './types';
 
 export interface OpenTab {
   tabId: string;
@@ -16,6 +16,7 @@ export interface OpenPlan {
   chromeWindowId: number | null; // null = create a new Chrome window
   tabs: OpenTab[]; // ascending index; each index is valid at the moment it is created
   groups: GroupRec[]; // the groups the opened tabs belong to (live ones carry chromeGroupId)
+  bounds?: WindowBounds; // a new window's last known position, if any
 }
 
 export interface Opened {
@@ -56,12 +57,14 @@ export function planOpen(o: Outline, rowId: string): OpenPlan | null {
     } else if (w.state === 'live' && isLive(t)) index++;
   }
   const used = new Set(tabs.map((t) => t.groupId));
-  return {
+  const plan: OpenPlan = {
     windowId: w.id,
     chromeWindowId: w.state === 'live' ? w.chromeWindowId! : null,
     tabs,
     groups: w.groups.filter((g) => used.has(g.id)),
   };
+  if (w.state !== 'live' && w.bounds !== undefined) plan.bounds = w.bounds;
+  return plan;
 }
 
 /**

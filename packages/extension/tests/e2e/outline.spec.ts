@@ -200,6 +200,39 @@ test('hibernating a window closes it and keeps its rows; opening it restores ord
   expect(await recordCounts(sw)).toEqual({ records: counts.records, trashed: 0 });
 });
 
+test('a hibernated window reopens at its last position and size', async ({ sw }) => {
+  const { a, rec } = await windowARecord(sw);
+  const target = { left: 70, top: 40, width: 640, height: 520 };
+  await sw.evaluate(async ([id, b]) => void (await chrome.windows.update(id, b)), [
+    a,
+    target,
+  ] as const);
+  await expect
+    .poll(async () => (await liveRecord(sw, a))?.bounds)
+    .toEqual({ ...target, state: 'normal' });
+
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.id] });
+  await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+  // Playwright resizes every page it attaches to to its default viewport, so the reopened
+  // window's size is read from what Chrome created, before Playwright gets to it.
+  await sw.evaluate(() => {
+    const g = globalThis as unknown as { created?: chrome.windows.Window };
+    const original = chrome.windows.create.bind(chrome.windows);
+    chrome.windows.create = (async (d: chrome.windows.CreateData) => {
+      chrome.windows.create = original;
+      return (g.created = await original(d));
+    }) as typeof chrome.windows.create;
+  });
+  await outlineCommand(sw, { cmd: 'open', id: rec.id });
+
+  const created = await sw.evaluate(() => {
+    const w = (globalThis as unknown as { created?: chrome.windows.Window }).created;
+    return w && { left: w.left, top: w.top, width: w.width, height: w.height };
+  });
+  expect(created).toEqual(target);
+  expect((await recordById(sw, rec.id))?.state).toBe('live');
+});
+
 test('hibernating one tab keeps its row in place; opening it puts it back at its position', async ({
   sw,
 }) => {

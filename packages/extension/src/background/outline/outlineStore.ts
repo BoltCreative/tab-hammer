@@ -15,7 +15,7 @@ type SyncTab = Omit<TabRec, 'chromeTabId' | 'launchUrl' | 'liveAtClose'>;
 type SyncGroup = Omit<GroupRec, 'chromeGroupId'>;
 export type SyncWindow = Omit<
   WindowRec,
-  'chromeWindowId' | 'provisional' | 'openAtShutdown' | 'tabs' | 'groups'
+  'chromeWindowId' | 'provisional' | 'openAtShutdown' | 'bounds' | 'tabs' | 'groups'
 > & { tabs: SyncTab[]; groups: SyncGroup[] };
 
 const DB_NAME = 'tab-hammer-outline';

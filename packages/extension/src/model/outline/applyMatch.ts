@@ -98,6 +98,7 @@ function applyOne(c: WindowRec, p: WindowRec, alignment: Alignment, now: number)
     groups,
   };
   if (p.chromeWindowId !== undefined) out.chromeWindowId = p.chromeWindowId;
+  if (p.bounds !== undefined) out.bounds = p.bounds; // where the restored window is now
   delete out.closedAt;
   delete out.openAtShutdown;
   delete out.provisional;

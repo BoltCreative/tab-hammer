@@ -22,6 +22,15 @@ export interface GroupRec {
   modifiedAt: number;
 }
 
+/** Where a Chrome window sat on screen, and whether it was maximized, fullscreen or minimized. */
+export interface WindowBounds {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  state: 'normal' | 'maximized' | 'fullscreen' | 'minimized';
+}
+
 export interface WindowRec {
   id: string;
   name?: string;
@@ -31,6 +40,9 @@ export interface WindowRec {
   openAtShutdown?: boolean;
   provisional?: boolean; // live, unknown origin, not yet matched
   lastLiveAt: number;
+  // Last known screen position (machine-local: never stamps modifiedAt, never exported). Kept
+  // after the window closes, so reopening puts it back where it was.
+  bounds?: WindowBounds;
   originInstallId: string; // install that created it (sync-readiness)
   modifiedAt: number;
   tabs: TabRec[];
@@ -68,6 +80,7 @@ export interface ChromeSnapshot {
   windowIds: number[];
   tabs: LiveTab[];
   groups: LiveGroup[];
+  windowBounds?: Record<number, WindowBounds>; // by Chrome window ID
 }
 
 /** Chrome IDs the caller must close. */
