@@ -38,6 +38,20 @@ export function wantsRefresh(
 }
 
 /**
+ * What the preview panel says about a background tab with no preview that no Refresh run has
+ * recorded anything for. It only points at Refresh stale when a run would actually take the tab
+ * (the same rule, wantsRefresh): a sleeping tab, including one Chrome hasn't loaded since a
+ * restart, is skipped by Refresh, so it says to open the tab instead.
+ */
+export function backgroundTabNote(tab: RefreshTab | undefined): CaptureOutcome {
+  if (!tab) return 'skipped:no-tab';
+  if (tab.incognito) return 'skipped:incognito';
+  if (isAsleep(tab)) return 'skipped:discarded';
+  if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
+  return 'skipped:background-tab';
+}
+
+/**
  * The tabs to capture, in outline order (windows, then tabs). Tabs on the same page share a
  * preview, so each page is captured once.
  */
@@ -61,9 +75,11 @@ export function pickRefreshTargets(
 
 export interface RefreshProgress {
   done: number;
-  total: number;
+  total: number; // pages to capture: tabs on the same page share one preview
   saved: number;
   failed: number;
+  /** Left alone after all: closed, fell asleep, already fresh, or the capture skipped it. */
+  skipped: number;
 }
 
 export interface RefreshDeps {
@@ -88,7 +104,13 @@ export async function runRefresh(
   signal: AbortSignal,
 ): Promise<RefreshProgress> {
   const now = deps.now ?? Date.now;
-  const progress: RefreshProgress = { done: 0, total: targets.length, saved: 0, failed: 0 };
+  const progress: RefreshProgress = {
+    done: 0,
+    total: targets.length,
+    saved: 0,
+    failed: 0,
+    skipped: 0,
+  };
   deps.onProgress({ ...progress });
   for (const target of targets) {
     if (signal.aborted) break;
@@ -104,7 +126,8 @@ export async function runRefresh(
         .catch((err: unknown): CaptureOutcome => `error:${String(err)}`);
       if (outcome === 'saved') progress.saved++;
       else if (outcome.startsWith('error:')) progress.failed++;
-    }
+      else progress.skipped++;
+    } else progress.skipped++;
     progress.done++;
     deps.onProgress({ ...progress });
   }

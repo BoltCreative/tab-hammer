@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CaptureOutcome } from '../../../shared/captureOutcomes';
 import { STALE_PREVIEW_MS } from '../../../shared/previewPolicy';
 import {
+  backgroundTabNote,
   pickRefreshTargets,
   runRefresh,
   type RefreshProgress,
@@ -49,6 +50,36 @@ describe('pickRefreshTargets', () => {
   });
 });
 
+describe('backgroundTabNote', () => {
+  // The panel's note for a background tab with no preview must agree with Refresh stale: it points
+  // at Refresh stale for exactly the tabs a run would take, and says why for the rest.
+  const tabs = [
+    tab(1, 'https://a.test/'),
+    tab(2, 'https://b.test/', { discarded: true }),
+    tab(3, 'https://c.test/', { status: 'unloaded' }), // not loaded since a restart
+    tab(4, 'https://d.test/', { incognito: true }),
+    tab(5, 'chrome://settings/'),
+  ];
+
+  it('says Refresh stale only for tabs a Refresh stale run would capture', () => {
+    const picked = new Set(pickRefreshTargets(tabs, () => undefined, 'stale', NOW, null));
+    for (const t of tabs) {
+      expect(backgroundTabNote(t) === 'skipped:background-tab').toBe(picked.has(t));
+    }
+  });
+
+  it('calls both kinds of sleeping tab asleep', () => {
+    expect(tabs.map(backgroundTabNote)).toEqual([
+      'skipped:background-tab',
+      'skipped:discarded',
+      'skipped:discarded',
+      'skipped:incognito',
+      'skipped:not-capturable-url',
+    ]);
+    expect(backgroundTabNote(undefined)).toBe('skipped:no-tab');
+  });
+});
+
 function fakeChrome(tabs: RefreshTab[], shots: Record<string, number> = {}) {
   const live = new Map(tabs.map((t) => [t.id, { ...t }]));
   const captured: number[] = [];
@@ -81,14 +112,14 @@ function fakeChrome(tabs: RefreshTab[], shots: Record<string, number> = {}) {
 }
 
 describe('runRefresh', () => {
-  it('captures each target in turn and counts saved and failed', async () => {
+  it('captures each target in turn and counts saved, failed, and skipped', async () => {
     const tabs = [tab(1, 'https://a.test/'), tab(2, 'https://b.test/'), tab(3, 'https://c.test/')];
     const c = fakeChrome(tabs);
     c.outcomes[2] = 'error:attach: DevTools is attached';
     c.outcomes[3] = 'skipped:superseded';
     const result = await runRefresh(tabs, 'stale', c.deps, new AbortController().signal);
     expect(c.captured).toEqual([1, 2, 3]);
-    expect(result).toEqual({ done: 3, total: 3, saved: 1, failed: 1 });
+    expect(result).toEqual({ done: 3, total: 3, saved: 1, failed: 1, skipped: 1 });
     expect(c.progress.map((p) => p.done)).toEqual([0, 1, 2, 3]);
   });
 
@@ -108,7 +139,7 @@ describe('runRefresh', () => {
     };
     const result = await runRefresh(tabs, 'stale', c.deps, new AbortController().signal);
     expect(c.captured).toEqual([1]);
-    expect(result.done).toBe(4);
+    expect(result).toMatchObject({ done: 4, saved: 1, skipped: 3 });
   });
 
   it('stops before the next capture once aborted', async () => {

@@ -44,7 +44,7 @@ export function useRefreshPreviews(onSaved: () => void) {
     clearTimeout(timer.current);
     const stop = new AbortController();
     run.current = stop;
-    const empty = { done: 0, total: 0, saved: 0, failed: 0 };
+    const empty = { done: 0, total: 0, saved: 0, failed: 0, skipped: 0 };
     setState({ phase: 'running', progress: empty, stopping: false });
     let result = empty;
     try {

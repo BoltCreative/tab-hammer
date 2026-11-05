@@ -18,11 +18,14 @@ function refreshStatus(state: RefreshState): string {
   const p: RefreshProgress = state.progress;
   if (state.phase === 'running') {
     if (state.stopping) return 'Stopping…';
-    return p.total === 0 ? 'Finding tabs…' : `Refreshing ${p.done}/${p.total}`;
+    return p.total === 0 ? 'Finding tabs…' : `Refreshing ${p.done}/${p.total} pages`;
   }
   if (p.total === 0) return 'Nothing to refresh';
+  // Counted in pages, not tabs: tabs on the same page share one preview. Every page is accounted
+  // for, so saved + failed + skipped adds up to the total (less any a Stop left undone).
   const failed = p.failed > 0 ? `, ${p.failed} failed` : '';
-  return `${state.stopped ? 'Stopped: ' : ''}refreshed ${p.saved}/${p.total}${failed}`;
+  const skipped = p.skipped > 0 ? `, ${p.skipped} skipped` : '';
+  return `${state.stopped ? 'Stopped: ' : ''}refreshed ${p.saved}/${p.total} pages${failed}${skipped}`;
 }
 
 export interface HeaderActions {

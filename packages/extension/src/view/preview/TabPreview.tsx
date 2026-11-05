@@ -7,10 +7,12 @@ import { faviconUrl } from '../chrome/favicon';
 import {
   isTabLoaded,
   latestCaptureOutcome,
+  refreshTab,
   requestTabCapture,
   tabCaptureOutcome,
   watchTabLoaded,
 } from '../chrome/captureOutcome';
+import { backgroundTabNote } from '../refresh/refreshRun';
 import { relativeTime } from './relativeTime';
 
 interface Props {
@@ -57,8 +59,10 @@ export function TabPreview({ tab, previewEpoch }: Props) {
     // No preview is not an error; show the text-only details with the latest capture outcome. A
     // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
     // A background tab is never captured from a hover (see wantsOnDemandCapture): unless a
-    // Refresh run recorded something for it, say how to get its preview. (A page Chrome won't
-    // capture at all keeps the usual note.)
+    // Refresh run recorded something for it, say how to get its preview, by the same rule Refresh
+    // stale picks tabs with (backgroundTabNote; Chrome's live tab, since a tab not loaded since a
+    // restart is asleep without being discarded). (A page Chrome won't capture at all keeps the
+    // usual note.)
     const noPreview = async () => {
       if (tabId === undefined || windowId === undefined) return done(null, null);
       const o =
@@ -66,7 +70,7 @@ export function TabPreview({ tab, previewEpoch }: Props) {
           ? await latestCaptureOutcome(windowId, tabId).catch(() => undefined)
           : ((await tabCaptureOutcome(tabId).catch(() => undefined)) ?? {
               at: Date.now(),
-              outcome: discarded ? 'skipped:discarded' : 'skipped:background-tab',
+              outcome: backgroundTabNote(await refreshTab(tabId).catch(() => undefined)),
             });
       done(null, describeNoPreview(o));
     };

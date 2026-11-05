@@ -172,7 +172,7 @@ test('hovering a background tab never attaches the debugger (its infobar would s
 
   // The explicit Refresh run is what captures it, through the debugger.
   await runMenuAction(view, 'Refresh stale');
-  await expect(view.getByRole('status')).toHaveText(/^refreshed \d+\/\d+$/);
+  await expect(view.getByRole('status')).toHaveText(/^refreshed \d+\/\d+ pages/);
   expect(await hasPreview(sw, hiddenUrl)).toBe(true);
   expect(await attaches()).toBeGreaterThan(0);
   expect((await tabInfo(sw, tabId)).active).toBe(false);
@@ -365,7 +365,7 @@ test('Refresh stale captures background tabs without switching to them', async (
   expect(await hasPreview(sw, urls[0]!)).toBe(false);
 
   await runMenuAction(view, 'Refresh stale');
-  await expect(view.getByRole('status')).toHaveText('refreshed 2/2');
+  await expect(view.getByRole('status')).toHaveText('refreshed 2/2 pages');
   for (const url of urls) expect(await hasPreview(sw, url)).toBe(true);
   for (const id of tabIds) expect((await tabInfo(sw, id)).active).toBe(false);
 
@@ -401,11 +401,11 @@ test('Stop ends a refresh run after the capture in flight', async ({ context, sw
   expect((await tabInfo(sw, slowId)).status).toBe('loading');
 
   await runMenuAction(view, 'Refresh stale');
-  await expect(view.getByRole('status')).toHaveText('Refreshing 0/2');
+  await expect(view.getByRole('status')).toHaveText('Refreshing 0/2 pages');
   await view.getByRole('button', { name: 'Stop' }).click();
   await expect(view.getByRole('status')).toHaveText('Stopping…');
   release();
-  await expect(view.getByRole('status')).toHaveText('Stopped: refreshed 1/2');
+  await expect(view.getByRole('status')).toHaveText('Stopped: refreshed 1/2 pages');
   expect(await hasPreview(sw, slow)).toBe(true);
   expect(await hasPreview(sw, after)).toBe(false);
   await expect(view.getByRole('button', { name: 'Stop' })).toHaveCount(0);
