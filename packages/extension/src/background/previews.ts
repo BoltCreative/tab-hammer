@@ -17,6 +17,7 @@ import {
 } from '../shared/messages';
 import { PRUNE_LIMITS } from '../shared/previewPolicy';
 import { clearPreviews, deletePreviews, prunePreviews, putPreview } from '../shared/previewStore';
+import { createHistorySuppression } from './historySuppression';
 import { browserSession } from './session';
 import { createViewWindowFinder } from './viewWindow';
 import { createCaptureQueue } from './captureQueue';
@@ -51,7 +52,9 @@ async function downscale(dataUrl: string): Promise<Shot> {
 // Prune on the first write of each lifetime (applies the age limit regularly) and whenever a
 // write pushes the store over its size cap.
 let prunedThisLifetime = false;
+const history = createHistorySuppression();
 async function save(url: string, shot: Shot & { capturedAt: number }): Promise<void> {
+  if (!history.allows(url)) return; // removed from history since: not until it's visited again
   const count = await putPreview(url, shot);
   if (!prunedThisLifetime || count > PRUNE_LIMITS.maxEntries) {
     prunedThisLifetime = true;
@@ -252,9 +255,13 @@ export function registerPreviewCapture(): void {
   // single entry from the History page) deletes just the pages it named. Keys drop the #fragment,
   // so removing one fragment's entry also removes the page's shared preview, erring toward
   // forgetting.
-  chrome.history.onVisitRemoved.addListener(({ allHistory, urls }) =>
-    quietly(allHistory ? clearAll() : deletePreviews(urls ?? [])),
-  );
+  chrome.history.onVisitRemoved.addListener(({ allHistory, urls }) => {
+    history.removed(allHistory ? 'all' : (urls ?? []));
+    quietly(allHistory ? clearAll() : deletePreviews(urls ?? []));
+  });
+  chrome.history.onVisited.addListener(({ url }) => {
+    if (url) history.visited(url);
+  });
   chrome.runtime.onInstalled.addListener(({ reason }) => {
     quietly(browserSession.installed(reason));
     quietly(cleanUpOnce());
