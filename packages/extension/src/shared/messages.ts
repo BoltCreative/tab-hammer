@@ -1,10 +1,15 @@
 // Runtime messages between the view and the service worker.
 import type { CaptureOutcome } from './captureOutcomes';
 
-/** View → service worker: capture this tab now for its hover card. */
+/** View → service worker: capture this tab now (for its hover card, or a Refresh run). */
 export interface CaptureTabRequest {
   type: 'tabHammer.captureTab';
   tabId: number;
+  /**
+   * May attach chrome.debugger to capture a tab that isn't on screen. Its "started debugging this
+   * browser" infobar shifts the outline, so only the explicit Refresh runs set it; never a hover.
+   */
+  allowDebugger?: boolean;
 }
 
 /** The service worker's reply, once the capture has finished (or was skipped or dropped). */

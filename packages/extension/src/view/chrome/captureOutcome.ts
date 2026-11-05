@@ -28,16 +28,35 @@ export async function latestCaptureOutcome(
   tabId: number,
 ): Promise<OutcomeEntry | undefined> {
   const stored = await chrome.storage.session.get([OUTCOMES_KEY, TAB_OUTCOMES_KEY]);
-  const pick = (map: unknown, id: number) =>
-    map && typeof map === 'object' ? (map as OutcomeMap)[id] : undefined;
   return pick(stored[TAB_OUTCOMES_KEY], tabId) ?? pick(stored[OUTCOMES_KEY], windowId);
 }
 
-/** Asks the service worker to screenshot the tab now; resolves when it is done. */
-export async function requestTabCapture(tabId: number): Promise<CaptureOutcome> {
+/**
+ * The tab's own latest on-demand capture outcome, ignoring its window's (which is about the
+ * window's visible tab, so says nothing about a background one).
+ */
+export async function tabCaptureOutcome(tabId: number): Promise<OutcomeEntry | undefined> {
+  const stored = await chrome.storage.session.get(TAB_OUTCOMES_KEY);
+  return pick(stored[TAB_OUTCOMES_KEY], tabId);
+}
+
+function pick(map: unknown, id: number): OutcomeEntry | undefined {
+  return map && typeof map === 'object' ? (map as OutcomeMap)[id] : undefined;
+}
+
+/**
+ * Asks the service worker to screenshot the tab now; resolves when it is done. `allowDebugger`
+ * lets it capture a tab that isn't on screen, at the cost of Chrome's debugging infobar (which
+ * shifts the outline): only the explicit Refresh runs pass true.
+ */
+export async function requestTabCapture(
+  tabId: number,
+  allowDebugger: boolean,
+): Promise<CaptureOutcome> {
   const reply = (await chrome.runtime.sendMessage({
     type: CAPTURE_TAB,
     tabId,
+    allowDebugger,
   } satisfies CaptureTabRequest)) as CaptureTabReply | undefined;
   return reply?.outcome ?? 'error:no reply from the service worker';
 }

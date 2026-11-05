@@ -1,7 +1,10 @@
 // On-demand screenshots of background tabs, for the hover card. captureVisibleTab can only see a
 // window's visible tab, but the DevTools protocol's Page.captureScreenshot draws a background tab
-// offscreen. Attaching the debugger shows Chrome's "started debugging this browser" infobar, so
-// the debugger is attached only for the screenshot itself and detached before anything else.
+// offscreen. Attaching the debugger shows Chrome's "started debugging this browser" infobar in
+// every window, Tab Hammer's included, which pushes the whole outline down under the pointer. So
+// only an explicit Refresh run may attach it (`allowDebugger`); a hover never does, and gets just
+// the banner-free capture of a tab that is on screen. Even then the debugger is attached only for
+// the screenshot itself and detached before anything else.
 // Chrome and the store are injected so the skip rules, the detach ordering, and the minimized-
 // window swap are unit-testable.
 import type { CaptureOutcome, OutcomeEntry } from '../shared/captureOutcomes';
@@ -106,7 +109,11 @@ export function pickStandIn(
 
 /** The part of the capturer the service worker also calls on startup. */
 export interface TabCapturer {
-  capture: (tabId: number, signal?: AbortSignal) => Promise<CaptureOutcome>;
+  /**
+   * `allowDebugger`: may attach the debugger (and show its infobar) to capture a tab that isn't on
+   * screen. Only the header's Refresh runs pass true; a hover card passes false.
+   */
+  capture: (tabId: number, allowDebugger: boolean, signal?: AbortSignal) => Promise<CaptureOutcome>;
   /** Finishes undoing a swap a previous service worker left behind (it died mid-capture). */
   recover: () => Promise<void>;
 }
@@ -190,6 +197,7 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
 
   const attempt = async (
     tabId: number,
+    allowDebugger: boolean,
     seen: { url?: string },
     signal?: AbortSignal,
   ): Promise<CaptureOutcome> => {
@@ -211,6 +219,9 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     const minimized = win.state === 'minimized';
     // A visible tab can be captured without the debugger (and its infobar).
     if (tab.active && !minimized) return deps.captureVisible(tab.windowId);
+    // Everything below needs the debugger. Checked before loading an unloaded tab, too: a hover
+    // neither loads pages nor shows the infobar.
+    if (!allowDebugger) return 'skipped:background-tab';
 
     if (tab.status !== 'complete') {
       if (tab.status === 'unloaded') await deps.reload(tabId);
@@ -265,7 +276,7 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
   };
 
   return {
-    async capture(tabId, signal) {
+    async capture(tabId, allowDebugger, signal) {
       // Re-hovering a tab that just failed (e.g. DevTools is attached to it) reuses the failure
       // instead of attaching again.
       // A tab that navigated since gets a fresh try.
@@ -275,7 +286,7 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
         if (current && current.url === prev.url) return prev.outcome;
       }
       const seen: { url?: string } = {};
-      const outcome = await attempt(tabId, seen, signal).catch(
+      const outcome = await attempt(tabId, allowDebugger, seen, signal).catch(
         (err): CaptureOutcome => `error:${message(err)}`,
       );
       await deps.record(tabId, outcome, seen.url).catch(() => {});

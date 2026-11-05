@@ -1,4 +1,5 @@
-import type { MouseEvent } from 'react';
+import type { CSSProperties, MouseEvent } from 'react';
+import { windowColor } from '../../model/windowColor';
 import type { TabNode, WindowNode } from '../../model/types';
 import { isGroupCollapsed, type CollapseState } from '../../model/visibleRows';
 import type { HoverHandlers } from '../hover/useHoverCard';
@@ -42,6 +43,7 @@ export function WindowCard(p: Props) {
       role="none"
       data-testid="window-card"
       className={win.focused ? 'card focused' : 'card'}
+      style={{ '--window-color': `var(--group-${windowColor(win.id)})` } as CSSProperties}
     >
       <div
         className={win.hibernated ? 'row window-header hibernated' : 'row window-header'}
@@ -67,6 +69,7 @@ export function WindowCard(p: Props) {
         >
           {collapsed ? '▸' : '▾'}
         </span>
+        <span className="window-glyph" aria-hidden="true" />
         {p.renaming ? (
           <RenameField
             initial={win.name ?? ''}

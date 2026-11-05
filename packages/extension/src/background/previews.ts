@@ -182,10 +182,13 @@ async function cleanUpAfterCrash(): Promise<void> {
 let cleanedUp: Promise<void> | undefined;
 const cleanUpOnce = () => (cleanedUp ??= cleanUpAfterCrash());
 
-const tabQueue = createCaptureQueue<number, CaptureOutcome>({
-  run: async (tabId, signal) => {
+// Keyed by tab and mode, so a Refresh request never shares a hover's banner-free result.
+type TabCaptureKey = `${number}:${'any' | 'visible'}`;
+const tabQueue = createCaptureQueue<TabCaptureKey, CaptureOutcome>({
+  run: async (key, signal) => {
     await cleanUpOnce();
-    return captureTab.capture(tabId, signal);
+    const [tabId, mode] = key.split(':');
+    return captureTab.capture(Number(tabId), mode === 'any', signal);
   },
   dropped: 'skipped:superseded',
   failed: (err) => `error:${message(err)}`,
@@ -266,7 +269,7 @@ export function registerPreviewCapture(): void {
     }
     if (!isCaptureTabRequest(msg)) return false;
     void tabQueue
-      .request(msg.tabId)
+      .request(`${msg.tabId}:${msg.allowDebugger === true ? 'any' : 'visible'}`)
       .then((outcome) => sendResponse({ outcome } satisfies CaptureTabReply));
     return true; // the reply is async
   });

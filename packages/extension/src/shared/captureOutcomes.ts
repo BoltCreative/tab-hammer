@@ -51,6 +51,7 @@ const SKIP_TEXT: Record<string, string> = {
   'not-capturable-url': 'Chrome doesn’t allow previews of this page',
   'changed-during-capture': 'Page changed while it was being captured',
   discarded: 'Tab is asleep — open it once to get a preview',
+  'background-tab': 'Background tab — Refresh stale (in the ⋯ menu) captures it',
   'swap-pending': "Already refreshing this tab's preview",
   superseded: 'Skipped to keep up with your cursor — hover again',
 };

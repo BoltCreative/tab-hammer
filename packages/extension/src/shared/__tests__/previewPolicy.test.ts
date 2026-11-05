@@ -66,11 +66,17 @@ describe('isCapturableUrl', () => {
 
 describe('wantsOnDemandCapture', () => {
   const NOW = 1_000_000_000;
-  const tab = { url: 'https://example.com/a', discarded: false };
+  const tab = { url: 'https://example.com/a', discarded: false, active: true };
   it.each([
     ['no preview', tab, undefined, true],
     ['a fresh preview', tab, NOW - STALE_PREVIEW_MS, false],
     ['a stale preview', tab, NOW - STALE_PREVIEW_MS - 1, true],
+    [
+      'a background tab (only a Refresh run may attach the debugger)',
+      { ...tab, active: false },
+      undefined,
+      false,
+    ],
     ['a discarded tab (attaching would reload it)', { ...tab, discarded: true }, undefined, false],
     ['a page Chrome will not capture', { ...tab, url: 'chrome://settings' }, undefined, false],
   ])('%s', (_name, t, capturedAt, want) => {

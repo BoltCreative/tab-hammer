@@ -65,7 +65,8 @@ export function useRefreshPreviews(onSaved: () => void) {
         {
           getTab: refreshTab,
           capturedAt: previewCapturedAt,
-          capture: requestTabCapture,
+          // Refresh is the one place the debugger may be attached (see requestTabCapture).
+          capture: (tabId) => requestTabCapture(tabId, true),
           onProgress: (progress) => {
             if (progress.saved > saved) {
               saved = progress.saved;

@@ -1,10 +1,12 @@
 const MARGIN = 8; // from the list's edges (the card's left/right margins are in CSS)
-const GAP = 4; // from the hovered row
 
 /**
- * The hover card's top edge (viewport coordinates): below the row if it fits, else above it, else
- * pinned inside the scrolling outline list (`bounds`, below the fixed header) so it never spills
- * past an edge or over the header.
+ * The hover card's top edge (viewport coordinates). The card is pinned to whichever edge of the
+ * scrolling outline list (`bounds`, below the fixed header) is farther from the hovered row: the
+ * bottom edge for a row in the top half, the top edge for one in the bottom half. So the row and
+ * the rows around it, where the pointer goes next, stay uncovered, and since it doesn't need room
+ * beside the row this works in the narrow Tab Hammer window too. A card taller than the list is
+ * pinned to the list's top; it never spills over the header or past the bottom.
  */
 export function placeCardTop(
   row: { top: number; bottom: number },
@@ -13,9 +15,8 @@ export function placeCardTop(
 ): number {
   const min = bounds.top + MARGIN;
   const max = bounds.bottom - MARGIN;
-  const below = row.bottom + GAP;
-  if (below + cardHeight <= max) return below;
-  const above = row.top - GAP - cardHeight;
-  if (above >= min) return above;
-  return Math.max(min, Math.min(below, max - cardHeight));
+  const rowMid = (row.top + row.bottom) / 2;
+  const listMid = (bounds.top + bounds.bottom) / 2;
+  const top = rowMid < listMid ? max - cardHeight : min;
+  return Math.max(min, top);
 }
