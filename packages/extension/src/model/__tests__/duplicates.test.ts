@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildTree } from '../buildTree';
 import { findDuplicates, normalizeUrl } from '../duplicates';
-import type { RawTab } from '../types';
+import type { TabRec } from '../outline/types';
+import { state, tab, win } from './outlineState';
 
 describe('normalizeUrl', () => {
   it('ignores the fragment, utm_ parameters, host case and a trailing slash', () => {
@@ -19,21 +20,36 @@ describe('normalizeUrl', () => {
 });
 
 describe('findDuplicates', () => {
-  type T = Partial<RawTab> & Pick<RawTab, 'id' | 'windowId' | 'url'>;
-  const tree = (tabs: T[], lastFocusedWindowId: number | null = null) =>
-    buildTree({
-      windows: [{ id: 1 }, { id: 2 }],
-      tabs: tabs.map((t, index) => ({
-        index,
-        groupId: -1,
-        active: false,
-        discarded: false,
-        ...t,
-      })),
-      groups: [],
-      selfWindowId: null,
-      lastFocusedWindowId,
-    });
+  interface T {
+    id: number;
+    windowId: number;
+    url: string;
+    active?: boolean;
+    lastAccessed?: number;
+  }
+  // Windows 1 and 2, live; each tab's record ID is its Chrome ID.
+  const tree = (tabs: T[], focusedWindowId: number | null = null, extra: TabRec[] = []) =>
+    buildTree(
+      state({
+        windows: [
+          ...[1, 2].map((w) =>
+            win(`${w}`, {
+              chromeWindowId: w,
+              tabs: tabs
+                .filter((t) => t.windowId === w)
+                .map((t) => tab(`${t.id}`, { chromeTabId: t.id, url: t.url })),
+            }),
+          ),
+          win('h', { tabs: extra }),
+        ],
+        live: {
+          focusedWindowId,
+          tabs: Object.fromEntries(
+            tabs.map((t) => [t.id, { active: !!t.active, lastAccessed: t.lastAccessed }]),
+          ),
+        },
+      }),
+    ).windows;
   const ids = (d: ReturnType<typeof findDuplicates>) => d.toClose.map((t) => t.tabId).sort();
 
   it('finds copies across windows and keeps the most recently viewed', () => {
@@ -72,5 +88,16 @@ describe('findDuplicates', () => {
     const none = findDuplicates(tree([{ id: 1, windowId: 1, url: 'https://a.test/' }]));
     expect(none.toClose).toEqual([]);
     expect(none.keys.size).toBe(0);
+  });
+
+  it('hibernated tabs are never duplicates', () => {
+    const d = findDuplicates(
+      tree([{ id: 1, windowId: 1, url: 'https://a.test/' }], null, [
+        tab('x', { url: 'https://a.test/' }),
+        tab('y', { url: 'https://a.test/' }),
+      ]),
+    );
+    expect(d.toClose).toEqual([]);
+    expect(d.keys.size).toBe(0);
   });
 });

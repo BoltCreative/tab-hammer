@@ -2,7 +2,8 @@ import { useState, type MouseEvent } from 'react';
 import type { TabNode } from '../../model/types';
 import { faviconUrl } from '../chrome/favicon';
 import { HOVER_CARD_ID, type HoverHandlers } from '../hover/useHoverCard';
-import type { RowPropsFor } from './rowProps';
+import { HibernateIcon, RowToolbar, TrashIcon, type RowAction } from './RowToolbar';
+import type { RowCommands, RowPropsFor } from './rowProps';
 
 interface Props {
   tab: TabNode;
@@ -12,9 +13,19 @@ interface Props {
   onActivate: (tab: TabNode) => void;
   hover: HoverHandlers;
   rowProps: RowPropsFor;
+  commands: RowCommands;
 }
 
-export function TabRow({ tab, selected, duplicate, onSelect, onActivate, hover, rowProps }: Props) {
+export function TabRow({
+  tab,
+  selected,
+  duplicate,
+  onSelect,
+  onActivate,
+  hover,
+  rowProps,
+  commands,
+}: Props) {
   // Remember which URL's favicon failed, so a navigation to a new URL retries.
   const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
   const iconFailed = failedIconUrl === tab.url;
@@ -24,15 +35,23 @@ export function TabRow({ tab, selected, duplicate, onSelect, onActivate, hover, 
     tab.active && 'active',
     tab.discarded && 'discarded',
     duplicate && 'duplicate',
+    tab.hibernated && 'hibernated',
   ]
     .filter(Boolean)
     .join(' ');
+  const actions: RowAction[] = [
+    ...(tab.hibernated
+      ? []
+      : [{ label: 'Hibernate', icon: HibernateIcon, onClick: () => commands.hibernate(tab.id) }]),
+    { label: 'Move to trash', icon: TrashIcon, onClick: () => commands.trash(tab.id) },
+  ];
   return (
     <div
       className={cls}
       role="treeitem"
       data-key={tab.key}
       data-kind="tab"
+      data-tab-id={tab.tabId}
       {...rowProps(tab.key, 'tab')}
       aria-selected={selected}
       // The URL is no longer a native tooltip (the hover card replaced it), so name it here.
@@ -62,6 +81,7 @@ export function TabRow({ tab, selected, duplicate, onSelect, onActivate, hover, 
           dup
         </span>
       )}
+      <RowToolbar actions={actions} />
     </div>
   );
 }

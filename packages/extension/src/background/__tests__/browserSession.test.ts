@@ -31,10 +31,14 @@ function manualTimers() {
 function browser() {
   const local = memStore(); // chrome.storage.local: survives everything
   const session = memStore(); // chrome.storage.session: gone on browser restart or ext reload
-  const newId = ids();
+  const nextId = ids();
+  let renewals = 0;
+  const newId = () => (renewals++, nextId());
   const timers = manualTimers();
   return {
     timers,
+    renewals: () => renewals,
+    storedId: async () => (await local.get('browserSession')).browserSession,
     restartBrowser: () => session.clear(),
     reloadExtension: () => session.clear(),
     worker: () => createBrowserSession({ local, session, newId, setTimer: timers.setTimer }),
@@ -52,12 +56,12 @@ describe('createBrowserSession', () => {
   it('keeps its ID across an extension reload and renews it when the browser restarts', async () => {
     const b = browser();
     const first = b.worker();
-    await first.installed();
+    await first.installed('install');
     const before = await first.current();
 
     b.reloadExtension();
     const reloaded = b.worker();
-    await reloaded.installed(); // onInstalled fires on reload; onStartup doesn't
+    await reloaded.installed('update'); // onInstalled fires on reload; onStartup doesn't
     expect(await reloaded.current()).toBe(before);
 
     b.restartBrowser();
@@ -69,7 +73,7 @@ describe('createBrowserSession', () => {
   it('a worker woken later in the same session answers at once', async () => {
     const b = browser();
     const first = b.worker();
-    await first.installed();
+    await first.installed('install');
     const id = await first.current();
     // Idle shutdown and wake: storage.session persists, no lifecycle event fires.
     expect(await b.worker().current()).toBe(id);
@@ -78,7 +82,7 @@ describe('createBrowserSession', () => {
   it('after a browser launch, waits for onStartup instead of handing out the old ID', async () => {
     const b = browser();
     const first = b.worker();
-    await first.installed();
+    await first.installed('install');
     const old = await first.current();
 
     b.restartBrowser();
@@ -89,10 +93,110 @@ describe('createBrowserSession', () => {
     expect(await early).not.toBe(old);
   });
 
+  it('a Chrome update starts a new session, whichever of onInstalled and onStartup comes first', async () => {
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    const old = await first.current();
+
+    b.restartBrowser();
+    const w = b.worker();
+    const early = w.current();
+    await w.installed('chrome_update');
+    const fresh = await early;
+    expect(fresh).not.toBe(old);
+    await w.launched(); // the same launch: no second new session
+    expect(await w.current()).toBe(fresh);
+  });
+
+  it('an install at launch starts a new session without onStartup', async () => {
+    // Chrome re-installs a command-line-loaded extension (--load-extension, as the e2e tests
+    // run it) at every launch: onInstalled says 'install', and onStartup never fires.
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    const old = await first.current();
+
+    b.restartBrowser();
+    const w = b.worker();
+    await w.installed('install');
+    expect(await w.current()).not.toBe(old);
+  });
+
+  it('renews once for a launch even if a second launch event reaches a new worker instance', async () => {
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    const old = await first.current();
+
+    b.restartBrowser();
+    const w = b.worker();
+    await w.installed('install');
+    const fresh = await w.current();
+    expect(fresh).not.toBe(old);
+    // The worker was torn down and rebuilt; storage.session still carries the confirmed marker.
+    const next = b.worker();
+    await next.launched();
+    await next.installed('chrome_update');
+    expect(await next.current()).toBe(fresh);
+  });
+
+  it("an 'update' never renews, even in an unconfirmed session", async () => {
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    const id = await first.current();
+    b.reloadExtension();
+    const w = b.worker();
+    await w.installed('update');
+    expect(await w.current()).toBe(id);
+  });
+
+  // An extension update applied at browser launch fires onInstalled('update') and onStartup in
+  // the same worker, in either order and without one waiting for the other.
+  for (const order of ['update first', 'startup first'] as const) {
+    it(`an update applied at launch still starts a new session (${order})`, async () => {
+      const b = browser();
+      const first = b.worker();
+      await first.installed('install');
+      const old = await first.current();
+
+      b.restartBrowser();
+      const w = b.worker();
+      const early = w.current();
+      const events =
+        order === 'update first'
+          ? [w.installed('update'), w.launched()]
+          : [w.launched(), w.installed('update')];
+      await Promise.all(events);
+      const fresh = await early;
+      expect(fresh).not.toBe(old);
+      expect(await b.storedId()).toBe(fresh);
+      expect(b.renewals()).toBe(2); // the first install, then this launch
+    });
+  }
+
+  it('a Chrome update and onStartup arriving together renew once', async () => {
+    const b = browser();
+    const first = b.worker();
+    await first.installed('install');
+    await first.current();
+
+    b.restartBrowser();
+    const w = b.worker();
+    const early = w.current();
+    await Promise.all([w.installed('chrome_update'), w.launched()]);
+    const fresh = await early;
+    expect(b.renewals()).toBe(2);
+    expect(await b.storedId()).toBe(fresh);
+    // A later worker instance in the same session agrees.
+    expect(await b.worker().current()).toBe(fresh);
+  });
+
   it('starts a new session if no lifecycle event comes (extension re-enabled)', async () => {
     const b = browser();
     const first = b.worker();
-    await first.installed();
+    await first.installed('install');
     const old = await first.current();
 
     b.reloadExtension(); // disable + enable clears storage.session and fires nothing
@@ -113,7 +217,7 @@ describe('swap recovery across an extension reload vs a browser restart', () => 
   async function recoverAfter(restart: boolean) {
     const b = browser();
     const first = b.worker();
-    await first.installed();
+    await first.installed('install');
     const session = await first.current();
     const record = {
       session,
@@ -130,7 +234,7 @@ describe('swap recovery across an extension reload vs a browser restart', () => 
     // lifecycle event for the restart or reload follows.
     const calls: string[] = [];
     const recovered = createTabCapturer(depsFor(reloaded, calls, record)).recover();
-    await (restart ? reloaded.launched() : reloaded.installed());
+    await (restart ? reloaded.launched() : reloaded.installed('update'));
     await recovered;
     return calls;
   }

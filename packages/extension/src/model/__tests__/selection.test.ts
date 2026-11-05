@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { emptySelection, selectionReducer as r, type SelectionState } from '../selection';
 import { visibleRowKeys, type CollapseState } from '../visibleRows';
+import { buildTree } from '../buildTree';
 import type { WindowNode } from '../types';
+import { group, state, tab, win } from './outlineState';
 
 const keys = (s: SelectionState) => [...s.selected].sort();
 const visible = ['w:1', 't:1', 't:2', 't:3', 'w:2', 't:4'];
@@ -57,48 +59,22 @@ describe('selectionReducer', () => {
 
 describe('range selection across a collapsed node', () => {
   it('range across a collapsed group selects only visible rows, not hidden tabs', () => {
-    const t = (id: number) => ({
-      kind: 'tab' as const,
-      key: `t:${id}`,
-      tabId: id,
-      windowId: 1,
-      title: '',
-      url: '',
-      active: false,
-      discarded: false,
-    });
-
-    const tree: WindowNode[] = [
-      {
-        kind: 'window',
-        key: 'w:1',
-        windowId: 1,
-        label: 'Window 1',
-        focused: false,
-        tabCount: 3,
-        children: [
-          {
-            kind: 'group',
-            key: 'g:5',
-            groupId: 5,
-            title: 'G',
-            color: 'blue',
-            chromeCollapsed: true,
-            tabs: [t(1), t(2)],
-          },
-          t(3),
+    const tree: WindowNode[] = buildTree(
+      state({
+        windows: [
+          win('1', {
+            chromeWindowId: 1,
+            groups: [group('5', { chromeGroupId: 5, collapsed: true })],
+            tabs: [
+              tab('1', { chromeTabId: 1, groupId: '5' }),
+              tab('2', { chromeTabId: 2, groupId: '5' }),
+              tab('3', { chromeTabId: 3 }),
+            ],
+          }),
+          win('2', { chromeWindowId: 2, tabs: [tab('4', { chromeTabId: 4 })] }),
         ],
-      },
-      {
-        kind: 'window',
-        key: 'w:2',
-        windowId: 2,
-        label: 'Window 2',
-        focused: false,
-        tabCount: 1,
-        children: [t(4)],
-      },
-    ];
+      }),
+    ).windows;
 
     const c: CollapseState = {
       collapsedWindows: new Set(),

@@ -58,17 +58,22 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
       objectUrls.push(src);
       return { src, width: p.width, height: p.height };
     };
-    // No preview is not an error; show the text-only card with the latest capture outcome.
-    const noPreview = () =>
-      latestCaptureOutcome(windowId, tabId)
-        .catch(() => undefined)
-        .then((o) => done(null, describeNoPreview(o)));
+    // No preview is not an error; show the text-only card with the latest capture outcome. A
+    // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
+    const noPreview = async () => {
+      if (tabId === undefined || windowId === undefined) return done(null, null);
+      const o = await latestCaptureOutcome(windowId, tabId).catch(() => undefined);
+      done(null, describeNoPreview(o));
+    };
 
     void (async () => {
       const p = await lookup();
       if (cancelled) return;
       const image = p ? toImage(p) : null;
-      if (!wantsOnDemandCapture({ url, discarded }, p?.capturedAt, Date.now())) {
+      if (
+        tabId === undefined ||
+        !wantsOnDemandCapture({ url, discarded }, p?.capturedAt, Date.now())
+      ) {
         if (image) done(image, null);
         else await noPreview();
         return;

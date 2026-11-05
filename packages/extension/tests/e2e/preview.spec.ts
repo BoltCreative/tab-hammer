@@ -1,6 +1,6 @@
 import type { BrowserContext, Worker } from '@playwright/test';
 import type { TestHooks } from '../../src/background/index';
-import { expect, test } from './fixtures';
+import { expect, liveRow, test } from './fixtures';
 
 // Chrome refuses to capture data: pages, so serve real http pages from Playwright instead.
 const ORIGIN = 'http://tabhammer.test';
@@ -92,7 +92,7 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
 
   const card = view.getByTestId('hover-card');
   const shot = card.locator('.hover-card-shot');
-  const row = (tabId: number) => view.locator(`[data-key="t:${tabId}"]`);
+  const row = (tabId: number) => liveRow(view, 'tab', tabId);
   const expectShot = async () => {
     await expect(card).toBeVisible();
     await expect(shot).toHaveJSProperty('complete', true);
@@ -158,7 +158,7 @@ test('hovering a background tab that was never shown captures it on demand', asy
     });
   expect(await hasPreview(sw, hiddenUrl)).toBe(false);
 
-  await view.locator(`[data-key="t:${tabId}"]`).hover();
+  await liveRow(view, 'tab', tabId).hover();
   const card = view.getByTestId('hover-card');
   const shot = card.locator('.hover-card-shot');
   await expect(card).toContainText(hiddenUrl);
@@ -223,7 +223,7 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
       }, windowId),
     )
     .toBe('saved');
-  const row = view.locator(`[data-key="t:${blankId}"]`);
+  const row = liveRow(view, 'tab', blankId);
   const card = view.getByTestId('hover-card');
   await row.hover();
   await expect(card.locator('.hover-card-shot')).toHaveCount(1);

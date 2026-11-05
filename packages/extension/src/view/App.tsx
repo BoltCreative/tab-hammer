@@ -8,9 +8,8 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
-import { buildTree } from '../model/buildTree';
 import { emptySelection, selectionReducer } from '../model/selection';
-import type { GroupNode, TabNode, WindowNode } from '../model/types';
+import type { GroupNode, OutlineView, TabNode, WindowNode } from '../model/types';
 import { findDuplicates } from '../model/duplicates';
 import { countTabs, filterTree } from '../model/filterTree';
 import { navIntent, outlineRows } from '../model/keyboardNav';
@@ -21,19 +20,15 @@ import {
   toggleGroup,
   type CollapseState,
 } from '../model/visibleRows';
-import { planMove } from '../model/moveSelection';
-import {
-  activateTab,
-  applyMoveOps,
-  closeTabs,
-  focusWindow,
-  snapshot,
-  subscribe,
-} from './chrome/chromeSource';
+import { planDrop } from '../model/moveSelection';
+import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
+import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
+import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
-import type { RowPropsFor } from './components/rowProps';
+import type { RowCommands, RowPropsFor } from './components/rowProps';
 import { useRowDrag } from './components/useRowDrag';
+import { RecentlyClosed } from './components/RecentlyClosed';
 import { WindowCard } from './components/WindowCard';
 import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
@@ -41,31 +36,16 @@ import { useHoverCard } from './hover/useHoverCard';
 import { AppHeader } from './header/AppHeader';
 
 export function App() {
-  const [tree, setTree] = useState<WindowNode[]>([]);
   const [selection, dispatch] = useReducer(selectionReducer, emptySelection);
   const [collapse, setCollapse] = useState<CollapseState>({
     collapsedWindows: new Set(),
     groupOverrides: new Map(),
   });
-
-  // Snapshots can resolve out of order; only the most recently requested one may land.
-  const latestRequest = useRef(0);
-  const refresh = useCallback(() => {
-    const request = ++latestRequest.current;
-    snapshot()
-      .then((s) => {
-        if (request !== latestRequest.current) return;
-        const next = buildTree(s);
-        setTree(next);
-        setCollapse((c) => discardStaleOverrides(next, c));
-      })
-      .catch((err: unknown) => console.error('Tab Hammer: reading Chrome state failed', err));
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    return subscribe(refresh);
-  }, [refresh]);
+  // The worker's outline, re-rendered on every broadcast. Moves and other Chrome actions show up
+  // through it, so nothing here re-reads Chrome after acting.
+  const { windows: tree, trash } = useOutline(
+    useCallback((v: OutlineView) => setCollapse((c) => discardStaleOverrides(v.windows, c)), []),
+  );
 
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
@@ -117,12 +97,13 @@ export function App() {
     selection.selected,
     (key) => dispatch({ type: 'click', key }),
     (keys, target) => {
-      const ops = planMove(tree, keys, target);
-      if (ops.length === 0) return;
-      applyMoveOps(ops).catch((err: unknown) => {
-        console.error('Tab Hammer: moving tabs failed', err);
-        refresh();
-      });
+      const { chrome, place } = planDrop(tree, keys, target);
+      // Chrome first: the worker reconciles with Chrome before placing, so the live tabs are
+      // already where the placement expects them.
+      void (async () => {
+        await applyMoveOps(chrome);
+        if (place) await sendOutlineCommand({ cmd: 'place', placement: place });
+      })().catch((err: unknown) => console.error('Tab Hammer: moving tabs failed', err));
     },
   );
   const rowProps: RowPropsFor = (key, kind) => {
@@ -136,8 +117,43 @@ export function App() {
       'aria-expanded': r?.expanded,
     };
   };
-  const onActivate = (t: TabNode) => void activateTab(t.tabId, t.windowId).catch(refresh);
-  const onFocusWindow = (id: number) => void focusWindow(id).catch(refresh);
+  const send = (c: OutlineCommand) => sendOutlineCommand(c).catch(logCommandError);
+  const commands: RowCommands = {
+    hibernate: (id) => send({ cmd: 'hibernate', ids: [id] }),
+    trash: (id) => send({ cmd: 'trash', ids: [id] }),
+    open: (id) => send({ cmd: 'open', id }),
+    deleteForever: (windowId) => send({ cmd: 'deleteForever', windowId }),
+  };
+  // Enter or double-click. A hibernated row opens; a live tab is activated, a live window focused.
+  const onActivate = (t: TabNode) => {
+    if (t.hibernated) commands.open(t.id);
+    else if (t.tabId !== undefined && t.windowId !== undefined) {
+      activateTab(t.tabId, t.windowId).catch(logActionError);
+    }
+  };
+  // A window holding any hibernated rows opens them (into it, when it's live).
+  const onFocusWindow = (w: WindowNode) => {
+    if (w.hibernated || hasHibernatedRows(w)) commands.open(w.id);
+    else if (w.windowId !== undefined) focusWindow(w.windowId).catch(logActionError);
+  };
+  // Delete/Backspace: the selected rows, or the cursor row when nothing is selected.
+  const trashRows = (cursorKey: string) => {
+    const keys = selection.selected.size > 0 ? [...selection.selected] : [cursorKey];
+    const ids = keys.flatMap((k) => findNode(tree, k)?.id ?? []);
+    if (ids.length > 0) send({ cmd: 'trash', ids });
+  };
+
+  // The window whose label is an inline rename field, if any.
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const onEndRename = (w: WindowNode, name: string | null) => {
+    setRenaming(null);
+    if (name !== null && name.trim() !== (w.name ?? '')) {
+      send({ cmd: 'rename', windowId: w.id, name });
+    }
+    // Enter or Escape: keyboard focus goes back to the row. Leaving the field by clicking elsewhere
+    // has already moved focus, so it stays where the click put it.
+    if (document.activeElement?.classList.contains('rename-field')) focusRow(w.key);
+  };
 
   // Right-click menu on a window header. Holds the window's key, not the node, so the menu always
   // acts on the window's current tabs even if they change while it is open.
@@ -200,15 +216,20 @@ export function App() {
         else onToggleGroup(intent.key);
         break;
       case 'activate': {
-        // Same as double-click: a tab is activated, a window focused; a group opens or closes.
+        // Same as double-click: a tab is activated, a window focused, a hibernated row opened; a
+        // live group expands or collapses.
         const node = findNode(shown, intent.key);
         if (node?.kind === 'tab') onActivate(node);
-        else if (node?.kind === 'window') onFocusWindow(node.windowId);
+        else if (node?.kind === 'window') onFocusWindow(node);
+        else if (node?.kind === 'group' && node.hibernated) commands.open(node.id);
         else if (node?.kind === 'group' && rowByKey.get(node.key)?.expanded !== undefined) {
           onToggleGroup(node.key);
         }
         break;
       }
+      case 'trash':
+        trashRows(intent.key);
+        break;
     }
   };
   // Down arrow in the search box moves into the outline.
@@ -226,35 +247,49 @@ export function App() {
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
         duplicateCount={duplicates.toClose.length}
-        onCloseDuplicates={() => closeTabs(duplicates.toClose.map((t) => t.tabId))}
+        onCloseDuplicates={() => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? []))}
         matchCount={filtering ? countTabs(shown) : null}
       />
-      <main
-        ref={listRef}
-        className="outline"
-        role="tree"
-        aria-label="Windows and tabs"
-        aria-multiselectable="true"
-        onKeyDown={onTreeKeyDown}
-      >
-        {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
-        {shown.map((w) => (
-          <WindowCard
-            key={w.key}
-            win={w}
-            collapse={shownCollapse}
-            selected={selection.selected}
-            duplicates={duplicates.keys}
-            onToggleWindow={onToggleWindow}
-            onToggleGroup={onToggleGroup}
-            onSelect={onSelect}
-            onActivate={onActivate}
-            onFocusWindow={onFocusWindow}
-            onWindowContextMenu={onWindowContextMenu}
-            hover={hover}
-            rowProps={rowProps}
+      <main ref={listRef} className="outline">
+        <div
+          className="outline-tree"
+          role="tree"
+          aria-label="Windows and tabs"
+          aria-multiselectable="true"
+          onKeyDown={onTreeKeyDown}
+        >
+          {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
+          {shown.map((w) => (
+            <WindowCard
+              key={w.key}
+              win={w}
+              collapse={shownCollapse}
+              selected={selection.selected}
+              duplicates={duplicates.keys}
+              onToggleWindow={onToggleWindow}
+              onToggleGroup={onToggleGroup}
+              onSelect={onSelect}
+              onActivate={onActivate}
+              onFocusWindow={onFocusWindow}
+              onWindowContextMenu={onWindowContextMenu}
+              hover={hover}
+              rowProps={rowProps}
+              commands={commands}
+              renaming={renaming === w.key}
+              onStartRename={setRenaming}
+              onEndRename={onEndRename}
+            />
+          ))}
+        </div>
+        {/* Beside the tree, not in it: its keys and ARIA roles are not the outline's. Search
+            doesn't cover the trash, so it hides while a query is active. */}
+        {!filtering && (
+          <RecentlyClosed
+            entries={trash}
+            restore={commands.open}
+            deleteForever={commands.deleteForever}
           />
-        ))}
+        )}
       </main>
       {hovered && hoveredTab && (
         <HoverCard tab={hoveredTab} row={hovered.row} list={listRef} previewEpoch={previewEpoch} />
@@ -274,6 +309,18 @@ export function App() {
       )}
     </div>
   );
+}
+
+function logActionError(err: unknown) {
+  console.error('Tab Hammer: Chrome action failed', err);
+}
+
+function logCommandError(err: unknown) {
+  console.error('Tab Hammer: outline command failed', err);
+}
+
+function hasHibernatedRows(w: WindowNode): boolean {
+  return w.children.some((c) => (c.kind === 'group' ? c.tabs : [c]).some((t) => t.hibernated));
 }
 
 function findNode(tree: WindowNode[], key: string): WindowNode | GroupNode | TabNode | undefined {

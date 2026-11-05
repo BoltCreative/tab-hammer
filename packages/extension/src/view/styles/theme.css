@@ -107,7 +107,13 @@ main.outline {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px;
+  /* Room below the last row, so the bottom rows (Recently closed) scroll up off the window edge. */
+  padding: 4px 4px 40vh;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.outline-tree {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -122,6 +128,7 @@ main.outline {
   border-color: var(--card-border-focused);
 }
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -134,6 +141,81 @@ main.outline {
 }
 .row:hover {
   background: var(--row-hover);
+}
+/* A hibernated window, group, or tab: in the outline, with nothing open in Chrome. */
+.row.hibernated > :not(.row-toolbar) {
+  opacity: 0.5;
+}
+/* Recently closed: dimmed like hibernated rows, but plain (no selection, drag, or hover card). */
+button.trash-header,
+button.twisty {
+  border: 0;
+  background: none;
+  font: inherit;
+  padding: 0 4px;
+  text-align: left;
+}
+button.twisty {
+  padding: 0;
+  color: var(--text-muted);
+}
+.trash-header {
+  width: 100%;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.trash-entry > :not(.row-toolbar),
+.trash-tab > * {
+  opacity: 0.5;
+}
+/* The hover toolbar: icon buttons overlaid at the row's right edge, over the row's own background
+   (inherited, so hover, selection, and the active tint all match), without changing its layout. */
+.row-toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  align-items: center;
+  gap: 1px;
+  padding: 0 2px 0 4px;
+  background: inherit;
+  border-radius: 3px;
+}
+.row:hover .row-toolbar {
+  display: flex;
+}
+.row-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.row-toolbar button:hover {
+  background: var(--card-border);
+  color: var(--text-strong);
+}
+/* The inline window rename field, in the title's place and within the row's height. */
+.rename-field {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  padding: 0 3px;
+  border: 1px solid var(--drop-indicator);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+}
+.rename-field:focus {
+  outline: none;
 }
 .row:focus {
   outline: none;

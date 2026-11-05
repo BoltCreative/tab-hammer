@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { NATIVE_HOST_NAME, type WindowInfo } from '@tab-hammer/protocol';
 import { deployHost, hostManifest } from '../../../mcp/src/deploy.ts';
-import { expect, launchWithExtension, test as base } from './fixtures';
+import { expect, launchWithExtension, liveRow, readOutline, test as base } from './fixtures';
 
 const MCP_MAIN = path.resolve(import.meta.dirname, '../../../mcp/src/main.ts');
 
@@ -94,7 +94,7 @@ test('Claude can list, group, move, focus, and close tabs through the MCP server
     color: 'red',
     windowId: ids.windowId,
   });
-  await expect(view.locator(`[data-key="g:${groupId}"] .title`)).toHaveText('Research');
+  await expect(liveRow(view, 'group', groupId).locator('.title')).toHaveText('Research');
 
   // move_tabs with no window puts the tab in a new one.
   const moved = await call<{ windowId: number }>(mcp, 'move_tabs', { tabIds: [ids.bravo] });
@@ -102,6 +102,19 @@ test('Claude can list, group, move, focus, and close tabs through the MCP server
   expect(await sw.evaluate((id) => chrome.tabs.get(id).then((t) => t.windowId), ids.bravo)).toBe(
     moved.windowId,
   );
+
+  // open_tabs with no window opens a new one. Tab Hammer opened it, so the outline records it as
+  // known at once instead of holding it as a candidate for re-linking to a closed window.
+  const opened = await call<{ windowId: number }>(mcp, 'open_tabs', {
+    urls: ['data:text/html,<title>Delta</title>'],
+  });
+  const openedRec = (await readOutline(sw)).windows.find(
+    (w) => w.chromeWindowId === opened.windowId,
+  );
+  expect({ recorded: openedRec !== undefined, provisional: openedRec?.provisional }).toEqual({
+    recorded: true,
+    provisional: undefined,
+  });
 
   // focus_tab selects the tab (window focus itself is invisible in headless Chromium).
   await call(mcp, 'open_tabs', {
@@ -115,6 +128,6 @@ test('Claude can list, group, move, focus, and close tabs through the MCP server
 
   // close_tabs closes it, and Chrome's errors come back as tool errors.
   expect(await call(mcp, 'close_tabs', { tabIds: [ids.bravo] })).toEqual({ closed: 1 });
-  await expect(view.locator(`[data-key="t:${ids.bravo}"]`)).toHaveCount(0);
+  await expect(liveRow(view, 'tab', ids.bravo)).toHaveCount(0);
   await expect(call(mcp, 'focus_tab', { tabId: ids.bravo })).rejects.toThrow(/No tab with id/);
 });

@@ -7,49 +7,27 @@ import {
   visibleRowKeys,
   type CollapseState,
 } from '../visibleRows';
-import type { WindowNode } from '../types';
+import { buildTree } from '../buildTree';
+import type { TabNode, WindowNode } from '../types';
+import { group as groupRec, state, tab, win } from './outlineState';
 
-const t = (id: number) => ({
-  kind: 'tab' as const,
-  key: `t:${id}`,
-  tabId: id,
-  windowId: 1,
-  title: '',
-  url: '',
-  active: false,
-  discarded: false,
-});
-const tree: WindowNode[] = [
-  {
-    kind: 'window',
-    key: 'w:1',
-    windowId: 1,
-    label: 'Window 1',
-    focused: false,
-    tabCount: 3,
-    children: [
-      {
-        kind: 'group',
-        key: 'g:5',
-        groupId: 5,
-        title: 'G',
-        color: 'blue',
-        chromeCollapsed: true,
-        tabs: [t(1), t(2)],
-      },
-      t(3),
+// Window 1: [g:5, collapsed in Chrome (1, 2)] 3 ; Window 2: 4
+const tree: WindowNode[] = buildTree(
+  state({
+    windows: [
+      win('1', {
+        chromeWindowId: 1,
+        groups: [groupRec('5', { chromeGroupId: 5, collapsed: true })],
+        tabs: [
+          tab('1', { chromeTabId: 1, groupId: '5' }),
+          tab('2', { chromeTabId: 2, groupId: '5' }),
+          tab('3', { chromeTabId: 3 }),
+        ],
+      }),
+      win('2', { chromeWindowId: 2, tabs: [tab('4', { chromeTabId: 4 })] }),
     ],
-  },
-  {
-    kind: 'window',
-    key: 'w:2',
-    windowId: 2,
-    label: 'Window 2',
-    focused: false,
-    tabCount: 1,
-    children: [t(4)],
-  },
-];
+  }),
+).windows;
 const none: CollapseState = { collapsedWindows: new Set(), groupOverrides: new Map() };
 
 describe('visibleRowKeys', () => {
@@ -73,14 +51,25 @@ describe('visibleRowKeys', () => {
 });
 
 describe('group collapse overrides', () => {
+  const t1: TabNode = {
+    kind: 'tab',
+    key: 't:1',
+    id: '1',
+    title: '',
+    url: '',
+    active: false,
+    discarded: false,
+    hibernated: true,
+  };
   const group = (chromeCollapsed: boolean) => ({
     kind: 'group' as const,
     key: 'g:5',
-    groupId: 5,
+    id: '5',
     title: 'G',
     color: 'blue' as const,
     chromeCollapsed,
-    tabs: [t(1)],
+    hibernated: true,
+    tabs: [t1],
   });
   const win = (g: ReturnType<typeof group>): WindowNode[] => [{ ...tree[1]!, children: [g] }];
 

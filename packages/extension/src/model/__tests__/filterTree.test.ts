@@ -1,31 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { buildTree } from '../buildTree';
 import { countTabs, filterTree } from '../filterTree';
-import type { RawTab, WindowNode } from '../types';
+import type { WindowNode } from '../types';
+import { group, state, tab, win } from './outlineState';
 
+// Window 1 (live): [Reading (1, 2)] 3 ; Window 2 (live): 4 ; Window 3 (hibernated): [Trips (5)]
 function layout(): WindowNode[] {
-  const tab = (id: number, windowId: number, title: string, url: string, groupId = -1): RawTab => ({
-    id,
-    windowId,
-    index: id,
-    groupId,
-    title,
-    url,
-    active: false,
-    discarded: false,
-  });
-  return buildTree({
-    windows: [{ id: 1 }, { id: 2 }],
-    tabs: [
-      tab(1, 1, 'Rust book', 'https://doc.rust-lang.org/book/', 10),
-      tab(2, 1, 'Cargo guide', 'https://doc.rust-lang.org/cargo/', 10),
-      tab(3, 1, 'Weather', 'https://weather.test/'),
-      tab(4, 2, 'Inbox', 'https://mail.test/inbox'),
-    ],
-    groups: [{ id: 10, windowId: 1, title: 'Reading', color: 'blue', collapsed: true }],
-    selfWindowId: null,
-    lastFocusedWindowId: null,
-  });
+  const t = (id: number, title: string, url: string, groupId?: string) =>
+    tab(`${id}`, { chromeTabId: id, title, url, groupId });
+  return buildTree(
+    state({
+      windows: [
+        win('1', {
+          chromeWindowId: 1,
+          groups: [group('10', { chromeGroupId: 10, title: 'Reading', collapsed: true })],
+          tabs: [
+            t(1, 'Rust book', 'https://doc.rust-lang.org/book/', '10'),
+            t(2, 'Cargo guide', 'https://doc.rust-lang.org/cargo/', '10'),
+            t(3, 'Weather', 'https://weather.test/'),
+          ],
+        }),
+        win('2', { chromeWindowId: 2, tabs: [t(4, 'Inbox', 'https://mail.test/inbox')] }),
+        win('3', {
+          groups: [group('30', { title: 'Trips' })],
+          tabs: [tab('5', { title: 'Lisbon flights', url: 'https://fly.test/', groupId: '30' })],
+        }),
+      ],
+    }),
+  ).windows;
 }
 
 const keys = (tree: WindowNode[]) =>
@@ -61,5 +63,11 @@ describe('filterTree', () => {
 
   it('counts the tabs left showing', () => {
     expect(countTabs(filterTree(layout(), 'doc.rust'))).toBe(2);
+  });
+
+  it('search covers hibernated rows', () => {
+    const tree = layout();
+    expect(keys(filterTree(tree, 'lisbon'))).toEqual(['w:3', 'g:30', 't:5']);
+    expect(keys(filterTree(tree, 'trips'))).toEqual(['w:3', 'g:30', 't:5']);
   });
 });
