@@ -55,6 +55,8 @@ export interface OutlineOwner {
   outline(): Outline;
   /** The outline as sync windows (machine-local fields left out), once queued work is done. */
   exportWindows(): Promise<SyncWindow[]>;
+  /** This install's ID (chrome.storage.local), created at init if it had none. */
+  installId(): Promise<string>;
   /** The outline database held nothing when this worker started (a new or wiped profile). */
   wasFresh(): Promise<boolean>;
   /** Adds the windows the outline lacks, hibernated (see restoreWindows); returns how many. */
@@ -411,6 +413,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
     outline: () => outline,
     exportWindows: () => enqueue(async () => outline.windows.map(toSyncWindow)),
     wasFresh: () => enqueue(async () => fresh),
+    installId: () => enqueue(async () => installId),
     restoreWindows: (windows, keepTrash) =>
       enqueue(async () => {
         await step();
