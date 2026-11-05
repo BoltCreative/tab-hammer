@@ -107,7 +107,8 @@ main.outline {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px;
+  /* Room below the last row, so the bottom rows (Recently closed) scroll up off the window edge. */
+  padding: 4px 4px 40vh;
   display: flex;
   flex-direction: column;
   gap: 4px;
