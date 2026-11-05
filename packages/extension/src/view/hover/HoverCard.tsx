@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { TabNode } from '../../model/types';
 import { describeNoPreview, type OutcomeDescription } from '../../shared/captureOutcomes';
-import { wantsOnDemandCapture } from '../../shared/previewPolicy';
+import { isCapturableUrl, wantsOnDemandCapture } from '../../shared/previewPolicy';
 import { getPreview, type Preview } from '../../shared/previewStore';
 import { faviconUrl } from '../chrome/favicon';
 import {
@@ -62,15 +62,17 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
     // No preview is not an error; show the text-only card with the latest capture outcome. A
     // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
     // A background tab is never captured from a hover (see wantsOnDemandCapture): unless a
-    // Refresh run recorded something for it, say how to get its preview.
+    // Refresh run recorded something for it, say how to get its preview. (A page Chrome won't
+    // capture at all keeps the usual note.)
     const noPreview = async () => {
       if (tabId === undefined || windowId === undefined) return done(null, null);
-      const o = active
-        ? await latestCaptureOutcome(windowId, tabId).catch(() => undefined)
-        : ((await tabCaptureOutcome(tabId).catch(() => undefined)) ?? {
-            at: Date.now(),
-            outcome: discarded ? 'skipped:discarded' : 'skipped:background-tab',
-          });
+      const o =
+        active || !isCapturableUrl(url)
+          ? await latestCaptureOutcome(windowId, tabId).catch(() => undefined)
+          : ((await tabCaptureOutcome(tabId).catch(() => undefined)) ?? {
+              at: Date.now(),
+              outcome: discarded ? 'skipped:discarded' : 'skipped:background-tab',
+            });
       done(null, describeNoPreview(o));
     };
 
