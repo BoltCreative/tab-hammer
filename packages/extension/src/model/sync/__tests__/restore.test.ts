@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { group, tab, win } from '../../outline/__tests__/recs';
 import type { Outline } from '../../outline/types';
-import { restoreWindows } from '../restore';
+import { restoreWindows, selfRestoreWindows } from '../restore';
 import { sgroup, stab, swin } from './files';
 
 function ids() {
@@ -98,5 +98,83 @@ describe('restoreWindows', () => {
     const before = JSON.stringify([local, source]);
     restoreWindows(local, source, opts());
     expect(JSON.stringify([local, source])).toBe(before);
+  });
+});
+
+describe('selfRestoreWindows', () => {
+  const url = (n: string) => `https://e.test/${n}`;
+  // What Chrome has open on the wiped profile: fresh records, live.
+  const openNow = () =>
+    win('fresh', {
+      chromeWindowId: 7,
+      tabs: [
+        tab('ft1', { chromeTabId: 70, url: url('a'), title: 'A' }),
+        tab('ft2', { chromeTabId: 71, url: url('b'), title: 'B' }),
+      ],
+    });
+  const fileLive = () =>
+    swin('saved', {
+      state: 'live',
+      name: 'Work',
+      tabs: [stab('st1', { url: url('a') }), stab('st2', { url: url('b') })],
+    });
+  const run = (o: Outline, ws: Parameters<typeof selfRestoreWindows>[1]) =>
+    selfRestoreWindows(o, ws, { now: 99, newId: ids() });
+
+  it('re-links a live window to its saved record instead of showing it twice', () => {
+    const r = run({ windows: [openNow()] }, [fileLive()]);
+    expect(r.outline.windows).toHaveLength(1);
+    const w = r.outline.windows[0]!;
+    expect(w).toMatchObject({ id: 'saved', name: 'Work', state: 'live', chromeWindowId: 7 });
+    expect(w.openAtShutdown).toBeUndefined();
+    expect(w.tabs.map((t) => [t.id, t.chromeTabId])).toEqual([
+      ['st1', 70],
+      ['st2', 71],
+    ]);
+  });
+
+  it('re-links a partial match, keeping the unrestored tab hibernated', () => {
+    const saved = fileLive();
+    saved.tabs.push(stab('st3', { url: url('c') }));
+    const r = run({ windows: [openNow()] }, [saved]);
+    expect(r.outline.windows).toHaveLength(1);
+    expect(r.outline.windows[0]!.tabs.map((t) => [t.id, t.chromeTabId !== undefined])).toEqual([
+      ['st1', true],
+      ['st2', true],
+      ['st3', false],
+    ]);
+  });
+
+  it('never re-links a window that was hibernated in the file', () => {
+    const r = run({ windows: [openNow()] }, [{ ...fileLive(), state: 'hibernated' }]);
+    expect(r.outline.windows.map((w) => [w.id, w.state])).toEqual([
+      ['fresh', 'live'],
+      ['saved', 'hibernated'],
+    ]);
+    expect(r.outline.windows[1]!.openAtShutdown).toBeUndefined();
+  });
+
+  it('leaves an unmatched live window from the file hibernated, as a re-link candidate', () => {
+    const other = swin('gone', { state: 'live', tabs: [stab('g1', { url: url('z') })] });
+    const r = run({ windows: [openNow()] }, [other]);
+    expect(r.outline.windows.map((w) => [w.id, w.state])).toEqual([
+      ['fresh', 'live'],
+      ['gone', 'hibernated'],
+    ]);
+    expect(r.outline.windows[1]).toMatchObject({ openAtShutdown: true });
+    expect(r.outline.windows[1]!.tabs[0]!.liveAtClose).toBe(true);
+  });
+
+  it('keeps the trash, and with nothing to add changes nothing', () => {
+    const r = run({ windows: [] }, [swin('t', { state: 'trashed', closedAt: 4 })]);
+    expect(r.outline.windows.map((w) => [w.id, w.state])).toEqual([['t', 'trashed']]);
+    const local: Outline = { windows: [openNow()] };
+    expect(run(local, []).outline).toBe(local);
+  });
+
+  it('plain Restore all never marks windows for re-linking', () => {
+    const r = restoreWindows({ windows: [] }, [fileLive()], opts());
+    expect(r.outline.windows[0]!.openAtShutdown).toBeUndefined();
+    expect(r.outline.windows[0]!.tabs.some((t) => t.liveAtClose)).toBe(false);
   });
 });

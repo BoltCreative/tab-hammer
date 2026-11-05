@@ -52,7 +52,7 @@ function install(
 ) {
   const state = { windows: opts.windows ?? [] };
   const store = opts.store ?? createMemorySyncStore();
-  const restores: { windows: SyncWindow[]; keepTrash: boolean }[] = [];
+  const restores: { windows: SyncWindow[]; selfRestore: boolean }[] = [];
   let n = 0;
   const engine: SyncEngine = createSyncEngine({
     installId: async () => id,
@@ -61,12 +61,12 @@ function install(
     signIn: async () => undefined,
     outline: {
       windows: async () => structuredClone(state.windows),
-      restore: async (windows, keepTrash) => {
-        restores.push({ windows, keepTrash });
+      restore: async (windows, selfRestore) => {
+        restores.push({ windows, selfRestore });
         const r = restoreWindows({ windows: state.windows.map((w) => ({ ...w })) }, windows, {
           now: clock.now(),
           newId: () => `${id}-new-${++n}`,
-          keepTrash,
+          keepTrash: selfRestore,
         });
         state.windows = r.outline.windows.map(toSyncWindow);
         engine.noteChange();
@@ -332,7 +332,7 @@ describe('sync engine', () => {
     clock.advance(PUSH_DELAY_MS); // a push comes due before the pull; it must wait
     await after.engine.start();
     expect(wroteOwnBeforeRestore).toBe(false);
-    expect(after.restores).toEqual([{ windows: pushed.windows, keepTrash: true }]);
+    expect(after.restores).toEqual([{ windows: pushed.windows, selfRestore: true }]);
     expect(after.state.windows.map((w) => [w.id, w.state])).toEqual([
       ['fresh-live', 'live'],
       ['w1', 'hibernated'],

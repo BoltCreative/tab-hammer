@@ -54,8 +54,11 @@ export interface SyncEngineDeps {
   signIn: () => Promise<void>;
   outline: {
     windows: () => Promise<SyncWindow[]>; // this computer's export, trash included
-    /** Adds the windows this outline lacks (hibernated); returns how many were added. */
-    restore: (windows: SyncWindow[], keepTrash: boolean) => Promise<number>;
+    /**
+     * Adds the windows this outline lacks (hibernated); returns how many were added. A self-restore
+     * keeps the file's trash and re-links the windows open now to the ones live in the file.
+     */
+    restore: (windows: SyncWindow[], selfRestore: boolean) => Promise<number>;
     /** The outline database was empty when this worker started. */
     wasFresh: () => Promise<boolean>;
   };

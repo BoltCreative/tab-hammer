@@ -274,3 +274,85 @@ test('a checkpoint view restores windows deleted since', async () => {
       ]);
   });
 });
+
+test('a wiped profile restores its own file, re-linking the windows Chrome has open', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tab-hammer-sync-self-'));
+  const fake = await serveFakeDrive();
+  const pages = await startPageServer();
+  const context = await launchWithExtension(dir);
+  try {
+    const sw = await serviceWorkerOf(context);
+    // The window Chrome has open (restored, say) on a profile whose outline database is new.
+    const open = await openLoadedWindow(sw, pages, ['Red', 'Green']);
+    const installId = (await hooks(sw).syncState()).self.installId;
+    // This install's own file in Drive, from before the wipe.
+    const tab = (id: string, url: string) => ({ id, url, title: id, modifiedAt: 1 });
+    const win = (id: string, state: string, tabs: unknown[]) => ({
+      id,
+      state,
+      lastLiveAt: 1,
+      originInstallId: installId,
+      modifiedAt: 1,
+      tabs,
+      groups: [],
+    });
+    fake.drive.put(
+      `outline-${installId}.json`,
+      JSON.stringify({
+        schemaVersion: 1,
+        installId,
+        computerName: 'Desk',
+        platform: 'mac',
+        updatedAt: 1,
+        windows: [
+          {
+            ...win('saved', 'live', [
+              tab('s-red', pages.url('Red')),
+              tab('s-green', pages.url('Green')),
+            ]),
+            name: 'Colours',
+          },
+          win('put-away', 'hibernated', [tab('p-blue', pages.url('Blue'))]),
+        ],
+      }),
+    );
+
+    await hooks(sw).useTestSync(fake.base);
+
+    await expect
+      .poll(async () => {
+        const { windows } = await readOutline(sw);
+        const saved = windows.find((w) => w.id === 'saved');
+        return {
+          saved: saved && {
+            state: saved.state,
+            name: saved.name,
+            chromeWindowId: saved.chromeWindowId,
+            tabs: saved.tabs.map((t) => [t.id, t.chromeTabId !== undefined]),
+          },
+          holders: windows.filter((w) => w.chromeWindowId === open.chromeWindowId).length,
+          freshRecordGone: !windows.some((w) => w.id === open.id),
+          putAway: windows.find((w) => w.id === 'put-away')?.state,
+        };
+      })
+      .toEqual({
+        saved: {
+          state: 'live',
+          name: 'Colours',
+          chromeWindowId: open.chromeWindowId,
+          tabs: [
+            ['s-red', true],
+            ['s-green', true],
+          ],
+        },
+        holders: 1,
+        freshRecordGone: true,
+        putAway: 'hibernated',
+      });
+  } finally {
+    await context.close();
+    await pages.close();
+    await fake.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

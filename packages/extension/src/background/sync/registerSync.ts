@@ -85,7 +85,7 @@ export function registerSync(owner: OutlineOwner): SyncHandle {
     },
     outline: {
       windows: () => owner.exportWindows(),
-      restore: (windows, keepTrash) => owner.restoreWindows(windows, keepTrash),
+      restore: (windows, selfRestore) => owner.restoreWindows(windows, selfRestore),
       wasFresh: () => owner.wasFresh(),
     },
     devices: () => devices.read(),

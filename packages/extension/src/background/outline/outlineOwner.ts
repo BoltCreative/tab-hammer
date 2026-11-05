@@ -21,7 +21,7 @@ import { reconcile, replaceTabId } from '../../model/outline/reconcile';
 import type { ChromeSnapshot, Effects, Outline } from '../../model/outline/types';
 import { copyForOpen } from '../../model/sync/copy';
 import { toSyncWindow, type SyncWindow } from '../../model/sync/export';
-import { restoreWindows } from '../../model/sync/restore';
+import { restoreWindows, selfRestoreWindows } from '../../model/sync/restore';
 import { SWAP_KEY } from '../../shared/captureSwap';
 import {
   OUTLINE_PORT,
@@ -59,8 +59,11 @@ export interface OutlineOwner {
   installId(): Promise<string>;
   /** The outline database held nothing when this worker started (a new or wiped profile). */
   wasFresh(): Promise<boolean>;
-  /** Adds the windows the outline lacks, hibernated (see restoreWindows); returns how many. */
-  restoreWindows(windows: SyncWindow[], keepTrash: boolean): Promise<number>;
+  /**
+   * Adds the windows the outline lacks, hibernated (see restoreWindows); returns how many. With
+   * `selfRestore`, keeps the file's trash and re-links open windows (see selfRestoreWindows).
+   */
+  restoreWindows(windows: SyncWindow[], selfRestore: boolean): Promise<number>;
   /** Opens a copy of another outline's window, group, or tab here, with new IDs. */
   openCopy(window: SyncWindow, rowId: string): Promise<void>;
 }
@@ -414,10 +417,13 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
     exportWindows: () => enqueue(async () => outline.windows.map(toSyncWindow)),
     wasFresh: () => enqueue(async () => fresh),
     installId: () => enqueue(async () => installId),
-    restoreWindows: (windows, keepTrash) =>
+    restoreWindows: (windows, selfRestore) =>
       enqueue(async () => {
         await step();
-        const r = restoreWindows(outline, windows, { now: Date.now(), newId, keepTrash });
+        const now = Date.now();
+        const r = selfRestore
+          ? selfRestoreWindows(outline, windows, { now, newId })
+          : restoreWindows(outline, windows, { now, newId, keepTrash: false });
         await commit(r.outline, live!);
         return r.added.length;
       }),
