@@ -70,52 +70,47 @@ function DriveStatusLine({ state }: { state: SyncPickerState }) {
 }
 
 /**
- * "This computer ▾": the header's dropdown for viewing another device's outline, read-only (Tab
- * Hammer computers through Drive, Chrome Sync devices through chrome.sessions) or a checkpoint.
+ * The devices panel, opened from the Actions menu ("Other devices…"): this computer (renameable),
+ * its checkpoints, other Tab Hammer computers (through Drive), Chrome Sync devices (through
+ * chrome.sessions), and Drive sync's status. Picking one shows its outline read-only in place of
+ * this computer's. It sits in the header's banner area, above the outline.
  */
-export function DevicePicker({ state, current, onPick }: Props) {
-  const [open, setOpen] = useState(false);
+export function DevicesPanel({ state, current, onPick, onClose }: Props & { onClose: () => void }) {
   const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
-    // Opening the picker pulls, and re-reads Chrome Sync's devices (they have no change event).
+    // Opening the panel pulls, and re-reads Chrome Sync's devices (they have no change event).
     void sendSyncCommand({ cmd: 'refresh' }).catch(logError);
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+    ref.current?.querySelector<HTMLElement>('button')?.focus();
+  }, []);
 
   const pick = (source: SyncSource | null) => {
     onPick(source);
-    setOpen(false);
+    onClose();
   };
 
   return (
-    <div className="device-picker" ref={ref}>
-      <button
-        type="button"
-        className="toolbar-button"
-        data-testid="device-picker"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {sourceLabel(state, current)} ▾
-      </button>
-      {open && state && (
-        <div className="picker-menu" role="menu" aria-label="Devices">
+    <div
+      className="devices-panel"
+      ref={ref}
+      role="region"
+      aria-label="Other devices"
+      data-testid="devices-panel"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !renaming) onClose();
+      }}
+    >
+      <div className="devices-panel-title">
+        <strong>Devices</strong>
+        <button type="button" className="toolbar-button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {!state && <div className="picker-empty">Loading…</div>}
+      {state && (
+        <div className="picker-list">
           <div className="picker-self">
             {renaming ? (
               <input
@@ -141,8 +136,7 @@ export function DevicePicker({ state, current, onPick }: Props) {
               <>
                 <button
                   type="button"
-                  role="menuitemradio"
-                  aria-checked={current === null}
+                  aria-current={current === null || undefined}
                   className="picker-item"
                   data-testid="picker-this-computer"
                   onClick={() => pick(null)}
@@ -178,8 +172,9 @@ export function DevicePicker({ state, current, onPick }: Props) {
                 <button
                   key={c.id}
                   type="button"
-                  role="menuitemradio"
-                  aria-checked={current?.kind === 'checkpoint' && current.id === c.id}
+                  aria-current={
+                    (current?.kind === 'checkpoint' && current.id === c.id) || undefined
+                  }
                   className="picker-item picker-sub2"
                   data-testid="picker-checkpoint"
                   onClick={() => pick({ kind: 'checkpoint', id: c.id })}
@@ -195,8 +190,9 @@ export function DevicePicker({ state, current, onPick }: Props) {
             <button
               key={c.installId}
               type="button"
-              role="menuitemradio"
-              aria-checked={current?.kind === 'computer' && current.installId === c.installId}
+              aria-current={
+                (current?.kind === 'computer' && current.installId === c.installId) || undefined
+              }
               className="picker-item"
               data-testid="picker-computer"
               data-install-id={c.installId}
@@ -218,8 +214,7 @@ export function DevicePicker({ state, current, onPick }: Props) {
             <button
               key={d.name}
               type="button"
-              role="menuitemradio"
-              aria-checked={current?.kind === 'device' && current.name === d.name}
+              aria-current={(current?.kind === 'device' && current.name === d.name) || undefined}
               className="picker-item"
               data-testid="picker-device"
               onClick={() => pick({ kind: 'device', name: d.name })}

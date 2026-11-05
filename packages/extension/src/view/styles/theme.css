@@ -646,27 +646,26 @@ button.twisty {
   border-radius: 3px;
   padding: 0 3px;
 }
-/* Device picker (src/view/sync/): a dropdown in the header, and the read-only banner that names
-   the device or checkpoint being shown. */
-.device-picker {
-  position: relative;
-  margin-right: auto; /* the picker sits at the left; the other buttons stay right */
-}
-.picker-menu {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  z-index: 20;
-  min-width: 240px;
-  max-height: 70vh;
+/* Devices panel (src/view/sync/), opened from the Actions menu, and the read-only banner that
+   names the device or checkpoint being shown. Both sit in the header's banner area. */
+.devices-panel {
+  max-height: 50vh;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 3px;
+  padding: 3px 6px 4px;
+  border-bottom: 1px solid var(--card-border);
   background: var(--card);
-  border: 1px solid var(--card-border-focused);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px var(--hover-card-shadow);
+}
+.devices-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1px 0 3px;
+}
+.picker-list {
+  display: flex;
+  flex-direction: column;
 }
 .picker-self {
   display: flex;
@@ -695,7 +694,7 @@ button.twisty {
   cursor: default;
   opacity: 0.6;
 }
-.picker-item[aria-checked='true'] {
+.picker-item[aria-current='true'] {
   color: var(--text-focused);
 }
 .picker-rename {

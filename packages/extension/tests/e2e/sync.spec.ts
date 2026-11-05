@@ -12,6 +12,7 @@ import {
   launchWithExtension,
   outlineCommand,
   readOutline,
+  runMenuAction,
   serviceWorkerOf,
   startPageServer,
   test,
@@ -152,7 +153,7 @@ async function hibernatedWindow(sw: Worker, pages: PageServer, titles: string[])
 }
 
 async function pickComputer(view: Page, installId: string) {
-  await view.getByTestId('device-picker').click();
+  await runMenuAction(view, 'Other devices…');
   await view.locator(`[data-testid="picker-computer"][data-install-id="${installId}"]`).click();
   await expect(view.getByTestId('remote-banner')).toBeVisible();
 }
@@ -165,7 +166,7 @@ test("A's hibernated window shows in B's picker, and Open here copies it live on
 
     await hooks(b.sw).syncNow();
     const view = await b.view();
-    await view.getByTestId('device-picker').click();
+    await runMenuAction(view, 'Other devices…');
     const entry = view.locator(`[data-testid="picker-computer"][data-install-id="${aId}"]`);
     await expect(entry).toContainText('synced');
     await entry.click();
@@ -249,7 +250,7 @@ test('a checkpoint view restores windows deleted since', async () => {
     );
 
     const view = await a.view();
-    await view.getByTestId('device-picker').click();
+    await runMenuAction(view, 'Other devices…');
     await view.getByTestId('picker-checkpoints').click();
     await view
       .getByTestId('picker-checkpoint')

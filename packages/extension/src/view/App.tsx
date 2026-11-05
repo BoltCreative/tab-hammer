@@ -35,6 +35,7 @@ import { usePreviewTarget } from './preview/usePreviewTarget';
 import { AppHeader } from './header/AppHeader';
 import { useHeaderActions } from './header/useHeaderActions';
 import type { SyncSource } from '../shared/syncMessages';
+import { DevicesPanel } from './sync/DevicePicker';
 import { useRemoteOutline } from './sync/RemoteOutline';
 import { useSyncState } from './sync/syncClient';
 
@@ -43,6 +44,8 @@ export function App() {
   // Another device's outline (or a checkpoint) shown read-only in place of this computer's.
   const syncState = useSyncState();
   const [remoteSource, setRemoteSource] = useState<SyncSource | null>(null);
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const closeDevices = useCallback(() => setDevicesOpen(false), []);
   const remote = useRemoteOutline({
     source: remoteSource,
     state: syncState,
@@ -186,6 +189,7 @@ export function App() {
     onPreviewsChanged: bumpPreviewEpoch,
     duplicateCount: duplicates.toClose.length,
     onCloseDuplicates: () => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? [])),
+    onOpenDevices: () => setDevicesOpen(true),
   });
   const menuWindow =
     menu?.windowKey != null ? tree.find((w) => w.key === menu.windowKey) : undefined;
@@ -272,7 +276,19 @@ export function App() {
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
         matchCount={filtering ? countTabs(shown) : null}
-        banner={remote.banner}
+        banner={
+          <>
+            {devicesOpen && (
+              <DevicesPanel
+                state={syncState}
+                current={remoteSource}
+                onPick={setRemoteSource}
+                onClose={closeDevices}
+              />
+            )}
+            {remote.banner}
+          </>
+        }
       />
       {remote.list}
       <main
