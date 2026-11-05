@@ -8,6 +8,7 @@ import {
   isTabLoaded,
   latestCaptureOutcome,
   requestTabCapture,
+  tabCaptureOutcome,
   watchTabLoaded,
 } from '../chrome/captureOutcome';
 import { relativeTime } from './relativeTime';
@@ -33,13 +34,13 @@ interface Loaded {
 
 /**
  * Floating preview of a hovered tab: its last screenshot (if any), title, URL, last viewed. With
- * no screenshot, or only an old one, it asks the service worker to capture the tab now and swaps
- * the new shot in when it lands.
+ * no screenshot, or only an old one, of a tab that is on screen in its window, it asks the service
+ * worker to capture it now (without the debugger) and swaps the new shot in when it lands.
  */
 export function HoverCard({ tab, row, list, previewEpoch }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const ref = useRef<HTMLDivElement>(null);
-  const { tabId, url, windowId, discarded } = tab;
+  const { tabId, url, windowId, discarded, active } = tab;
 
   useEffect(() => {
     let cancelled = false;
@@ -60,9 +61,16 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
     };
     // No preview is not an error; show the text-only card with the latest capture outcome. A
     // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
+    // A background tab is never captured from a hover (see wantsOnDemandCapture): unless a
+    // Refresh run recorded something for it, say how to get its preview.
     const noPreview = async () => {
       if (tabId === undefined || windowId === undefined) return done(null, null);
-      const o = await latestCaptureOutcome(windowId, tabId).catch(() => undefined);
+      const o = active
+        ? await latestCaptureOutcome(windowId, tabId).catch(() => undefined)
+        : ((await tabCaptureOutcome(tabId).catch(() => undefined)) ?? {
+            at: Date.now(),
+            outcome: discarded ? 'skipped:discarded' : 'skipped:background-tab',
+          });
       done(null, describeNoPreview(o));
     };
 
@@ -72,7 +80,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
       const image = p ? toImage(p) : null;
       if (
         tabId === undefined ||
-        !wantsOnDemandCapture({ url, discarded }, p?.capturedAt, Date.now())
+        !wantsOnDemandCapture({ url, discarded, active }, p?.capturedAt, Date.now())
       ) {
         if (image) done(image, null);
         else await noPreview();
@@ -87,7 +95,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
             setLoaded((l) => (l?.capturing === 'loading' ? { ...l, capturing: 'capturing' } : l));
         });
       }
-      await requestTabCapture(tabId).catch(() => undefined);
+      await requestTabCapture(tabId, false).catch(() => undefined);
       unwatch?.();
       if (cancelled) return;
       const fresh = await lookup();
@@ -101,7 +109,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
       unwatch?.();
       objectUrls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [tabId, url, windowId, discarded, previewEpoch]);
+  }, [tabId, url, windowId, discarded, active, previewEpoch]);
 
   const ready = loaded?.url === tab.url;
   const image = ready ? loaded.image : null;

@@ -1,6 +1,6 @@
 import type { BrowserContext, Worker } from '@playwright/test';
 import type { TestHooks } from '../../src/background/index';
-import { expect, liveRow, test } from './fixtures';
+import { expect, liveRow, runMenuAction, test } from './fixtures';
 
 // Chrome refuses to capture data: pages, so serve real http pages from Playwright instead.
 const ORIGIN = 'http://tabhammer.test';
@@ -140,7 +140,7 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
   await expect(row(twinId)).not.toHaveAttribute('aria-describedby');
 });
 
-test('hovering a background tab that was never shown captures it on demand', async ({
+test('hovering a background tab never attaches the debugger (its infobar would shift the list)', async ({
   context,
   sw,
   view,
@@ -148,7 +148,6 @@ test('hovering a background tab that was never shown captures it on demand', asy
   await servePages(context);
   const hiddenUrl = `${ORIGIN}/hidden`;
   const [tabId] = (await openBackgroundTabs(context, sw, [hiddenUrl])) as [number];
-  // Captures skip pages still loading, so hover once it has loaded (the served page, by its title).
   await expect
     .poll(() => tabInfo(sw, tabId))
     .toEqual({
@@ -156,23 +155,32 @@ test('hovering a background tab that was never shown captures it on demand', asy
       status: 'complete',
       active: false,
     });
-  expect(await hasPreview(sw, hiddenUrl)).toBe(false);
+  // Count every debugger attach the service worker makes from here on.
+  await sw.evaluate(() => {
+    const g = globalThis as unknown as { attaches: number };
+    g.attaches = 0;
+    const original = chrome.debugger.attach.bind(chrome.debugger);
+    chrome.debugger.attach = ((...args: Parameters<typeof original>) => {
+      g.attaches++;
+      return original(...args);
+    }) as typeof chrome.debugger.attach;
+  });
+  const attaches = () =>
+    sw.evaluate(() => (globalThis as unknown as { attaches: number }).attaches);
 
   await liveRow(view, 'tab', tabId).hover();
   const card = view.getByTestId('hover-card');
-  const shot = card.locator('.hover-card-shot');
   await expect(card).toContainText(hiddenUrl);
-  // The card (and its fixed-size preview area) is placed as soon as it's visible, before the
-  // on-demand capture resolves — its height doesn't depend on the screenshot landing.
-  await expect(card).toBeVisible();
-  const boxBeforeShot = await card.boundingBox();
-  await expect(shot).toHaveJSProperty('complete', true);
-  expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
+  await expect(card).toContainText('Refresh stale');
   await expect(card).not.toContainText('Capturing');
-  // No layout jump once the screenshot lands.
-  expect((await card.boundingBox())?.height).toBe(boxBeforeShot?.height);
+  expect(await attaches()).toBe(0);
+  expect(await hasPreview(sw, hiddenUrl)).toBe(false);
+
+  // The explicit Refresh run is what captures it, through the debugger.
+  await runMenuAction(view, 'Refresh stale');
+  await expect(view.getByRole('status')).toHaveText(/^refreshed \d+\/\d+$/);
   expect(await hasPreview(sw, hiddenUrl)).toBe(true);
-  // The tab stayed in the background; the capture didn't switch to it.
+  expect(await attaches()).toBeGreaterThan(0);
   expect((await tabInfo(sw, tabId)).active).toBe(false);
 });
 
@@ -228,7 +236,7 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
   await row.hover();
   await expect(card.locator('.hover-card-shot')).toHaveCount(1);
 
-  await view.getByRole('button', { name: 'Clear previews' }).click();
+  await runMenuAction(view, 'Clear previews');
   await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
   expect(await hasPreview(sw, url)).toBe(false);
   // The window's 'saved' outcome is gone too (other windows may record new ones meanwhile).
@@ -283,13 +291,13 @@ test('Refresh stale captures background tabs without switching to them', async (
     await expect.poll(() => tabInfo(sw, id)).toMatchObject({ status: 'complete' });
   expect(await hasPreview(sw, urls[0]!)).toBe(false);
 
-  await view.getByRole('button', { name: 'Refresh stale' }).click();
+  await runMenuAction(view, 'Refresh stale');
   await expect(view.getByRole('status')).toHaveText('refreshed 2/2');
   for (const url of urls) expect(await hasPreview(sw, url)).toBe(true);
   for (const id of tabIds) expect((await tabInfo(sw, id)).active).toBe(false);
 
   // Everything is fresh now, so a second stale run has nothing to do.
-  await view.getByRole('button', { name: 'Refresh stale' }).click();
+  await runMenuAction(view, 'Refresh stale');
   await expect(view.getByRole('status')).toHaveText('Nothing to refresh');
 });
 
@@ -319,7 +327,7 @@ test('Stop ends a refresh run after the capture in flight', async ({ context, sw
   await expect.poll(() => tabInfo(sw, slowId)).toMatchObject({ title: 'slow' });
   expect((await tabInfo(sw, slowId)).status).toBe('loading');
 
-  await view.getByRole('button', { name: 'Refresh stale' }).click();
+  await runMenuAction(view, 'Refresh stale');
   await expect(view.getByRole('status')).toHaveText('Refreshing 0/2');
   await view.getByRole('button', { name: 'Stop' }).click();
   await expect(view.getByRole('status')).toHaveText('Stopping…');
@@ -327,5 +335,5 @@ test('Stop ends a refresh run after the capture in flight', async ({ context, sw
   await expect(view.getByRole('status')).toHaveText('Stopped: refreshed 1/2');
   expect(await hasPreview(sw, slow)).toBe(true);
   expect(await hasPreview(sw, after)).toBe(false);
-  await expect(view.getByRole('button', { name: 'Refresh stale' })).toBeVisible();
+  await expect(view.getByRole('button', { name: 'Stop' })).toHaveCount(0);
 });

@@ -34,6 +34,7 @@ import { HoverCard } from './hover/HoverCard';
 import { hoverSignature } from './hover/hoverSignature';
 import { useHoverCard } from './hover/useHoverCard';
 import { AppHeader } from './header/AppHeader';
+import { useHeaderActions } from './header/useHeaderActions';
 
 export function App() {
   const [selection, dispatch] = useReducer(selectionReducer, emptySelection);
@@ -156,14 +157,30 @@ export function App() {
   };
 
   // Right-click menu on a window header. Holds the window's key, not the node, so the menu always
-  // acts on the window's current tabs even if they change while it is open.
-  const [menu, setMenu] = useState<{ x: number; y: number; windowKey: string } | null>(null);
+  // acts on the window's current tabs even if they change while it is open. A null key is the
+  // outline background's menu: the header's Actions.
+  const [menu, setMenu] = useState<{ x: number; y: number; windowKey: string | null } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const onWindowContextMenu = (e: MouseEvent, win: WindowNode) => {
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, windowKey: win.key });
   };
-  const menuWindow = menu && tree.find((w) => w.key === menu.windowKey);
+  // Anywhere in the list that isn't a row (or a field) offers the header's Actions. Rows keep the
+  // browser's menu unless they have their own (window headers do).
+  const onBackgroundContextMenu = (e: MouseEvent) => {
+    if (e.defaultPrevented) return;
+    const target = e.target as Element;
+    if (target.closest('.row, input, textarea, button')) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, windowKey: null });
+  };
+  const actions = useHeaderActions({
+    onPreviewsChanged: bumpPreviewEpoch,
+    duplicateCount: duplicates.toClose.length,
+    onCloseDuplicates: () => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? [])),
+  });
+  const menuWindow =
+    menu?.windowKey != null ? tree.find((w) => w.key === menu.windowKey) : undefined;
   // The window's URLs in tab order, one per line (blank ones, e.g. a tab still loading, skipped).
   const copyWindowUrls = (win: WindowNode) => {
     const urls = win.children
@@ -242,15 +259,13 @@ export function App() {
   return (
     <div className="app">
       <AppHeader
-        onPreviewsChanged={bumpPreviewEpoch}
+        actions={actions}
         query={query}
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
-        duplicateCount={duplicates.toClose.length}
-        onCloseDuplicates={() => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? []))}
         matchCount={filtering ? countTabs(shown) : null}
       />
-      <main ref={listRef} className="outline">
+      <main ref={listRef} className="outline" onContextMenu={onBackgroundContextMenu}>
         <div
           className="outline-tree"
           role="tree"
@@ -293,6 +308,15 @@ export function App() {
       </main>
       {hovered && hoveredTab && (
         <HoverCard tab={hoveredTab} row={hovered.row} list={listRef} previewEpoch={previewEpoch} />
+      )}
+      {menu && menu.windowKey === null && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+          label="Actions"
+          items={actions.items}
+        />
       )}
       {menu && menuWindow && (
         <ContextMenu

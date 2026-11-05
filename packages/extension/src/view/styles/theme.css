@@ -60,14 +60,12 @@ body,
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 3px 6px;
+  gap: 6px;
   padding: 3px 6px;
 }
-/* The search box takes a full row of its own, above the buttons, so they never squeeze it. */
+/* The search box takes the row; the Actions menu button sits at its end. */
 .search {
-  flex: 1 1 100%;
+  flex: 1 1 auto;
   min-width: 0;
   background: var(--card);
   color: var(--text);
@@ -75,6 +73,27 @@ body,
   border-radius: 5px;
   padding: 1px 6px;
   font: inherit;
+}
+.menu-button {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+}
+.menu-button[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--row-hover);
+}
+/* Live progress (and Stop) for the running action, under the search row. */
+.toolbar-progress {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 6px 3px;
 }
 .search:focus {
   outline: none;

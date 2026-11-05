@@ -1,79 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
-import { STALE_PREVIEW_MS } from '../../shared/previewPolicy';
-import { clearAllPreviews } from '../chrome/captureOutcome';
+import { useCallback, useRef, useState } from 'react';
+import { ContextMenu } from '../components/ContextMenu';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
-import type { RefreshProgress } from '../refresh/refreshRun';
-import { useRefreshPreviews, type RefreshState } from '../refresh/useRefreshPreviews';
-
-const CONFIRM_MS = 1500;
-
-// Attaching the debugger shows Chrome's "started debugging this browser" banner for each tab
-// captured in the background, unless Chrome was launched with --silent-debugger-extension-api.
-const REFRESH_NOTE =
-  "Captures in the background, one tab at a time. Sleeping tabs are skipped. Chrome's debugging banner flashes once per tab.";
-
-function refreshStatus(state: RefreshState): string {
-  if (state.phase === 'idle') return '';
-  const p: RefreshProgress = state.progress;
-  if (state.phase === 'running') {
-    if (state.stopping) return 'Stopping…';
-    return p.total === 0 ? 'Finding tabs…' : `Refreshing ${p.done}/${p.total}`;
-  }
-  if (p.total === 0) return 'Nothing to refresh';
-  const failed = p.failed > 0 ? `, ${p.failed} failed` : '';
-  return `${state.stopped ? 'Stopped: ' : ''}refreshed ${p.saved}/${p.total}${failed}`;
-}
+import type { HeaderActions } from './useHeaderActions';
 
 interface Props {
-  onPreviewsChanged: () => void;
+  actions: HeaderActions;
   query: string;
   onQueryChange: (query: string) => void;
   onSearchArrowDown: () => void;
-  duplicateCount: number; // tabs "Close duplicates" would close
-  onCloseDuplicates: () => Promise<void>;
   matchCount: number | null; // tabs matching the search, or null when not searching
 }
 
 /**
- * The view's fixed header: it stays put while the outline scrolls beneath it. Toolbar and action
- * buttons, and the permission banner, go here.
+ * The view's fixed header: it stays put while the outline scrolls beneath it. The search box,
+ * the Actions menu (the same actions as a right-click on the outline's background), the live
+ * status line with Stop while a Refresh runs, and the permission banner go here.
  */
-export function AppHeader({
-  onPreviewsChanged,
-  query,
-  onQueryChange,
-  onSearchArrowDown,
-  matchCount,
-  duplicateCount,
-  onCloseDuplicates,
-}: Props) {
-  const [status, setStatus] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const refresh = useRefreshPreviews(onPreviewsChanged);
-  const refreshing = refresh.state.phase === 'running';
-
-  // A debug tool, so no confirmation dialog.
-  const onClear = () => {
-    clearTimeout(timer.current);
-    setStatus('clearing');
-    clearAllPreviews()
-      .then(
-        () => {
-          onPreviewsChanged();
-          setStatus('cleared');
-        },
-        (err: unknown) => {
-          console.error('Tab Hammer: clearing previews failed', err);
-          setStatus('failed');
-        },
-      )
-      .finally(() => {
-        timer.current = setTimeout(() => setStatus('idle'), CONFIRM_MS);
-      });
+export function AppHeader({ actions, query, onQueryChange, onSearchArrowDown, matchCount }: Props) {
+  const button = useRef<HTMLButtonElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; keyboard: boolean } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const toggleMenu = (keyboard: boolean) => {
+    if (menu) return setMenu(null);
+    const r = button.current!.getBoundingClientRect();
+    setMenu({ x: r.right, y: r.bottom + 2, keyboard });
   };
-
-  const clearStatus = status === 'cleared' ? 'Cleared' : status === 'failed' ? 'Clear failed' : '';
 
   return (
     <header className="app-header">
@@ -99,61 +50,52 @@ export function AppHeader({
             {matchCount === 1 ? '1 tab' : `${matchCount} tabs`}
           </span>
         )}
+        <button
+          ref={button}
+          type="button"
+          className="toolbar-button menu-button"
+          aria-label="Actions"
+          title="Actions"
+          aria-haspopup="menu"
+          aria-expanded={menu !== null}
+          // detail 0: Enter or Space, so the first item takes focus.
+          onClick={(e) => toggleMenu(e.detail === 0)}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <circle cx="2" cy="6" r="1.2" fill="currentColor" />
+            <circle cx="6" cy="6" r="1.2" fill="currentColor" />
+            <circle cx="10" cy="6" r="1.2" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+      {/* Always in the DOM (a live region), shown only while there's something to say. */}
+      <div className="toolbar-progress" hidden={!actions.status && !actions.stop}>
         <span className="toolbar-status" role="status">
-          {clearStatus || refreshStatus(refresh.state)}
+          {actions.status}
         </span>
-        {duplicateCount > 0 && (
+        {actions.stop && (
           <button
             type="button"
             className="toolbar-button"
-            title="Close every tab whose URL is open in another tab, keeping the one you used last"
-            onClick={() =>
-              void onCloseDuplicates().catch((err: unknown) =>
-                console.error('Tab Hammer: closing duplicates failed', err),
-              )
-            }
-          >
-            {duplicateCount === 1 ? 'Close 1 duplicate' : `Close ${duplicateCount} duplicates`}
-          </button>
-        )}
-        {refreshing ? (
-          <button
-            type="button"
-            className="toolbar-button"
-            onClick={refresh.stop}
-            disabled={refresh.state.phase === 'running' && refresh.state.stopping}
+            onClick={actions.stop}
+            disabled={actions.stopping}
           >
             Stop
           </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="toolbar-button"
-              title={`Capture tabs with no preview, or one older than ${STALE_PREVIEW_MS / 60_000} minutes. ${REFRESH_NOTE}`}
-              onClick={() => refresh.start('stale')}
-            >
-              Refresh stale
-            </button>
-            <button
-              type="button"
-              className="toolbar-button"
-              title={`Capture every tab again. ${REFRESH_NOTE}`}
-              onClick={() => refresh.start('all')}
-            >
-              Refresh all
-            </button>
-          </>
         )}
-        <button
-          type="button"
-          className="toolbar-button"
-          onClick={onClear}
-          disabled={status === 'clearing' || refreshing}
-        >
-          Clear previews
-        </button>
       </div>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={actions.items}
+          onClose={closeMenu}
+          label="Actions"
+          anchor={button}
+          autoFocus={menu.keyboard}
+          align="right"
+        />
+      )}
     </header>
   );
 }

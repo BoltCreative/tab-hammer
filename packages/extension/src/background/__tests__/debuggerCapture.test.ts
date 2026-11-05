@@ -130,7 +130,10 @@ function setup(
     userNavigates: (id: number, url: string) => {
       tabs = tabs.map((t) => (t.id === id ? { ...t, url } : t));
     },
-    capture: (id = TARGET.id, signal?: AbortSignal) => capturer.capture(id, signal),
+    // A Refresh run's capture, which may attach the debugger.
+    capture: (id = TARGET.id, signal?: AbortSignal) => capturer.capture(id, true, signal),
+    // A hover card's capture, which never may.
+    hoverCapture: (id = TARGET.id) => capturer.capture(id, false),
     recover: capturer.recover,
   };
 }
@@ -308,6 +311,28 @@ describe('createTabCapturer', () => {
     await expect(capture()).resolves.toBe('saved');
     expect(outcome()).toBe('saved');
     expect(calls).toEqual([`captureVisible(${WINDOW})`]);
+  });
+
+  describe('from a hover (no debugger)', () => {
+    it('captures the visible tab of a normal window', async () => {
+      const { hoverCapture, calls } = setup({ target: { active: true } });
+      await expect(hoverCapture()).resolves.toBe('saved');
+      expect(calls).toEqual([`captureVisible(${WINDOW})`]);
+    });
+
+    it.each([
+      ['a background tab', {}],
+      ['an unloaded background tab (not even loaded)', { target: { status: 'unloaded' } }],
+      [
+        'the active tab of a minimized window',
+        { target: { active: true }, win: { state: 'minimized' } },
+      ],
+    ] as const)('never attaches the debugger to %s', async (_name, opts) => {
+      const { hoverCapture, calls, outcome } = setup(opts as Parameters<typeof setup>[0]);
+      await expect(hoverCapture()).resolves.toBe('skipped:background-tab');
+      expect(outcome()).toBe('skipped:background-tab');
+      expect(calls).toEqual([]);
+    });
   });
 
   it('captures a background tab of a minimized window without swapping', async () => {

@@ -121,6 +121,12 @@ export function liveRow(view: Page, kind: 'window' | 'group' | 'tab', chromeId: 
   return view.locator(`[data-${kind}-id="${chromeId}"]`);
 }
 
+/** Picks an action from the header's Actions menu (Refresh stale, Clear previews, …). */
+export async function runMenuAction(view: Page, label: string | RegExp) {
+  await view.getByRole('button', { name: 'Actions' }).click();
+  await view.getByRole('menu', { name: 'Actions' }).getByRole('menuitem', { name: label }).click();
+}
+
 /**
  * A page server on 127.0.0.1: `/<name>` is a page titled `<name>`. Tabs Chrome opens itself (restored
  * after a restart, or reopened by the service worker) load before Playwright attaches to them, so

@@ -61,14 +61,15 @@ export const STALE_PREVIEW_MS = 10 * 60 * 1000;
 /**
  * Whether opening the hover card should ask the service worker for a fresh shot of the tab: it
  * has no preview, or only an old one, and its page is one Chrome lets an extension capture.
- * Discarded (sleeping) tabs are left alone, since attaching the debugger would reload them.
+ * Only a window's active (on-screen) tab qualifies: a hover never attaches the debugger, since
+ * its infobar shifts the outline under the pointer, so background tabs wait for a Refresh run.
  * The preview is looked up by the tab's current URL, so one of another page never counts.
  */
 export function wantsOnDemandCapture(
-  tab: { url: string; discarded: boolean },
+  tab: { url: string; discarded: boolean; active: boolean },
   capturedAt: number | undefined,
   now: number,
 ): boolean {
-  if (tab.discarded || !isCapturableUrl(tab.url)) return false;
+  if (!tab.active || tab.discarded || !isCapturableUrl(tab.url)) return false;
   return capturedAt === undefined || now - capturedAt > STALE_PREVIEW_MS;
 }

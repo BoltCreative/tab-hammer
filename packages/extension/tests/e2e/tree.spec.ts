@@ -187,7 +187,7 @@ test('the header stays put while only the outline list scrolls', async ({ sw, vi
   expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   expect(await view.evaluate(() => window.scrollY)).toBe(0);
   expect(await headerTop()).toBe(0);
-  await expect(view.getByRole('button', { name: 'Clear previews' })).toBeInViewport();
+  await expect(view.getByRole('button', { name: 'Actions' })).toBeInViewport();
 });
 
 test("right-clicking a window header copies all its tabs' URLs in tab order", async ({
@@ -302,14 +302,23 @@ test('closes duplicate tabs across windows, keeping one copy', async ({ sw, view
     await chrome.windows.create({ url });
   }, dup);
   await expect(view.locator('.tab.duplicate')).toHaveCount(3);
-  const button = view.getByRole('button', { name: 'Close 2 duplicates' });
-  await button.click();
+  // From a right-click on the outline's empty background (the room below the last row).
+  const list = view.locator('main.outline');
+  const box = (await list.boundingBox())!;
+  await list.click({ button: 'right', position: { x: box.width / 2, y: box.height - 8 } });
+  const menu = view.getByRole('menu', { name: 'Actions' });
+  await menu.getByRole('menuitem', { name: 'Close 2 duplicates' }).click();
+  await expect(menu).toHaveCount(0);
   await expect
     .poll(() =>
       sw.evaluate(async () => (await chrome.tabs.query({ title: 'Dup' })).map((t) => t.active)),
     )
     .toEqual([true]);
   await expect(view.locator('.tab.duplicate')).toHaveCount(0);
-  await expect(button).toHaveCount(0);
+  // The header's Actions menu offers the same action, now with nothing to close.
+  await view.getByRole('button', { name: 'Actions' }).click();
+  await expect(menu.getByRole('menuitem', { name: 'Close duplicates' })).toBeDisabled();
+  await view.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
   await expect(view.getByText('Solo')).toBeVisible();
 });
