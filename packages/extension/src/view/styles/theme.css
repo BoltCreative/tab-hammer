@@ -23,6 +23,9 @@
   --group-purple: #c58af9;
   --group-cyan: #78d9ec;
   --group-orange: #fcad70;
+  --window-bar: #25272c;
+  --window-bar-hover: #2c2e34;
+  --window-bar-border: #2f3136;
   --banner-bg: #3a2f1a;
   --banner-border: #5c4a26;
   --banner-button-bg: #4a3b1f;
@@ -127,7 +130,9 @@ main.outline {
   min-height: 0;
   overflow: auto;
   /* Room below the last row, so the bottom rows (Recently closed) scroll up off the window edge. */
-  padding: 4px 4px 40vh;
+  padding: 0 0 40vh;
+  /* Keyboard focus scrolls a row clear of the pinned window bar above it. */
+  scroll-padding-top: 24px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -135,16 +140,10 @@ main.outline {
 .outline-tree {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
+/* A window: a section under its header bar (no box), its tabs indented a little from the edges. */
 .card {
-  background: var(--card);
-  border: 1px solid var(--card-border);
-  border-radius: 6px;
-  padding: 2px;
-}
-.card.focused {
-  border-color: var(--card-border-focused);
+  padding: 0 4px 6px;
 }
 .row {
   position: relative;
@@ -257,14 +256,87 @@ button.twisty {
   font-weight: 400;
   margin-left: auto;
 }
+/* The window's header bar: full width, in the window's colour (a top edge, a glyph, and the
+   title), and pinned to the top of the list while its window's rows scroll beneath it. The focused
+   window's bar is tinted with its colour. Selection (blue) still wins. */
 .window-header {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 22px;
+  margin: 0 -4px 2px;
+  padding: 0 8px 0 6px;
+  border-radius: 0;
+  border-top: 2px solid var(--window-color);
+  border-bottom: 1px solid var(--window-bar-border);
+  background: var(--window-bar);
+  color: var(--window-color);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.window-header:hover {
+  background: var(--window-bar-hover);
 }
 .card.focused .window-header {
-  color: var(--text-focused);
-  font-weight: 700;
+  background: color-mix(in srgb, var(--window-color) 18%, var(--window-bar));
+}
+.window-header[aria-selected='true'],
+.card.focused .window-header[aria-selected='true'] {
+  background: var(--row-selected);
+  color: #fff;
+}
+.window-header .count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.card.focused .window-header .count {
+  color: var(--text);
+}
+/* Recently closed: its windows are plain rows, not coloured, pinned bars. */
+.card.trash {
+  border-top: 1px solid var(--card-border);
+  padding-top: 4px;
+}
+.trash .window-header {
+  position: static;
+  height: 18px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.trash .window-header:hover {
+  background: var(--row-hover);
+}
+/* A small window outline with a title strip, in the window's colour. */
+.window-glyph {
+  position: relative;
+  flex: none;
+  width: 13px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+.window-glyph::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2.5px;
+  background: currentColor;
+}
+.window-header .rename-field {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
 }
 /* In every window: the active tab is bold white, the rest are steel blue. */
 .tab {
