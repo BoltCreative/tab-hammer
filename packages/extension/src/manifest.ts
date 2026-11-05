@@ -46,11 +46,13 @@ export default defineManifest({
     'identity',
     'alarms',
   ],
-  // Drive sync's sign-in, only once a client ID is set (src/shared/syncConfig.ts): an empty or
-  // placeholder client ID never ships.
-  ...(GOOGLE_OAUTH_CLIENT_ID !== '' && {
-    oauth2: { client_id: GOOGLE_OAUTH_CLIENT_ID, scopes: [DRIVE_SCOPE] },
-  }),
+  // Drive sync's sign-in, only once a client ID is set (src/shared/syncConfig.ts): an empty
+  // client ID never ships. The e2e build leaves it out too (TAB_HAMMER_NO_OAUTH), so tests can only
+  // reach the fake Drive they serve, never Google.
+  ...(GOOGLE_OAUTH_CLIENT_ID !== '' &&
+    !process.env.TAB_HAMMER_NO_OAUTH && {
+      oauth2: { client_id: GOOGLE_OAUTH_CLIENT_ID, scopes: [DRIVE_SCOPE] },
+    }),
   // captureVisibleTab (hover previews) needs host access to the page being captured.
   host_permissions: ['<all_urls>'],
   background: { service_worker: 'src/background/index.ts', type: 'module' },

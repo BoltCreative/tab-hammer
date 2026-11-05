@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:e2e": "vite build --outDir dist-e2e --emptyOutDir",
+    "build:e2e": "TAB_HAMMER_NO_OAUTH=1 vite build --outDir dist-e2e --emptyOutDir",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
