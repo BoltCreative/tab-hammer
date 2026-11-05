@@ -132,7 +132,7 @@ function setup(
     },
     // A Refresh run's capture, which may attach the debugger.
     capture: (id = TARGET.id, signal?: AbortSignal) => capturer.capture(id, true, signal),
-    // A hover card's capture, which never may.
+    // A hover's capture, which never may.
     hoverCapture: (id = TARGET.id) => capturer.capture(id, false),
     recover: capturer.recover,
   };

@@ -1,7 +1,7 @@
 // Runtime messages between the view and the service worker.
 import type { CaptureOutcome } from './captureOutcomes';
 
-/** View → service worker: capture this tab now (for its hover card, or a Refresh run). */
+/** View → service worker: capture this tab now (for the preview panel, or a Refresh run). */
 export interface CaptureTabRequest {
   type: 'tabHammer.captureTab';
   tabId: number;

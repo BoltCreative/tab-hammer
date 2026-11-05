@@ -21,7 +21,7 @@ export type RefreshState =
 
 /**
  * Drives one "Refresh previews" run at a time for the header. `onSaved` fires after each new
- * preview lands, so an open hover card can pick it up.
+ * preview lands, so the preview panel can pick it up.
  */
 export function useRefreshPreviews(onSaved: () => void) {
   const [state, setState] = useState<RefreshState>({ phase: 'idle' });

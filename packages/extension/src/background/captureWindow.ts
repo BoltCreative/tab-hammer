@@ -26,7 +26,7 @@ export interface CaptureDeps {
   retry: (windowId: number) => void;
   /** The window's activation generation (see createActivationGenerations). */
   generation: (windowId: number) => number;
-  /** Records the attempt's outcome for the hover card's diagnostics. Failures are ignored. */
+  /** Records the attempt's outcome for the preview panel's diagnostics. Failures are ignored. */
   record: (windowId: number, outcome: CaptureOutcome) => Promise<void>;
   now?: () => number;
 }

@@ -109,7 +109,7 @@ const scheduler = createCaptureScheduler<CaptureOutcome>({
   capture: captureWindow,
 });
 
-// On-demand captures for the hover card (see debuggerCapture.ts).
+// On-demand captures for the preview panel (see debuggerCapture.ts).
 const captureTab = createTabCapturer({
   hasPermission: () =>
     chrome.permissions.contains({ permissions: ['debugger'], origins: ['<all_urls>'] }),
@@ -258,7 +258,7 @@ export function registerPreviewCapture(): void {
     quietly(cleanUpOnce());
   });
 
-  // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
+  // The preview panel asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
     if (isClearPreviewsRequest(msg)) {
       void clearAll().then(

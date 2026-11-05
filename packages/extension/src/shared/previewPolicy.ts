@@ -55,12 +55,12 @@ export function isCapturableUrl(url: string | undefined): boolean {
   return !(parsed.hostname === 'chrome.google.com' && parsed.pathname.startsWith('/webstore'));
 }
 
-/** A preview older than this is refreshed on demand when its hover card opens. */
+/** A preview older than this is refreshed on demand when the preview panel shows it. */
 export const STALE_PREVIEW_MS = 10 * 60 * 1000;
 
 /**
- * Whether opening the hover card should ask the service worker for a fresh shot of the tab: it
- * has no preview, or only an old one, and its page is one Chrome lets an extension capture.
+ * Whether showing the tab in the preview panel should ask the service worker for a fresh shot of
+ * it: it has no preview, or only an old one, and its page is one Chrome lets an extension capture.
  * Only a window's active (on-screen) tab qualifies: a hover never attaches the debugger, since
  * its infobar shifts the outline under the pointer, so background tabs wait for a Refresh run.
  * The preview is looked up by the tab's current URL, so one of another page never counts.

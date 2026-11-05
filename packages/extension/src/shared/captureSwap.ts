@@ -1,6 +1,6 @@
 // The record of an in-progress minimized-window swap (see src/background/debuggerCapture.ts),
 // kept in chrome.storage.local so a service worker that dies mid-swap can undo it on its next
-// start, and so the view can hide the temporary tab instead of closing the hover card over it.
+// start, and so the view can hide the temporary tab, keeping the tree unchanged under a capture.
 
 export interface SwapRecord {
   session: string; // the browser session it was made in; IDs are reused after a restart
@@ -32,8 +32,8 @@ export function isSwapRecord(v: unknown): v is SwapRecord {
 
 /**
  * Whether the view should leave this tab out of the tree: it appeared in the swapped window after
- * the swap began, so it is (or is about to be) the temporary tab. Hiding it keeps the tree, and
- * so the hover card over it, unchanged while a capture runs.
+ * the swap began, so it is (or is about to be) the temporary tab. Hiding it keeps the tree
+ * unchanged while a capture runs.
  */
 export function hiddenBySwap(
   record: SwapRecord | undefined,

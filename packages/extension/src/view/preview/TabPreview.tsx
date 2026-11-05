@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useState } from 'react';
 import type { TabNode } from '../../model/types';
 import { describeNoPreview, type OutcomeDescription } from '../../shared/captureOutcomes';
 import { isCapturableUrl, wantsOnDemandCapture } from '../../shared/previewPolicy';
@@ -12,15 +12,10 @@ import {
   watchTabLoaded,
 } from '../chrome/captureOutcome';
 import { relativeTime } from './relativeTime';
-import { HOVER_CARD_ID } from './useHoverCard';
-import { placeCardTop } from './placeCard';
 
 interface Props {
   tab: TabNode;
-  row: { top: number; bottom: number };
-  /** The scrolling outline list; the card stays inside it, never over the fixed header. */
-  list: RefObject<HTMLElement | null>;
-  /** Bumped when every preview was cleared, so the card looks its tab up again. */
+  /** Bumped when previews were cleared or refreshed, so the panel looks its tab up again. */
   previewEpoch: number;
 }
 
@@ -33,13 +28,13 @@ interface Loaded {
 }
 
 /**
- * Floating preview of a hovered tab: its last screenshot (if any), title, URL, last viewed. With
- * no screenshot, or only an old one, of a tab that is on screen in its window, it asks the service
- * worker to capture it now (without the debugger) and swaps the new shot in when it lands.
+ * The preview panel's body for one tab: its last screenshot (if any), title, URL, last viewed.
+ * With no screenshot, or only an old one, of a tab that is on screen in its window, it asks the
+ * service worker to capture it now (without the debugger, which a hover must never attach) and
+ * swaps the new shot in when it lands.
  */
-export function HoverCard({ tab, row, list, previewEpoch }: Props) {
+export function TabPreview({ tab, previewEpoch }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
   const { tabId, url, windowId, discarded, active } = tab;
 
   useEffect(() => {
@@ -59,7 +54,7 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
       objectUrls.push(src);
       return { src, width: p.width, height: p.height };
     };
-    // No preview is not an error; show the text-only card with the latest capture outcome. A
+    // No preview is not an error; show the text-only details with the latest capture outcome. A
     // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
     // A background tab is never captured from a hover (see wantsOnDemandCapture): unless a
     // Refresh run recorded something for it, say how to get its preview. (A page Chrome won't
@@ -118,34 +113,17 @@ export function HoverCard({ tab, row, list, previewEpoch }: Props) {
   const note = ready ? loaded.note : null;
   const capturing = ready ? loaded.capturing : false;
 
-  // The preview area is a fixed-aspect box in every state, so the card's height never depends on
-  // which state (pending lookup, loading/capturing, image, or empty) is showing. Placement only
-  // needs to react to the hovered row or the scroll container moving, not to preview state.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const bounds = list.current?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
-    el.style.top = `${placeCardTop(row, el.offsetHeight, bounds)}px`;
-    el.style.visibility = 'visible';
-  }, [row, list]);
-
   return (
-    <div
-      ref={ref}
-      id={HOVER_CARD_ID}
-      className="hover-card"
-      role="tooltip"
-      data-testid="hover-card"
-    >
-      <HoverCardPreview ready={ready} image={image} capturing={capturing} note={note} tab={tab} />
-      <div className="hover-card-text">
-        <div className="hover-card-title">{tab.title}</div>
-        <div className="hover-card-url">{tab.url}</div>
+    <>
+      <PreviewImage ready={ready} image={image} capturing={capturing} note={note} tab={tab} />
+      <div className="preview-text">
+        <div className="preview-title">{tab.title}</div>
+        <div className="preview-url">{tab.url}</div>
         {tab.lastAccessed !== undefined && (
-          <div className="hover-card-meta">Last viewed {relativeTime(tab.lastAccessed)}</div>
+          <div className="preview-meta">Last viewed {relativeTime(tab.lastAccessed)}</div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -158,17 +136,17 @@ interface PreviewProps {
 }
 
 /**
- * The card's always-present, fixed-aspect (16:10) preview area, so the card is the same height
- * whether it's mid-lookup, waiting on an on-demand capture, showing a screenshot, or showing no
- * preview at all. A screenshot crossfades in (CSS animation on mount); loading states show a
- * CSS-only spinner that goes static under prefers-reduced-motion; no-preview/failed/skipped shows
- * the tab's favicon, muted, plus the outcome text.
+ * The panel's preview area, which takes whatever height the panel leaves above the details, the
+ * same in every state (mid-lookup, waiting on an on-demand capture, a screenshot, or no preview),
+ * so the details never jump when a screenshot lands. A screenshot crossfades in (CSS animation on
+ * mount); loading states show a CSS-only spinner that goes static under prefers-reduced-motion;
+ * no-preview/failed/skipped shows the tab's favicon, muted, plus the outcome text.
  */
-function HoverCardPreview({ ready, image, capturing, note, tab }: PreviewProps) {
+function PreviewImage({ ready, image, capturing, note, tab }: PreviewProps) {
   if (image && !capturing) {
     return (
-      <div className="hover-card-preview">
-        <img key={image.src} className="hover-card-shot" src={image.src} alt="" />
+      <div className="preview-image">
+        <img key={image.src} className="preview-shot" src={image.src} alt="" />
       </div>
     );
   }
@@ -180,17 +158,17 @@ function HoverCardPreview({ ready, image, capturing, note, tab }: PreviewProps) 
           ? 'Capturing preview…'
           : null;
     return (
-      <div className="hover-card-preview hover-card-preview-loading">
-        <span className="hover-card-spinner" aria-hidden="true" />
-        {label && <span className="hover-card-preview-status">{label}</span>}
+      <div className="preview-image preview-image-loading">
+        <span className="preview-spinner" aria-hidden="true" />
+        {label && <span className="preview-image-status">{label}</span>}
       </div>
     );
   }
   return (
-    <div className="hover-card-preview hover-card-preview-empty">
-      {tab.url && <img className="hover-card-preview-favicon" src={faviconUrl(tab.url)} alt="" />}
+    <div className="preview-image preview-image-empty">
+      {tab.url && <img className="preview-image-favicon" src={faviconUrl(tab.url)} alt="" />}
       {note && (
-        <span className="hover-card-preview-status" title={note.detail}>
+        <span className="preview-image-status" title={note.detail}>
           {note.text}
         </span>
       )}

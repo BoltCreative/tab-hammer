@@ -1,8 +1,8 @@
 // The header's "Refresh previews": captures every tab's preview (or only the missing and stale
 // ones) in the background, one at a time through the service worker's on-demand capture queue,
-// the same path a hover card uses. Background tabs are drawn offscreen by the debugger, so no tab
-// visibly switches. It runs in the view, so a hover card's capture waits behind at most one of its
-// captures, and closing Tab Hammer or pressing Stop ends it.
+// the same path the preview panel uses. Background tabs are drawn offscreen by the debugger, so no
+// tab visibly switches. It runs in the view, so the preview panel's capture waits behind at most
+// one of its captures, and closing Tab Hammer or pressing Stop ends it.
 import type { CaptureOutcome } from '../../shared/captureOutcomes';
 import { STALE_PREVIEW_MS, isCapturableUrl, previewKey } from '../../shared/previewPolicy';
 

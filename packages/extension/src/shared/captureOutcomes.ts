@@ -1,6 +1,6 @@
 // The outcome of the latest preview capture attempt per window (captures of a window's visible
-// tab) and per tab (on-demand captures from the hover card), kept in chrome.storage.session by
-// the service worker so the hover card can say why a tab has no preview without DevTools.
+// tab) and per tab (on-demand captures from the preview panel), kept in chrome.storage.session by
+// the service worker so the preview panel can say why a tab has no preview without DevTools.
 
 /** 'saved', `skipped:<reason>` (a rule declined the capture), or `error:<stage>: <message>`. */
 export type CaptureOutcome = 'saved' | `skipped:${string}` | `error:${string}`;
@@ -86,7 +86,7 @@ const DETAIL_RULES: { test: RegExp; text: string }[] = [
 const FALLBACK_TEXT = "Couldn't capture a preview";
 
 /**
- * Maps a recorded capture outcome to a short, human sentence for the hover card, in place of the
+ * Maps a recorded capture outcome to a short, human sentence for the preview panel, in place of the
  * raw outcome code or Chrome/CDP error text. Table-driven: exact skip reasons map directly via
  * SKIP_TEXT; free-text detail (error messages, or an unrecognized skip reason) is matched against
  * DETAIL_RULES; anything else falls back to FALLBACK_TEXT.
@@ -102,13 +102,13 @@ export function friendlyCaptureOutcome(outcome: CaptureOutcome): string {
 }
 
 export interface OutcomeDescription {
-  /** Short, friendly text: always safe to show as the hover card's status line. */
+  /** Short, friendly text: always safe to show as the preview panel's status line. */
   text: string;
   /** The raw outcome, kept for a tooltip (element `title`) so debugging detail isn't lost. */
   detail?: string;
 }
 
-/** The hover card's one-line note for a tab with no preview (or no usable one). */
+/** The preview panel's one-line note for a tab with no preview (or no usable one). */
 export function describeNoPreview(entry: OutcomeEntry | undefined): OutcomeDescription {
   if (!entry) return { text: 'No preview yet' };
   return { text: friendlyCaptureOutcome(entry.outcome), detail: entry.outcome };

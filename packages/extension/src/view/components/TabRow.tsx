@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import type { TabNode } from '../../model/types';
 import { faviconUrl } from '../chrome/favicon';
-import { HOVER_CARD_ID, type HoverHandlers } from '../hover/useHoverCard';
+import type { HoverHandlers } from '../preview/usePreviewTarget';
 import { HibernateIcon, RowToolbar, TrashIcon, type RowAction } from './RowToolbar';
 import type { RowCommands, RowPropsFor } from './rowProps';
 
@@ -54,15 +54,14 @@ export function TabRow({
       data-tab-id={tab.tabId}
       {...rowProps(tab.key, 'tab')}
       aria-selected={selected}
-      // The URL is no longer a native tooltip (the hover card replaced it), so name it here.
+      // The URL is no longer a native tooltip (the preview panel shows it), so name it here.
       aria-label={
         (tab.url && tab.url !== tab.title ? `${tab.title}, ${tab.url}` : tab.title) +
         (duplicate ? ', duplicate' : '')
       }
-      aria-describedby={hover.openKey === tab.key ? HOVER_CARD_ID : undefined}
       onClick={(e) => onSelect(e, tab.key)}
       onDoubleClick={() => onActivate(tab)}
-      onMouseEnter={(e) => hover.onRowEnter(tab.key, e.currentTarget)}
+      onMouseEnter={() => hover.onRowEnter(tab.key)}
       onMouseLeave={hover.onRowLeave}
     >
       {tab.url && !iconFailed ? (

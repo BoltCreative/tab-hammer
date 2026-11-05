@@ -55,7 +55,7 @@ const hasPreview = (sw: Worker, url: string) =>
     url,
   );
 
-test('hovering a tab shows its captured preview; an uncapturable page gets a text-only card', async ({
+test('hovering a tab shows its captured preview in the panel; an uncapturable page gets text only', async ({
   context,
   sw,
   view,
@@ -68,7 +68,7 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
     return { windowId: win!.id!, tabId: win!.tabs![0]!.id! };
   }, shotUrl);
   await expect.poll(() => hasPreview(sw, shotUrl)).toBe(true);
-  // The service worker records each attempt's outcome after saving; the card reads it below.
+  // The service worker records each attempt's outcome after saving; the panel reads it below.
   await expect
     .poll(() =>
       sw.evaluate(async (windowId) => {
@@ -90,59 +90,48 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
     { windowId: ids.windowId, twin: `${shotUrl}#section`, never: 'about:blank' },
   );
 
-  const card = view.getByTestId('hover-card');
-  const shot = card.locator('.hover-card-shot');
+  const panel = view.getByTestId('preview-panel');
+  const shot = panel.locator('.preview-shot');
   const row = (tabId: number) => liveRow(view, 'tab', tabId);
   const expectShot = async () => {
-    await expect(card).toBeVisible();
     await expect(shot).toHaveJSProperty('complete', true);
     expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
   };
 
+  await expect(panel).toContainText('Hover over a tab');
   await row(ids.tabId).hover();
   await expectShot();
-  await expect(card).toContainText(shotUrl);
-  await expect(card).toContainText('Last viewed');
-  const shotBox = await card.boundingBox();
-  // The card sits away from the hovered row (pinned to the far edge of the list), not on top of
-  // it or the rows beside it.
-  const rowBox = (await row(ids.tabId).boundingBox())!;
-  const near = { top: rowBox.y - 2 * rowBox.height, bottom: rowBox.y + 3 * rowBox.height };
-  expect(shotBox!.y >= near.bottom || shotBox!.y + shotBox!.height <= near.top).toBe(true);
+  await expect(panel).toContainText(shotUrl);
+  await expect(panel).toContainText('Last viewed');
 
   await row(twinId).hover();
-  await expect(card).toContainText(`${shotUrl}#section`);
+  await expect(panel).toContainText(`${shotUrl}#section`);
   await expectShot();
 
   await row(neverId).hover();
-  await expect(card).toContainText('about:blank');
+  await expect(panel).toContainText('about:blank');
   await expect(shot).toHaveCount(0);
   // A tab without a preview says what the window's latest capture attempt did (in friendly text,
   // not the raw outcome code), and gets a muted favicon placeholder instead of a screenshot in the
   // preview area.
-  await expect(card).toContainText('A preview was captured but isn’t available for this page');
-  await expect(card.locator('.hover-card-preview-favicon')).toBeVisible();
-  await expect(row(neverId)).toHaveAttribute('aria-describedby', 'tab-hover-card');
-  await expect(card).toHaveAttribute('id', 'tab-hover-card');
-  // The fixed-size preview area keeps the card the same height with a screenshot as with the
-  // no-preview placeholder — the reported jarring resize no longer happens.
-  const noPreviewBox = await card.boundingBox();
-  expect(noPreviewBox?.height).toBe(shotBox?.height);
+  await expect(panel).toContainText('A preview was captured but isn’t available for this page');
+  await expect(panel.locator('.preview-image-favicon')).toBeVisible();
 
-  // The card never gets in the way of selection, and a click closes it.
+  // Moving off the outline keeps the last hovered tab rather than going blank.
+  await view.getByRole('searchbox').hover();
+  await expect(panel).toContainText('about:blank');
+  await expect(panel).not.toContainText('Hover over a tab');
+
+  // Selecting a tab with the keyboard shows it; the panel never gets in the way of selection.
   await row(neverId).click();
   await expect(row(neverId)).toHaveAttribute('aria-selected', 'true');
-  await expect(card).toHaveCount(0);
+  await view.keyboard.press('ArrowUp');
+  await expect(row(twinId)).toHaveAttribute('aria-selected', 'true');
+  await expect(panel).toContainText(`${shotUrl}#section`);
 
-  // The card closes when the tree changes under it (here the hovered tab navigates).
-  await row(twinId).hover();
-  await expect(card).toContainText(`${shotUrl}#section`);
+  // The panel follows the shown tab live: here it navigates.
   await sw.evaluate((id) => chrome.tabs.update(id, { url: 'http://tabhammer.test/moved' }), twinId);
-  // Wait for the view to show the navigation first: the card also unmounts briefly while it looks
-  // up a preview, so asserting its absence alone could pass without the close-on-change rule.
-  await expect(row(twinId)).toContainText('moved');
-  await expect(card).toHaveCount(0);
-  await expect(row(twinId)).not.toHaveAttribute('aria-describedby');
+  await expect(panel).toContainText('http://tabhammer.test/moved');
 });
 
 test('hovering a background tab never attaches the debugger (its infobar would shift the list)', async ({
@@ -174,10 +163,10 @@ test('hovering a background tab never attaches the debugger (its infobar would s
     sw.evaluate(() => (globalThis as unknown as { attaches: number }).attaches);
 
   await liveRow(view, 'tab', tabId).hover();
-  const card = view.getByTestId('hover-card');
-  await expect(card).toContainText(hiddenUrl);
-  await expect(card).toContainText('Refresh stale');
-  await expect(card).not.toContainText('Capturing');
+  const panel = view.getByTestId('preview-panel');
+  await expect(panel).toContainText(hiddenUrl);
+  await expect(panel).toContainText('Refresh stale');
+  await expect(panel).not.toContainText('Capturing');
   expect(await attaches()).toBe(0);
   expect(await hasPreview(sw, hiddenUrl)).toBe(false);
 
@@ -189,6 +178,85 @@ test('hovering a background tab never attaches the debugger (its infobar would s
   expect((await tabInfo(sw, tabId)).active).toBe(false);
 });
 
+test('the preview panel sits below the outline; its collapse and height survive a reopen', async ({
+  context,
+  sw,
+  view,
+}) => {
+  // Enough tabs that the outline scrolls.
+  const tabIds = await sw.evaluate(async () => {
+    const win = await chrome.windows.create({ url: 'about:blank#0' });
+    const ids = [win!.tabs![0]!.id!];
+    for (let i = 1; i < 40; i++)
+      ids.push((await chrome.tabs.create({ windowId: win!.id!, url: `about:blank#${i}` })).id!);
+    return ids;
+  });
+  const lastRow = liveRow(view, 'tab', tabIds.at(-1)!);
+  await expect(lastRow).toBeVisible();
+  let panel = view.getByTestId('preview-panel');
+  const toggle = (p = view) => p.getByRole('button', { name: 'Preview' });
+  await expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+
+  // The outline ends where the panel starts: scrolled to the bottom, the last row is above it.
+  const outlineBottom = async () => {
+    const box = (await view.locator('main.outline').boundingBox())!;
+    return box.y + box.height;
+  };
+  const panelTop = async () => (await panel.boundingBox())!.y;
+  expect(await outlineBottom()).toBeLessThanOrEqual(await panelTop());
+  await view.locator('main.outline').evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  const rowBox = (await lastRow.boundingBox())!;
+  expect(rowBox.y + rowBox.height).toBeLessThanOrEqual(await panelTop());
+
+  // Dragging the top edge up makes the panel taller, and the outline shorter by as much.
+  const before = (await panel.boundingBox())!.height;
+  const outlineBefore = await outlineBottom();
+  const edge = (await panel.getByRole('separator', { name: 'Resize preview' }).boundingBox())!;
+  await view.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await view.mouse.down();
+  await view.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2 - 80, { steps: 4 });
+  await view.mouse.up();
+  const resized = (await panel.boundingBox())!.height;
+  expect(resized).toBeGreaterThan(before + 60);
+  expect(await outlineBottom()).toBeLessThan(outlineBefore - 60);
+  expect(await outlineBottom()).toBeLessThanOrEqual(await panelTop());
+
+  // Collapsing leaves just the bar and gives the outline the space back.
+  await toggle().click();
+  await expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel.locator('.preview-body')).toHaveCount(0);
+  expect((await panel.boundingBox())!.height).toBeLessThan(before / 2);
+  expect(await outlineBottom()).toBeGreaterThan(outlineBefore);
+
+  // Both are remembered (in chrome.storage.local) across closing and reopening the window.
+  const stored = () =>
+    sw.evaluate(async () => (await chrome.storage.local.get('previewPanel')).previewPanel);
+  await expect.poll(stored).toMatchObject({ expanded: false });
+  const reopen = async () => {
+    await view.close();
+    const pagePromise = context.waitForEvent('page', (p) =>
+      p.url().includes('src/view/index.html'),
+    );
+    await sw.evaluate(() =>
+      (
+        globalThis as unknown as { tabHammer: { openOrFocus: () => Promise<void> } }
+      ).tabHammer.openOrFocus(),
+    );
+    view = await pagePromise;
+    await view.waitForLoadState();
+    panel = view.getByTestId('preview-panel');
+  };
+  await reopen();
+  await expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+  await toggle().click();
+  await expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(Math.abs((await panel.boundingBox())!.height - resized)).toBeLessThanOrEqual(1);
+  await expect.poll(stored).toMatchObject({ expanded: true });
+  await reopen();
+  await expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+  expect(Math.abs((await panel.boundingBox())!.height - resized)).toBeLessThanOrEqual(1);
+});
+
 test('Clear previews deletes every stored preview', async ({ context, sw, view }) => {
   await servePages(context);
   const url = `${ORIGIN}/clearme`;
@@ -197,7 +265,7 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
     url,
   );
   await expect.poll(() => hasPreview(sw, url)).toBe(true);
-  // The card for a page Chrome won't capture never triggers an on-demand capture, so it shows
+  // A page Chrome won't capture never triggers an on-demand capture, so it shows
   // exactly what is stored: seed a preview for it straight into the store (the view shares the
   // extension's origin).
   const blankId = await sw.evaluate(
@@ -237,9 +305,9 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
     )
     .toBe('saved');
   const row = liveRow(view, 'tab', blankId);
-  const card = view.getByTestId('hover-card');
+  const panel = view.getByTestId('preview-panel');
   await row.hover();
-  await expect(card.locator('.hover-card-shot')).toHaveCount(1);
+  await expect(panel.locator('.preview-shot')).toHaveCount(1);
 
   await runMenuAction(view, 'Clear previews');
   await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
@@ -252,9 +320,9 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
     }, windowId),
   ).toBeUndefined();
 
-  await row.hover();
-  await expect(card).toContainText('No preview yet');
-  await expect(card.locator('.hover-card-shot')).toHaveCount(0);
+  // The panel still shows that tab, and looks its preview up again.
+  await expect(panel).toContainText('No preview yet');
+  await expect(panel.locator('.preview-shot')).toHaveCount(0);
 });
 
 test("clearing Chrome's history deletes the matching previews, and all of them on a full wipe", async ({

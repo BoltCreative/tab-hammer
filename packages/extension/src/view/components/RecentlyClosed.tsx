@@ -11,7 +11,7 @@ interface Props {
 
 /**
  * The trash: closed windows, newest first, at the bottom of the outline. Plain rows, not outline
- * rows: no selection, keyboard navigation, drag, or hover card. Only whole windows come back.
+ * rows: no selection, keyboard navigation, drag, or preview. Only whole windows come back.
  */
 export function RecentlyClosed({ entries, restore, deleteForever }: Props) {
   const [open, setOpen] = useState(false);
