@@ -50,11 +50,11 @@ A window row is in one of three states: **live** (attached to a Chrome window), 
 | Trash on a live tab | Closes the tab (gone). |
 | Trash on a hibernated tab | Deleted. |
 | Trash entry older than 7 days | Deleted. |
-| Open (double-click / Enter) a hibernated window | Reopens the whole window in Chrome, tabs in their saved order, groups recreated; the row goes live. Every tab loads right away (no lazy loading). |
-| Open a hibernated tab whose window is hibernated | Opens a Chrome window with just that tab; the window row goes live, its other tabs stay hibernated inside it. |
+| Open (double-click / Enter) a hibernated window | Reopens the whole window in Chrome, tabs in their saved order, groups recreated; the row goes live. Every tab loads right away (no lazy loading). The window reopens at its last position and size (or maximized/fullscreen if it was); if Chrome rejects those bounds, it opens at Chrome's default. |
+| Open a hibernated tab whose window is hibernated | Opens a Chrome window with just that tab, at the window's last position and size; the window row goes live, its other tabs stay hibernated inside it. |
 | Open a hibernated tab whose window is live | Opens the tab in that window at its row's position. |
 | Open a hibernated window whose window is already partly live | Opens all its hibernated tabs into that Chrome window, at their positions. |
-| Open a trash entry | Reopens the whole window; it moves back into the outline (at the bottom). |
+| Open a trash entry | Reopens the whole window at its last position and size; it moves back into the outline (at the bottom). |
 
 **Windows holding hibernated tabs never go to the trash implicitly** (builder's call, following "nothing is silently lost"). Closing the last live tab of such a window, or closing the window itself in Chrome, makes it hibernated instead. On a fresh launch, a window that was partly live at shutdown becomes hibernated, marked as open-at-shutdown, rather than trashed. Only the Trash button sends it to the trash.
 
@@ -64,6 +64,7 @@ The key distinction, "closed by hand" vs "Chrome quit", cannot be read from Chro
 
 - Hibernated windows, groups, and tabs are the same rows, dimmed. No timestamp. No other visual change to rows, because another session is restyling rows (SKULL-838) in parallel.
 - Window rows show the custom name if set, else `Window N` as today.
+- The outline list has generous empty space below its last row (40% of the window height), so the bottom rows, Recently closed included, can be scrolled up away from the window's bottom edge.
 - **Recently closed** is a collapsible section at the bottom of the outline list (inside the scrolling list, collapsed by default), showing its count. Each entry is a window row (name or first tab's title, tab count); expanding an entry shows its tabs. Entries are newest first.
 - **Hover toolbar:** when the mouse is over a window or tab row (live, hibernated, or in the trash), small icon buttons appear at the row's right edge, overlaid on it, without changing the row's layout:
   - Window rows: Edit (rename), Hibernate (live only), Trash.
@@ -132,7 +133,7 @@ These are the builder's calls, agreed in outline with the user.
   - IDs are random (`crypto.randomUUID()`), never Chrome IDs.
   - A tab is live when it has `chromeTabId`. A group is live when any of its tabs is.
   - The window record holds its children inline, in outline order (live and hibernated interleaved).
-- **Sync-ready** (later: the outline shared across several computers; no sync in this PR). IDs are globally unique UUIDs. Each window records the install it came from (a per-install ID in `chrome.storage.local`). Every window, group, and tab records its own last-modified time, so a later sync can merge per record instead of overwriting. Live Chrome IDs and other machine-local fields are left out of the export.
+- **Sync-ready** (later: the outline shared across several computers; no sync in this PR). IDs are globally unique UUIDs. Each window records the install it came from (a per-install ID in `chrome.storage.local`). Every window, group, and tab records its own last-modified time, so a later sync can merge per record instead of overwriting. Live Chrome IDs and other machine-local fields (such as each window's last screen bounds, which don't stamp its modified time) are left out of the export.
 - **Ordering:** live tab order follows Chrome. A hibernated tab keeps its place relative to the neighbors it had when it was hibernated, so it stays between the same tabs. Outline window order is persistent: new windows go to the bottom, windows keep their position when hibernated, and restored windows take their old position.
 - **IndexedDB:** a new database (separate from previews), one object store of window records keyed by `id` (trashed windows included), plus a `meta` record (`schemaVersion`, the browser session ID the Chrome IDs belong to). An `exportOutline()` function returns `{ schemaVersion, windows }` as plain JSON; SKULL-814 serializes this.
 - **Reconcile strategy:** the worker reacts to Chrome's events by re-querying Chrome (coalesced), and diffs the result against the outline. The few events that carry intent are handled explicitly: window removed, tab removed, tabs created by Tab Hammer's own reopen, and a tab detaching into a new window.
