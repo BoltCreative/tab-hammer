@@ -50,7 +50,7 @@ A window row is in one of three states: **live** (attached to a Chrome window), 
 | Trash on a live tab | Closes the tab (gone). |
 | Trash on a hibernated tab | Deleted. |
 | Trash entry older than 7 days | Deleted. |
-| Open (double-click / Enter) a hibernated window | Reopens the whole window in Chrome, tabs in their saved order, groups recreated; the row goes live. |
+| Open (double-click / Enter) a hibernated window | Reopens the whole window in Chrome, tabs in their saved order, groups recreated; the row goes live. Every tab loads right away (no lazy loading). |
 | Open a hibernated tab whose window is hibernated | Opens a Chrome window with just that tab; the window row goes live, its other tabs stay hibernated inside it. |
 | Open a hibernated tab whose window is live | Opens the tab in that window at its row's position. |
 | Open a hibernated window whose window is already partly live | Opens all its hibernated tabs into that Chrome window, at their positions. |
@@ -153,4 +153,4 @@ These are the builder's calls, agreed in outline with the user.
 
 ## Left to the builder
 
-The exact quiet period, the icon set for the hover toolbar, names of modules and messages, how the reopen lazily loads tabs (create inactive, then discard, best effort), and how to split the work into commits.
+The exact quiet period, the icon set for the hover toolbar, names of modules and messages, and how to split the work into commits.

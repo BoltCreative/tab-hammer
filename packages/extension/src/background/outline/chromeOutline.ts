@@ -74,12 +74,6 @@ export function liveDetails(snapshot: ChromeSnapshot, focusedWindowId: number | 
 }
 
 /**
- * Reopened background tabs are discarded so they load only when first visited. Not in the e2e
- * build: headless Chromium segfaults moments after any chrome.tabs.discard.
- */
-const DISCARD_BACKGROUND_TABS = import.meta.env.MODE !== 'e2e';
-
-/**
  * Closes what a model op says to close, and hands back what Chrome refused to close: already
  * gone, or a page cancelled the close.
  */
@@ -116,12 +110,11 @@ export async function createGroup(
 
 /**
  * Opens `plan`'s tabs in Chrome, in order, then their groups. A tab Chrome refuses is skipped (its
- * record stays hibernated) and the tabs after it shift left by one. Background tabs are discarded,
- * best effort, so they load only when first visited. Throws only if a new window can't be created.
+ * record stays hibernated) and the tabs after it shift left by one. Every tab loads right away.
+ * Throws only if a new window can't be created.
  */
 export async function openPlanned(plan: OpenPlan): Promise<Opened> {
   const created: { tabId: string; chromeTabId: number; groupId?: string }[] = [];
-  const background: number[] = [];
   let pending = plan.tabs;
   let chromeWindowId = plan.chromeWindowId;
   if (chromeWindowId === null) {
@@ -145,7 +138,6 @@ export async function openPlanned(plan: OpenPlan): Promise<Opened> {
       });
       if (tab.id === undefined) throw new Error('no tab id');
       created.push({ ...t, chromeTabId: tab.id });
-      background.push(tab.id);
     } catch {
       refused++;
     }
@@ -168,21 +160,9 @@ export async function openPlanned(plan: OpenPlan): Promise<Opened> {
     }
   }
 
-  // Discarding swaps a tab's ID; the replacement is the one to attach.
-  const swapped = new Map<number, number>();
-  await Promise.all(
-    (DISCARD_BACKGROUND_TABS ? background : []).map(async (id) => {
-      const tab = await chrome.tabs.discard(id).catch(() => undefined);
-      if (tab?.id !== undefined && tab.id !== id) swapped.set(id, tab.id);
-    }),
-  );
-
   return {
     chromeWindowId,
-    tabs: created.map((t) => ({
-      tabId: t.tabId,
-      chromeTabId: swapped.get(t.chromeTabId) ?? t.chromeTabId,
-    })),
+    tabs: created.map((t) => ({ tabId: t.tabId, chromeTabId: t.chromeTabId })),
     groups,
   };
 }

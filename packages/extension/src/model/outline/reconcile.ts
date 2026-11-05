@@ -142,8 +142,8 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
       stamped.add(rec);
       return rec;
     }
-    // A tab that hasn't loaded its saved address yet (a lazily reopened, discarded one) reports
-    // an empty title or its url as the title, and maybe no url: the saved ones stay until it loads.
+    // A tab that hasn't loaded its saved address yet (just reopened, still loading) reports an
+    // empty title or its url as the title, and maybe no url: the saved ones stay until it loads.
     const url = lt.url || existing.url;
     const unloaded = url === existing.url && (!lt.title || lt.title === lt.url);
     const title = unloaded ? existing.title : lt.title;

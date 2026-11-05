@@ -26,7 +26,7 @@ Pick the gate by change class. Report the gate name and result when declaring wo
 
 Run it once on the final commit. The e2e suite launches its own throwaway Chromium profile; it never touches the user's Chrome.
 
-The gate builds into `packages/extension/dist-e2e/` (`npm run build:e2e`), and the e2e fixture loads the extension from there. `~/.tab-hammer/dist` belongs to the user: every tree's `npm run dev` server writes it and their Chrome loads it, so never build into it from a gate or test run, and never run `npm run dev` yourself. `dist/` is only the `npm run build` output. To run e2e alone, `npm run build:e2e` first; pass Playwright arguments after `--` (`npm run test:e2e -- tests/e2e/bridge.spec.ts`). `build:e2e` builds with `--mode e2e`, which skips `chrome.tabs.discard` (the lazy-reopen step) because headless Chromium crashes moments after any discard.
+The gate builds into `packages/extension/dist-e2e/` (`npm run build:e2e`), and the e2e fixture loads the extension from there. `~/.tab-hammer/dist` belongs to the user: every tree's `npm run dev` server writes it and their Chrome loads it, so never build into it from a gate or test run, and never run `npm run dev` yourself. `dist/` is only the `npm run build` output. To run e2e alone, `npm run build:e2e` first; pass Playwright arguments after `--` (`npm run test:e2e -- tests/e2e/bridge.spec.ts`).
 
 Never run `npm run install-mcp` yourself: it writes into the user's Chrome profile folders and their Claude Code config. Tests deploy the native host into their own temp folder.
 

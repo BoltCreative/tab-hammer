@@ -295,8 +295,8 @@ describe('reconcile', () => {
   });
 
   it('a tab that has not loaded yet keeps its saved title and url', () => {
-    // A lazily reopened (discarded) tab reports an empty title, or its url as the title, and may
-    // not report a url at all until it loads.
+    // A just-reopened tab reports an empty title, or its url as the title, and may not report a
+    // url at all until it commits.
     const o = {
       windows: [
         win('w1', {

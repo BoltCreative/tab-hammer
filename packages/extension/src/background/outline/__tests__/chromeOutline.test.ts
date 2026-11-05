@@ -13,9 +13,9 @@ const GROUP: GroupRec = {
 
 /**
  * A stand-in for the chrome.* calls openPlanned makes. Tab IDs count up from 100; creates of a
- * url in `refuse` reject; discard gives the tab a new ID (as Chromium does) unless `discardFails`.
+ * url in `refuse` reject. Any other call (a discard, say) is recorded too, so tests see it.
  */
-function fakeChrome(opts: { refuse?: string[]; discardFails?: boolean } = {}) {
+function fakeChrome(opts: { refuse?: string[] } = {}) {
   let next = 100;
   const calls: unknown[][] = [];
   const chrome = {
@@ -37,8 +37,7 @@ function fakeChrome(opts: { refuse?: string[]; discardFails?: boolean } = {}) {
       }),
       discard: vi.fn(async (id: number) => {
         calls.push(['tabs.discard', id]);
-        if (opts.discardFails) throw new Error('cannot discard');
-        return { id: id + 1000 };
+        return { id };
       }),
     },
     tabGroups: {
@@ -58,7 +57,7 @@ afterEach(() => {
 
 describe('openPlanned', () => {
   it('after a refused create, later tabs go to the next actual index', async () => {
-    const calls = fakeChrome({ refuse: ['u2'], discardFails: true });
+    const calls = fakeChrome({ refuse: ['u2'] });
     const plan: OpenPlan = {
       windowId: 'W',
       chromeWindowId: 4,
@@ -77,7 +76,7 @@ describe('openPlanned', () => {
       { windowId: 4, index: 2, url: 'u3', active: false },
       { windowId: 4, index: 4, url: 'u4', active: false },
     ]);
-    // The refused tab is left out (it stays hibernated); failed discards keep the created IDs.
+    // The refused tab is left out (it stays hibernated).
     expect(opened).toEqual({
       chromeWindowId: 4,
       tabs: [
@@ -89,7 +88,7 @@ describe('openPlanned', () => {
     });
   });
 
-  it('opens a new window, recreates its group, and reports the IDs discarding gave the background tabs', async () => {
+  it('opens a new window, recreates its group, and loads every tab (none is discarded)', async () => {
     const calls = fakeChrome();
     const plan: OpenPlan = {
       windowId: 'W',
@@ -108,23 +107,20 @@ describe('openPlanned', () => {
       ['tabs.create', { windowId: 9, index: 2, url: 'u3', active: false }],
       ['tabs.group', { tabIds: [100, 101], createProperties: { windowId: 9 } }],
       ['tabGroups.update', 50, { title: 'Research', color: 'red', collapsed: true }],
-      ['tabs.discard', 101],
-      ['tabs.discard', 102],
     ]);
-    // The active first tab isn't discarded; the others carry their replacement IDs.
     expect(opened).toEqual({
       chromeWindowId: 9,
       tabs: [
         { tabId: 'a', chromeTabId: 100 },
-        { tabId: 'b', chromeTabId: 1101 },
-        { tabId: 'c', chromeTabId: 1102 },
+        { tabId: 'b', chromeTabId: 101 },
+        { tabId: 'c', chromeTabId: 102 },
       ],
       groups: [{ groupId: 'G', chromeGroupId: 50 }],
     });
   });
 
   it('adds tabs to a group that is still live in Chrome', async () => {
-    const calls = fakeChrome({ discardFails: true });
+    const calls = fakeChrome();
     const opened = await openPlanned({
       windowId: 'W',
       chromeWindowId: 4,
