@@ -1,27 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { placeCardTop } from '../placeCard';
 
-const WINDOW = { top: 0, bottom: 800 };
+const LIST = { top: 40, bottom: 800 }; // the scrolling list, below a 40px header
+const CARD = 240;
+const covers = (top: number, row: { top: number; bottom: number }) =>
+  top < row.bottom && top + CARD > row.top;
 
 describe('placeCardTop', () => {
-  it('goes below the row when it fits', () => {
-    expect(placeCardTop({ top: 100, bottom: 124 }, 200, WINDOW)).toBe(128);
+  it('pins the card to the bottom of the list for a row in the top half', () => {
+    const row = { top: 100, bottom: 118 };
+    expect(placeCardTop(row, CARD, LIST)).toBe(800 - 8 - CARD);
   });
 
-  it('flips above the row near the bottom of the window', () => {
-    expect(placeCardTop({ top: 700, bottom: 724 }, 200, WINDOW)).toBe(496);
+  it('pins the card to the top of the list (under the header) for a row in the bottom half', () => {
+    const row = { top: 700, bottom: 718 };
+    expect(placeCardTop(row, CARD, LIST)).toBe(48);
   });
 
-  it('stays inside the window when it fits neither below nor above', () => {
-    expect(placeCardTop({ top: 300, bottom: 324 }, 600, WINDOW)).toBe(192);
-    expect(placeCardTop({ top: 10, bottom: 34 }, 900, WINDOW)).toBe(8);
+  it('leaves the hovered row and several rows on each side uncovered', () => {
+    for (let y = LIST.top; y < LIST.bottom - 18; y += 18) {
+      const row = { top: y, bottom: y + 18 };
+      const top = placeCardTop(row, CARD, LIST);
+      // Three 18px rows above and below the hovered one stay clear of the card.
+      expect(covers(top, { top: row.top - 54, bottom: row.bottom + 54 })).toBe(false);
+    }
   });
 
-  it('never covers the fixed header above the list', () => {
-    const list = { top: 40, bottom: 800 };
-    // Near the list's top, above doesn't fit below the header, so it goes below.
-    expect(placeCardTop({ top: 60, bottom: 84 }, 200, list)).toBe(88);
-    // Fits neither way: pinned to the list's top, not the window's.
-    expect(placeCardTop({ top: 300, bottom: 324 }, 900, list)).toBe(48);
+  it('never covers the header or spills past the list when the card is taller than it', () => {
+    expect(placeCardTop({ top: 100, bottom: 118 }, 900, LIST)).toBe(48);
+    expect(placeCardTop({ top: 700, bottom: 718 }, 900, LIST)).toBe(48);
   });
 });

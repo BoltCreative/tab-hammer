@@ -104,6 +104,11 @@ test('hovering a tab shows its captured preview; an uncapturable page gets a tex
   await expect(card).toContainText(shotUrl);
   await expect(card).toContainText('Last viewed');
   const shotBox = await card.boundingBox();
+  // The card sits away from the hovered row (pinned to the far edge of the list), not on top of
+  // it or the rows beside it.
+  const rowBox = (await row(ids.tabId).boundingBox())!;
+  const near = { top: rowBox.y - 2 * rowBox.height, bottom: rowBox.y + 3 * rowBox.height };
+  expect(shotBox!.y >= near.bottom || shotBox!.y + shotBox!.height <= near.top).toBe(true);
 
   await row(twinId).hover();
   await expect(card).toContainText(`${shotUrl}#section`);

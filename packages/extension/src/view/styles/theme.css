@@ -321,11 +321,13 @@ button.twisty {
   padding-left: 2px;
   border-left: 2px solid var(--group-color);
 }
-/* Tab hover preview. pointer-events: none so it never takes clicks or hover from the rows under it. */
+/* Tab hover preview, pinned to the edge of the list away from the hovered row (see placeCard).
+   Full width in the narrow window, capped and kept to the right in a wide one. pointer-events:
+   none so it never takes clicks or hover from the rows under it. */
 .hover-card {
   position: fixed;
-  left: 8px;
   right: 8px;
+  width: min(360px, calc(100% - 16px));
   visibility: hidden; /* until placed; see HoverCard */
   z-index: 10;
   pointer-events: none;
