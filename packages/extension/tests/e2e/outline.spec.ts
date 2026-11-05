@@ -333,6 +333,102 @@ test('hibernate one tab, open just it, then open the rest of its window', async 
     .toEqual([['A', 'B', 'C']]);
 });
 
+/** Asserts which of `rows` are dimmed as hibernated. */
+async function expectDimmed(rows: ReturnType<typeof recordRow>[], dimmed: boolean[]) {
+  for (const [i, row] of rows.entries()) {
+    if (dimmed[i]) await expect(row).toHaveClass(/\bhibernated\b/);
+    else await expect(row).not.toHaveClass(/\bhibernated\b/);
+  }
+}
+
+test('a renamed window, driven like the user does: hibernate, open one tab, hibernate it, open the rest, then all', async ({
+  sw,
+  view,
+  pages,
+}) => {
+  const others = (await chromeWindows(sw)).map((w) => w.id);
+  const names = ['P1', 'P2', 'P3', 'P4', 'P5'];
+  const a = await sw.evaluate(
+    async (urls) => (await chrome.windows.create({ url: urls }))!.id!,
+    names.map((n) => pages.url(n)),
+  );
+  await expect.poll(async () => titlesOf(await liveRecord(sw, a))).toEqual(names);
+  const rec = (await liveRecord(sw, a))!;
+  const header = recordRow(view, 'w', rec.id);
+  const tabRows = rec.tabs.map((t) => recordRow(view, 't', t.id));
+  const rows = [header, ...tabRows];
+  const p2 = tabRows[1]!;
+  // Chrome's windows besides the ones open before the test, as tab titles.
+  const opened = async () => (await chromeWindows(sw, others)).map(titlesOf);
+  // The record: its state, and which tabs are open in Chrome (with their saved addresses).
+  const record = async () => {
+    const r = await recordById(sw, rec.id);
+    const { windows } = await readOutline(sw);
+    return {
+      state: r?.state,
+      name: r?.name,
+      live: r?.tabs.map((t) => t.chromeTabId !== undefined),
+      urls: r?.tabs.map((t) => t.url),
+      records: windows.length,
+    };
+  };
+  const urls = names.map((n) => pages.url(n));
+  const records = (await readOutline(sw)).windows.length;
+  const expected = (state: string, live: boolean[]) => ({
+    state,
+    name: 'Linkedin',
+    live,
+    urls,
+    records,
+  });
+  const all = (v: boolean) => names.map(() => v);
+  const onlyP2 = names.map((n) => n === 'P2');
+
+  // 1. Rename the window, then hibernate it.
+  await toolbar(header, 'Rename window');
+  await header.getByRole('textbox').fill('Linkedin');
+  await header.getByRole('textbox').press('Enter');
+  await expect(header.locator('.title')).toHaveText('Linkedin');
+  await toolbar(header, 'Hibernate');
+  await expect.poll(opened).toEqual([]);
+  await expect.poll(record).toEqual(expected('hibernated', all(false)));
+  await expectDimmed(rows, [true, ...all(true)]);
+
+  // 2. Double-click one tab: it opens alone in a new window, which is live.
+  await p2.dblclick();
+  await expect.poll(opened).toEqual([['P2']]);
+  await expect.poll(record).toEqual(expected('live', onlyP2));
+  await expectDimmed(rows, [false, ...names.map((n) => n !== 'P2')]);
+
+  // 4. Hibernate that one tab: it was the window's last live tab, so the window hibernates.
+  await toolbar(p2, 'Hibernate');
+  await expect.poll(opened).toEqual([]);
+  await expect.poll(record).toEqual(expected('hibernated', all(false)));
+  await expectDimmed(rows, [true, ...all(true)]);
+  await expect(view.locator('.card.focused')).toHaveCount(0);
+
+  // 3. Open one tab again, then double-click the header: the rest open into its window, in order.
+  await p2.dblclick();
+  await expect.poll(opened).toEqual([['P2']]);
+  await expect.poll(record).toEqual(expected('live', onlyP2));
+  await header.dblclick();
+  await expect.poll(opened).toEqual([names]);
+  await expect.poll(record).toEqual(expected('live', all(true)));
+  await expectDimmed(rows, [false, ...all(false)]);
+  await expect(view.locator('.tab.discarded')).toHaveCount(0); // loaded, not left asleep
+
+  // 5. Hibernate the window, then double-click the header: every tab opens, loaded, and is live.
+  await toolbar(header, 'Hibernate');
+  await expect.poll(opened).toEqual([]);
+  await expect.poll(record).toEqual(expected('hibernated', all(false)));
+  await expectDimmed(rows, [true, ...all(true)]);
+  await header.dblclick();
+  await expect.poll(opened).toEqual([names]);
+  await expect.poll(record).toEqual(expected('live', all(true)));
+  await expectDimmed(rows, [false, ...all(false)]);
+  await expect(view.locator('.tab.discarded')).toHaveCount(0); // loaded, not left asleep
+});
+
 test('rename field: Enter saves, Escape cancels, empty clears to Window N', async ({
   sw,
   view,

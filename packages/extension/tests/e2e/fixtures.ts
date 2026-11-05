@@ -5,6 +5,8 @@ import {
   type Page,
   type Worker,
 } from '@playwright/test';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { WindowRec } from '../../src/model/outline/types';
 import type { OutlineCommand } from '../../src/shared/outlineMessages';
@@ -14,7 +16,7 @@ import type { OutlineCommand } from '../../src/shared/outlineMessages';
 const DIST = path.resolve(import.meta.dirname, '../../dist-e2e');
 const VIEW_PATH = 'src/view/index.html';
 
-type Fixtures = { context: BrowserContext; sw: Worker; view: Page };
+type Fixtures = { context: BrowserContext; sw: Worker; view: Page; pages: PageServer };
 
 /**
  * Launches Chromium with the built extension. channel 'chromium' = full Chromium in new headless
@@ -82,6 +84,12 @@ export const test = base.extend<Fixtures>({
     await view.waitForLoadState();
     await use(view);
   },
+  // eslint-disable-next-line no-empty-pattern
+  pages: async ({}, use) => {
+    const pages = await startPageServer();
+    await use(pages);
+    await pages.close();
+  },
 });
 
 /** The service worker's in-memory outline (Chrome IDs included), once its queued work is done. */
@@ -112,5 +120,31 @@ export function outlineCommand(sw: Worker, c: OutlineCommand): Promise<void> {
 export function liveRow(view: Page, kind: 'window' | 'group' | 'tab', chromeId: number) {
   return view.locator(`[data-${kind}-id="${chromeId}"]`);
 }
+
+/**
+ * A page server on 127.0.0.1: `/<name>` is a page titled `<name>`. Tabs Chrome opens itself (restored
+ * after a restart, or reopened by the service worker) load before Playwright attaches to them, so
+ * `context.route` can't serve them; a real server can.
+ */
+export async function startPageServer() {
+  const server = http.createServer((req, res) => {
+    const name = new URL(req.url!, 'http://127.0.0.1').pathname.slice(1);
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(`<title>${name}</title>`);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return {
+    url: (name: string) => `${base}/${name}`,
+    // Chromium keeps connections alive; a close that waited on them would outlast the test.
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      }),
+  };
+}
+
+export type PageServer = Awaited<ReturnType<typeof startPageServer>>;
 
 export { expect } from '@playwright/test';

@@ -1,6 +1,4 @@
 import fs from 'node:fs/promises';
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import type { Worker } from '@playwright/test';
@@ -12,7 +10,9 @@ import {
   readOutline,
   relaunch,
   serviceWorkerOf,
+  startPageServer,
   test,
+  type PageServer,
 } from './fixtures';
 
 // These tests close and relaunch a real (headless) Chromium on one profile. A fresh launch is
@@ -22,26 +22,6 @@ import {
 // A restored window settles (1.5s of quiet) before it is matched, after Chrome has started and
 // restored every tab: allow for that on top of the default.
 const RESTORE_TIMEOUT = 15_000;
-
-/**
- * A page server on 127.0.0.1: `/<name>` is a page titled `<name>`. Restored tabs load before
- * Playwright attaches to them, so `context.route` can't serve them; a real server can.
- */
-async function startPageServer() {
-  const server = http.createServer((req, res) => {
-    const name = new URL(req.url!, 'http://127.0.0.1').pathname.slice(1);
-    res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(`<title>${name}</title>`);
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return {
-    url: (name: string) => `${base}/${name}`,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
-}
-
-type PageServer = Awaited<ReturnType<typeof startPageServer>>;
 
 /** A temp profile and page server, removed after `body` however it ends. */
 async function withProfile(body: (dir: string, pages: PageServer) => Promise<void>) {
