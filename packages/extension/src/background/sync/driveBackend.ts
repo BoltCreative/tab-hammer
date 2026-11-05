@@ -30,6 +30,7 @@ interface DriveFile {
 }
 
 const FIELDS = 'id,name,modifiedTime';
+const REQUEST_TIMEOUT_MS = 30_000;
 const BOUNDARY = 'tab-hammer-sync-boundary';
 
 export function createDriveBackend(deps: DriveDeps): SyncBackend {
@@ -43,6 +44,8 @@ export function createDriveBackend(deps: DriveDeps): SyncBackend {
     for (let attempt = 0; ; attempt++) {
       const token = await deps.token();
       const res = await deps.fetch(url, {
+        // A stalled request would hold the sync queue (and the picker's state) behind it.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         ...init,
         headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${token}` },
       });
