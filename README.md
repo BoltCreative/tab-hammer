@@ -103,7 +103,9 @@ readable only by you; a per-user named pipe on Windows). Nothing runs unless the
 agent are. The installer copies the host and server to `~/.tab-hammer/mcp`
 (`%LOCALAPPDATA%\TabHammer\mcp` on Windows), because macOS won't let a browser run programs from
 inside `~/Documents` without a permission prompt and `npx` clears its cache; both run with the
-`node` you installed with, so re-run install if you move or remove that Node.
+`node` you installed with, so re-run install if you move or remove that Node. Because it's a copy,
+updates arrive only when you re-run `npx tab-hammer-mcp@latest install`; `doctor` tells you when a
+newer version is out.
 
 From a checkout, `npm run install-mcp` builds the package and runs the same installer.
 

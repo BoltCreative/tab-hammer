@@ -13,21 +13,29 @@ import { HARNESSES, SERVER_NAME } from './harnesses.ts';
 import { layout, loadState, selected, type Options } from './installer.ts';
 import { readEntry } from './jsonEdit.ts';
 import { readTable } from './tomlEdit.ts';
+import { isNewer } from './version.ts';
 
 export interface Check {
   name: string;
   ok: boolean;
   /** What was found. */
   detail: string;
-  /** How to fix it, when not ok. */
+  /** How to fix it, when not ok (or a warning). */
   fix?: string;
+  /** Worth acting on, but nothing is broken (an update is out): doesn't fail doctor. */
+  warning?: boolean;
 }
 
 const REINSTALL = 'Run `npx tab-hammer-mcp install`.';
 
 export async function doctor(
   env: InstallEnv,
-  opts: Options & { timeoutMs?: number; socket?: string } = {},
+  opts: Options & {
+    timeoutMs?: number;
+    socket?: string;
+    /** Asks npm for the newest version; leave out to skip the update check. */
+    latest?: () => Promise<string | undefined>;
+  } = {},
 ): Promise<Check[]> {
   const checks: Check[] = [];
   const add = (c: Check) => checks.push(c);
@@ -55,6 +63,27 @@ export async function doctor(
             fix: `${REINSTALL} It pins the node you run it with.`,
           },
     );
+  }
+
+  if (state?.packageVersion && opts.latest) {
+    const latest = await opts.latest();
+    if (latest && isNewer(latest, state.packageVersion)) {
+      add({
+        name: 'Version',
+        ok: true,
+        warning: true,
+        detail: `${state.packageVersion} installed, ${latest} available`,
+        fix: 'Run `npx tab-hammer-mcp@latest install` to update.',
+      });
+    } else {
+      add({
+        name: 'Version',
+        ok: true,
+        detail: latest
+          ? `${state.packageVersion} (latest)`
+          : `${state.packageVersion} (couldn't reach npm to check for updates)`,
+      });
+    }
   }
 
   const ids = extensionIds(state?.extensionIds);
@@ -167,8 +196,8 @@ function checkManifest(manifestPath: string | undefined, ids: string[]): string 
 }
 
 export function formatChecks(checks: Check[]): string {
-  const lines = checks.map((c) => `${c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`);
-  const fixes = checks.filter((c) => !c.ok && c.fix);
+  const lines = checks.map((c) => `${c.warning ? '!' : c.ok ? '✓' : '✗'} ${c.name}: ${c.detail}`);
+  const fixes = checks.filter((c) => (!c.ok || c.warning) && c.fix);
   if (fixes.length) {
     lines.push('', 'To fix:');
     for (const c of fixes) lines.push(`  ${c.name}: ${c.fix}`);

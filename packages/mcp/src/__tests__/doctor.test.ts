@@ -9,6 +9,7 @@ import { doctor, formatChecks } from '../install/doctor.ts';
 import { install, layout } from '../install/installer.ts';
 import { encodeFrame, FrameDecoder } from '../framing.ts';
 import { runNativeHost } from '../nativeHost.ts';
+import { isNewer, latestVersion, PACKAGE_VERSION } from '../install/version.ts';
 import { browserData, fakeClaude, fakeEnv, write, type FakeEnv } from './fakeEnv.ts';
 
 const BUILT = path.resolve(import.meta.dirname, '../../dist');
@@ -101,5 +102,49 @@ describe('doctor', () => {
     write(path.join(e.codexHome, 'config.toml'), 'model = "o4"\n');
     const checks = await doctor(e, { socket: path.join(e.root, 'none.sock') });
     expect(byName(checks)).toMatchObject({ Install: false, Browsers: false, Codex: false });
+  });
+
+  it('says when a newer version is on npm, without failing', async () => {
+    const e = installed();
+    const socket = path.join(e.root, 'b.sock');
+    await relay(socket);
+    const checks = await doctor(e, { socket, latest: async () => '99.0.0' });
+    const v = checks.find((c) => c.name === 'Version')!;
+    expect(v).toMatchObject({
+      ok: true,
+      warning: true,
+      detail: expect.stringMatching(/99\.0\.0 available/),
+    });
+    expect(checks.every((c) => c.ok)).toBe(true);
+    expect(formatChecks(checks)).toMatch(/! Version: .*\n[\s\S]*npx tab-hammer-mcp@latest install/);
+  });
+
+  it('reports up to date, or that npm could not be reached', async () => {
+    const e = installed();
+    const socket = path.join(e.root, 'none.sock');
+    const current = await doctor(e, { socket, latest: async () => PACKAGE_VERSION });
+    expect(current.find((c) => c.name === 'Version')!.detail).toMatch(/\(latest\)/);
+    const offline = await doctor(e, { socket, latest: async () => undefined });
+    expect(offline.find((c) => c.name === 'Version')!.detail).toMatch(/couldn't reach npm/);
+  });
+});
+
+describe('version check', () => {
+  it('compares versions numerically', () => {
+    expect(isNewer('0.10.0', '0.9.9')).toBe(true);
+    expect(isNewer('1.0.0', '1.0.0')).toBe(false);
+    expect(isNewer('1.0.0-beta.1', '0.9.0')).toBe(true);
+    expect(isNewer('0.1.0', '0.2.0')).toBe(false);
+  });
+
+  it('reads the latest version from the npm registry, and gives up quietly', async () => {
+    const ok = (async () => new Response(JSON.stringify({ version: '1.2.3' }))) as typeof fetch;
+    expect(await latestVersion(ok)).toBe('1.2.3');
+    const missing = (async () => new Response('{}', { status: 404 })) as typeof fetch;
+    expect(await latestVersion(missing)).toBeUndefined();
+    const down = (async () => {
+      throw new Error('offline');
+    }) as typeof fetch;
+    expect(await latestVersion(down)).toBeUndefined();
   });
 });

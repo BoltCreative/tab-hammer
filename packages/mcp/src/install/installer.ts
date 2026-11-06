@@ -15,6 +15,7 @@ import {
   type ServerCommand,
 } from './harnesses.ts';
 import { insertEntry, removeEntry, type JsonInsertion } from './jsonEdit.ts';
+import { PACKAGE_VERSION } from './version.ts';
 import { insertTable, removeTable, tomlTable, type TomlInsertion } from './tomlEdit.ts';
 
 export type BrowserRecord =
@@ -34,6 +35,8 @@ export type HarnessRecord =
 
 export interface InstallState {
   version: 1;
+  /** The tab-hammer-mcp version that was deployed. */
+  packageVersion?: string;
   nodePath: string;
   serverPath: string;
   launcher: string;
@@ -129,6 +132,7 @@ export function install(env: InstallEnv, opts: Options = {}): Report {
   const cmd = serverCommand(env);
   const state: InstallState = {
     version: 1,
+    packageVersion: PACKAGE_VERSION,
     nodePath: env.nodePath,
     serverPath: cmd.args[0]!,
     launcher: '',

@@ -37,7 +37,7 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 // Only these variables, so the child can't see the real config folders.
 const cli = (...args: string[]) =>
   spawnSync(process.execPath, [CLI, ...args], {
-    env: { HOME: home, PATH: '', TAB_HAMMER_SOCKET: sock },
+    env: { HOME: home, PATH: '', TAB_HAMMER_SOCKET: sock, TAB_HAMMER_NO_UPDATE_CHECK: '1' },
     encoding: 'utf8',
   });
 

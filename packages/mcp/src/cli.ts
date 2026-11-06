@@ -2,6 +2,7 @@
 // server over stdio (dist/server.js), which is how MCP registries and clients launch an npm server.
 import { formatChecks, doctor } from './install/doctor.ts';
 import { realEnv } from './install/env.ts';
+import { latestVersion } from './install/version.ts';
 import { HELP, parseArgs } from './cliArgs.ts';
 import { install, layout, manualInstructions, uninstall } from './install/installer.ts';
 import { HARNESSES } from './install/harnesses.ts';
@@ -37,7 +38,9 @@ async function main(): Promise<number> {
     return report.failed.length ? 1 : 0;
   }
   if (command === 'doctor') {
-    const checks = await doctor(env, opts);
+    // TAB_HAMMER_NO_UPDATE_CHECK=1 skips asking npm for the newest version (tests, offline use).
+    const latest = process.env.TAB_HAMMER_NO_UPDATE_CHECK ? undefined : () => latestVersion();
+    const checks = await doctor(env, { ...opts, latest });
     console.log(`Tab Hammer MCP (${layout(env).dir})\n`);
     console.log(formatChecks(checks));
     return checks.every((c) => c.ok) ? 0 : 1;

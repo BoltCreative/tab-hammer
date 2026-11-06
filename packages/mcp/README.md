@@ -16,7 +16,8 @@ and Windows. For any other agent it prints the config to paste. Then reload Tab 
 browser and restart the agent.
 
 - `npx tab-hammer-mcp doctor` checks each browser's registration, whether the extension is
-  connected, and each agent's config, and says how to fix what's wrong.
+  connected, and each agent's config, and says how to fix what's wrong. It also says when a newer
+  version is out: install copies the server, so update with `npx tab-hammer-mcp@latest install`.
 - `npx tab-hammer-mcp uninstall` undoes exactly what install did.
 - `--only <ids>` / `--skip <ids>` limit either command to some targets (`--help` lists them).
 - `--extension-id <id>` also allows another build of the extension.
