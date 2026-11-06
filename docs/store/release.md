@@ -113,8 +113,9 @@ a `key` or the dev client.
 - Create a Google Cloud OAuth client of type "Chrome extension" for the store item's ID (same
   project as the dev client, Drive API enabled), put its client ID in
   `STORE_GOOGLE_OAUTH_CLIENT_ID`, and merge it to turn on Drive sync in the store build.
-- Publish `docs/store/privacy-policy.md` with GitHub Pages and paste its address into the
-  dashboard's privacy tab, then fill in the rest from `docs/store/listing.md`.
+- Publish `docs/store/privacy-policy.md` at `https://boltcreative.com/tab-hammer/privacy` (the
+  boltcreative.com site's repo holds the published copy; keep the two in step) and paste that
+  address into the dashboard's privacy tab, then fill in the rest from `docs/store/listing.md`.
 - Check the listing still matches `docs/store/listing.md` before each Release, especially the
   permission justifications when the manifest's permissions changed.
 
@@ -136,4 +137,3 @@ passes on the release commit:
    The registry checks that `server.json`'s `name` matches `mcpName` in `package.json` and that
    the npm version exists, so publish to npm first. Check the listing with
    `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.BoltCreative/tab-hammer"`.
-

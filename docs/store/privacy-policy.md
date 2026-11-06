@@ -1,8 +1,3 @@
----
-title: Tab Hammer privacy policy
-permalink: /privacy-policy/
----
-
 # Tab Hammer privacy policy
 
 _Last updated: 2026-11-06_
@@ -54,6 +49,10 @@ Previews (screenshots) are **never** uploaded. Tab Hammer talks directly to Goog
 (`www.googleapis.com`) from your browser; there is no Tab Hammer server in between. Google's
 handling of your Drive is covered by Google's own privacy policy.
 
+Tab Hammer's use and transfer of information received from Google APIs adheres to the
+[Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+including the Limited Use requirements.
+
 ## Optional: your other Chrome Sync devices
 
 The devices panel can show the tabs open on your phone and other computers, as Chrome Sync reports
@@ -94,8 +93,9 @@ tools in a conversation. Hibernated and recently closed rows are never shared wi
 
 ## Changes
 
-If this policy changes, the new version will be published at this address with a new date.
+This policy is published at <https://boltcreative.com/tab-hammer/privacy>. If it changes, the new
+version will be published there with a new date.
 
 ## Contact
 
-Questions about this policy: `<contact email>`.
+Questions about this policy: support@boltcreative.com.
