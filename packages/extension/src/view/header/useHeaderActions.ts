@@ -39,7 +39,7 @@ export interface HeaderActions {
 }
 
 /**
- * The view's bulk actions (Other devices, Close duplicates, Capture missing, Refresh all, Panel side when docked, Clear previews) and their live
+ * The view's bulk actions (New window, Other devices, Close duplicates, Capture missing, Refresh all, Panel side when docked, Clear previews) and their live
  * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
@@ -47,8 +47,9 @@ export function useHeaderActions(opts: {
   duplicateCount: number; // tabs "Close duplicates" would close
   onCloseDuplicates: () => Promise<void>;
   onOpenDevices: () => void; // shows the devices panel (other computers, checkpoints, sync)
+  onNewWindow: () => void; // opens an empty Chrome window, its row after the focused window's
 }): HeaderActions {
-  const { onPreviewsChanged, duplicateCount, onCloseDuplicates, onOpenDevices } = opts;
+  const { onPreviewsChanged, duplicateCount, onCloseDuplicates, onOpenDevices, onNewWindow } = opts;
   const [clear, setClear] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -76,6 +77,11 @@ export function useHeaderActions(opts: {
   };
 
   const items: MenuItem[] = [
+    {
+      label: 'New window',
+      title: 'Open an empty Chrome window, listed right after the window you are using',
+      onSelect: onNewWindow,
+    },
     {
       label: 'Other devices…',
       title:

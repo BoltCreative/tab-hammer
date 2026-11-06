@@ -16,9 +16,10 @@ import {
   trash,
 } from '../../model/outline/lifecycle';
 import { attachOpened, planOpen } from '../../model/outline/open';
+import { moveWindows, placeWindowAfter } from '../../model/outline/order';
 import { attachGroup, placeTabs } from '../../model/outline/place';
 import { reconcile, replaceTabId } from '../../model/outline/reconcile';
-import type { ChromeSnapshot, Effects, Outline } from '../../model/outline/types';
+import type { ChromeSnapshot, Effects, Outline, WindowRec } from '../../model/outline/types';
 import { copyForOpen } from '../../model/sync/copy';
 import { toSyncWindow, type SyncWindow } from '../../model/sync/export';
 import { restoreWindows, selfRestoreWindows } from '../../model/sync/restore';
@@ -42,7 +43,8 @@ import { createSettleTracker } from './settleTracker';
 export interface OutlineOwner {
   /** Resolves once the job queue is empty. */
   idle(): Promise<void>;
-  command(c: OutlineCommand): Promise<void>;
+  /** Runs a command; resolves with the Chrome window it opened (newWindow, moveToNewWindow). */
+  command(c: OutlineCommand): Promise<number | undefined>;
   /**
    * Runs `create` (which opens a Chrome window) and records the window it opens as known: Tab
    * Hammer opened it, so it isn't a candidate for re-linking to a closed window. The window is
@@ -112,6 +114,9 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
   const closingWindowIds = new Set<number>();
   const selfClosing = createSelfClosing(); // windows and tabs this worker is closing
   const selfOpened = new Set<number>(); // windows this worker opened, not yet recorded
+  // Windows this worker opened whose rows go after a given window (null: the end), applied by the
+  // first reconcile that records them.
+  const placeAfter = new Map<number, string | null>();
   let focusEvent: number | undefined; // latest onFocusChanged window, not yet checked
   let focusedWindowId: number | null = null;
   const ports = new Set<chrome.runtime.Port>();
@@ -208,6 +213,12 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
       if (selfOpened.delete(id)) next = known(next, id);
       else tracker.touch(id);
     }
+    for (const [chromeId, afterId] of placeAfter) {
+      const rec = next.windows.find((w) => w.state === 'live' && w.chromeWindowId === chromeId);
+      if (!rec) continue;
+      placeAfter.delete(chromeId);
+      next = placeWindowAfter(next, rec.id, afterId);
+    }
     await commit(after(expireTrash(next, now)), liveDetails(snapshot, focusedWindowId), force);
   }
 
@@ -247,7 +258,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
    * act in Chrome. Holding the queue across the Chrome calls means the windows and tabs this
    * creates are attached before their events' reconcile runs, so they never become provisional.
    */
-  async function runCommand(c: OutlineCommand): Promise<void> {
+  async function runCommand(c: OutlineCommand): Promise<number | undefined> {
     await step();
     const now = Date.now();
     switch (c.cmd) {
@@ -291,12 +302,86 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
         }
         return;
       }
+      case 'moveWindows':
+        await commit(moveWindows(outline, c.ids, c.anchorId, c.side), live!);
+        return;
+      case 'newWindow':
+        return (await createWindow({ focused: true }, c.afterWindowId))?.chromeWindowId;
+      case 'moveToNewWindow':
+        return moveToNewWindow(c.tabIds);
       default: {
         // Runtime messages aren't validated past `command` being an object.
         const unknown: never = c;
         throw new Error(`unknown outline command: ${String((unknown as { cmd?: unknown }).cmd)}`);
       }
     }
+  }
+
+  /**
+   * Opens a Chrome window (as known: Tab Hammer opened it) and records it, its row placed after
+   * `afterId` (null: at the end); part of a job. Returns its record once reconciled, if it is.
+   */
+  async function createWindow(
+    props: chrome.windows.CreateData,
+    afterId: string | null,
+  ): Promise<WindowRec | undefined> {
+    const w = await chrome.windows.create(props);
+    const id = w?.id;
+    if (id === undefined) throw new Error('Chrome opened no window');
+    selfOpened.add(id);
+    placeAfter.set(id, afterId);
+    await step();
+    return outline.windows.find((r) => r.state === 'live' && r.chromeWindowId === id);
+  }
+
+  /**
+   * Moves tab records into a brand-new window at the end of the outline, as Chrome does when a tab
+   * is dragged out of its strip: live tabs move in Chrome (out of their groups), and hibernated
+   * ones follow in the outline. With no live tab among them, the new window is hibernated.
+   */
+  async function moveToNewWindow(tabIds: string[]): Promise<number | undefined> {
+    const recs = tabIds.flatMap((id) => {
+      const row = findRow(outline, id);
+      return row?.tab && row.window.state !== 'trashed' ? [row.tab] : [];
+    });
+    if (recs.length === 0) return undefined;
+    const liveIds = recs.flatMap((t) => t.chromeTabId ?? []);
+    let target: WindowRec | undefined;
+    if (liveIds.length > 0) {
+      const [first, ...rest] = liveIds;
+      // Gone between the drop and now: the next reconcile records wherever Chrome has it.
+      target = await createWindow({ tabId: first, focused: true }, null);
+      if (target && rest.length > 0) {
+        await chrome.tabs.move(rest, { windowId: target.chromeWindowId!, index: -1 });
+        await step();
+      }
+    } else {
+      const now = Date.now();
+      target = {
+        id: newId(),
+        state: 'hibernated',
+        lastLiveAt: now,
+        originInstallId: installId,
+        modifiedAt: now,
+        tabs: [],
+        groups: [],
+      };
+      await commit({ windows: [...outline.windows, target] }, live!);
+    }
+    if (!target) return undefined;
+    const r = placeTabs(
+      outline,
+      {
+        windowId: target.id,
+        beforeTabId: null,
+        tabs: recs.map((t) => ({ id: t.id, groupId: null })),
+      },
+      Date.now(),
+      newId,
+    );
+    await commit(r.outline, live!);
+    await close(r.effects);
+    return target.chromeWindowId;
   }
 
   /** Opens a hibernated or trashed row in Chrome; part of a job. */
@@ -401,7 +486,11 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
     if (!isOutlineCommandRequest(msg)) return false;
     void enqueue(() => runCommand(msg.command)).then(
-      () => sendResponse({ ok: true } satisfies OutlineCommandReply),
+      (windowId) => {
+        const reply: OutlineCommandReply = { ok: true };
+        if (windowId !== undefined) reply.windowId = windowId;
+        sendResponse(reply);
+      },
       (err: unknown) =>
         sendResponse({ ok: false, error: String(err) } satisfies OutlineCommandReply),
     );

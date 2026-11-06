@@ -1,4 +1,5 @@
 // Messages between the service worker (owns the persisted outline) and the view.
+import type { WindowSide } from '../model/outline/order';
 import type { Placement } from '../model/outline/place';
 import type { WindowRec } from '../model/outline/types';
 
@@ -27,7 +28,13 @@ export type OutlineCommand =
   | { cmd: 'open'; id: string }
   | { cmd: 'rename'; windowId: string; name: string }
   | { cmd: 'deleteForever'; windowId: string }
-  | { cmd: 'place'; placement: Placement };
+  | { cmd: 'place'; placement: Placement }
+  // Reorders window records (Tab Hammer's own order; Chrome has none).
+  | { cmd: 'moveWindows'; ids: string[]; anchorId: string; side: WindowSide }
+  // Opens an empty Chrome window; its row lands right after `afterWindowId` (null: at the end).
+  | { cmd: 'newWindow'; afterWindowId: string | null }
+  // Moves these tab records (in this order) into a brand-new window at the end of the outline.
+  | { cmd: 'moveToNewWindow'; tabIds: string[] };
 
 export interface OutlineCommandRequest {
   type: typeof OUTLINE_COMMAND;
@@ -37,6 +44,7 @@ export interface OutlineCommandRequest {
 export interface OutlineCommandReply {
   ok: boolean;
   error?: string;
+  windowId?: number; // newWindow / moveToNewWindow: the Chrome window it opened
 }
 
 export function isOutlineCommandRequest(msg: unknown): msg is OutlineCommandRequest {

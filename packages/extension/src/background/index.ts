@@ -108,7 +108,9 @@ export interface TestHooks {
     await outline.idle();
     return { schemaVersion: OUTLINE_SCHEMA_VERSION, windows: outline.outline().windows };
   },
-  outlineCommand: (c) => outline.command(c),
+  outlineCommand: async (c) => {
+    await outline.command(c);
+  },
   // Points sync at a fake Drive served by the test (never Google), then syncs.
   useTestSync: async ({ apiBase, token }) => {
     syncHandle.useTestBackend(apiBase, token);

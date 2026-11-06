@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { buildTree } from '../buildTree';
-import { dragKeys, dropPositionFor, planDrop, planMove, type MoveOp } from '../moveSelection';
+import {
+  dragKeys,
+  draggedTabIds,
+  dropPositionFor,
+  isWindowDrag,
+  planDrop,
+  planMove,
+  windowDropFor,
+  type MoveOp,
+} from '../moveSelection';
 import type { WindowNode } from '../types';
 import { group, state, tab, win } from './outlineState';
 
@@ -89,6 +98,26 @@ describe('dropPositionFor', () => {
     expect(dropPositionFor('group', 0.2)).toBe('before');
     expect(dropPositionFor('group', 0.8)).toBe('inside');
     expect(dropPositionFor('window', 0.1)).toBe('inside');
+  });
+});
+
+describe('window drags', () => {
+  it("reorder at a header's edges, merge in its middle", () => {
+    expect(windowDropFor(0.1)).toBe('before');
+    expect(windowDropFor(0.5)).toBe('merge');
+    expect(windowDropFor(0.9)).toBe('after');
+  });
+
+  it('only a drag of window rows alone reorders', () => {
+    expect(isWindowDrag(['w:1', 'w:2'])).toBe(true);
+    expect(isWindowDrag(['w:1', 't:3'])).toBe(false);
+    expect(isWindowDrag([])).toBe(false);
+  });
+
+  it('a drop for a new window carries the dragged tabs in outline order', () => {
+    const tree = layout();
+    expect(draggedTabIds(tree, ['t:5', 'g:10', 't:4'])).toEqual(['1', '2', '4', '5']);
+    expect(draggedTabIds(tree, ['w:2'])).toEqual(['5', '6', '7']);
   });
 });
 

@@ -57,10 +57,12 @@ export function subscribeOutline(onState: (s: OutlineState) => void): () => void
 }
 
 /** Runs a command in the worker; rejects when the worker reports it failed. */
-export async function sendOutlineCommand(c: OutlineCommand): Promise<void> {
+/** Runs the command in the worker; resolves with the Chrome window it opened, if it opened one. */
+export async function sendOutlineCommand(c: OutlineCommand): Promise<number | undefined> {
   const request: OutlineCommandRequest = { type: OUTLINE_COMMAND, command: c };
   const reply = (await chrome.runtime.sendMessage(request)) as OutlineCommandReply | undefined;
   if (!reply?.ok) throw new Error(reply?.error ?? 'Tab Hammer: outline command got no reply');
+  return reply.windowId;
 }
 
 const EMPTY: OutlineView = { windows: [], trash: [] };
