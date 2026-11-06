@@ -16,10 +16,10 @@ export const EXTENSION_ID = 'lpnkidobhhpmokecbinbliomjehmndia';
 
 /**
  * The Chrome Web Store listing's extension ID, which the store assigns (it ignores the manifest
- * `key`). Empty until the listing exists; the installer then allows it alongside EXTENSION_ID.
- * `npx tab-hammer-mcp install --extension-id <id>` allows another ID in the meantime.
+ * `key`). The installer allows it alongside EXTENSION_ID; `npx tab-hammer-mcp install
+ * --extension-id <id>` allows another ID.
  */
-export const STORE_EXTENSION_ID: string = '';
+export const STORE_EXTENSION_ID: string = 'dcgapifimbojbcgenneeiaoobaabgnib';
 
 export type GroupColor =
   'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';

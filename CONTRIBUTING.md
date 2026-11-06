@@ -68,6 +68,8 @@ timeouts; wait on the condition you need (`expect.poll`, locators).
 
 ## Pull requests
 
+- Open PRs against `dev`. `main` only takes `dev` (a CI check enforces it), and every merge to
+  `main` uploads a store draft. A maintainer's approval is required to merge into `dev`.
 - Keep each PR focused on one change, and describe what it does and why.
 - Run `npm run gate` and say so in the PR. Docs-only changes don't need it.
 - Add or update tests for behavior you change.

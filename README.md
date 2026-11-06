@@ -55,7 +55,7 @@ Tab Hammer takes the same idea and builds on modern Chrome:
 
 ## Install
 
-**Chrome Web Store:** coming soon.
+**Chrome Web Store:** coming soon. Homepage: <https://boltcreative.com/tab-hammer>.
 
 **From source:**
 
@@ -143,7 +143,7 @@ Previews are stored only on your computer, and each is kept as long as a window 
 Tab Hammer has no server and collects nothing. Your outline and previews stay in your browser;
 if you turn on sync, your outline is stored in a hidden app-data folder in your own Google Drive
 that only Tab Hammer can read. Incognito windows and tabs are never captured. See the
-[privacy policy](docs/store/privacy-policy.md) for the details.
+[privacy policy](https://boltcreative.com/tab-hammer/privacy) for the details.
 
 ## Hiding Chrome's debugging banner
 

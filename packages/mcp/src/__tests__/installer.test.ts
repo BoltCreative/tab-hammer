@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { EXTENSION_ID, NATIVE_HOST_NAME } from '@tab-hammer/protocol';
+import { EXTENSION_ID, NATIVE_HOST_NAME, STORE_EXTENSION_ID } from '@tab-hammer/protocol';
 import { install, layout, loadState, uninstall } from '../install/installer.ts';
 import { browserData, fakeClaude, fakeEnv, snapshot, write, type FakeEnv } from './fakeEnv.ts';
 
@@ -84,7 +84,10 @@ describe('install', () => {
       description: expect.any(String),
       path: launcher,
       type: 'stdio',
-      allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
+      allowed_origins: [
+        `chrome-extension://${EXTENSION_ID}/`,
+        `chrome-extension://${STORE_EXTENSION_ID}/`,
+      ],
     });
     expect(
       fs.existsSync(
@@ -135,8 +138,8 @@ describe('install', () => {
   it('allows extra extension IDs in every manifest', () => {
     const e = machine('linux');
     browserData(path.join(e.xdgConfig, 'google-chrome'));
-    const store = 'abcdefghijklmnopabcdefghijklmnop';
-    install(e, { ...opts, extensionIds: [store] });
+    const extra = 'abcdefghijklmnopabcdefghijklmnop';
+    install(e, { ...opts, extensionIds: [extra] });
     const m = JSON.parse(
       fs.readFileSync(
         path.join(e.xdgConfig, 'google-chrome', 'NativeMessagingHosts', `${NATIVE_HOST_NAME}.json`),
@@ -145,7 +148,8 @@ describe('install', () => {
     );
     expect(m.allowed_origins).toEqual([
       `chrome-extension://${EXTENSION_ID}/`,
-      `chrome-extension://${store}/`,
+      `chrome-extension://${STORE_EXTENSION_ID}/`,
+      `chrome-extension://${extra}/`,
     ]);
   });
 

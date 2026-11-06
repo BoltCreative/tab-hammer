@@ -14,7 +14,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -26,6 +26,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # main takes only dev: a pull request into main from any other branch, or from a fork, fails
+  # here, and the main ruleset requires this check. Skipped (which counts as passing) for pull
+  # requests into dev.
+  source:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Only dev merges into main
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$HEAD_REF" != dev ] || [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Only dev can be merged into main; this pull request is from $HEAD_REPO:$HEAD_REF. Retarget it to dev."
+            exit 1
+          fi
+
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
