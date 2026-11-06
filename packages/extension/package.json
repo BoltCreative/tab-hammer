@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:e2e": "TAB_HAMMER_NO_OAUTH=1 vite build --outDir dist-e2e --emptyOutDir",
+    "build:store": "TAB_HAMMER_STORE=1 vite build --outDir dist-store --emptyOutDir && node scripts/pack-store.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",

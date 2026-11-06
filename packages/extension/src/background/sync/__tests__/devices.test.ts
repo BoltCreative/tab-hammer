@@ -62,6 +62,18 @@ describe('device source', () => {
     expect(calls).toEqual(['getDevices 25']);
   });
 
+  it('reads no devices until the sessions permission is granted, then reads them', async () => {
+    // Ungranted, chrome.sessions is undefined; Chrome defines it on the same object once granted.
+    const c = { windows: {}, tabs: {} } as unknown as DeviceChrome;
+    const source = createDeviceSource(c, async (create) => create());
+    expect(await source.read()).toEqual([]);
+    c.sessions = {
+      getDevices: async () => [device],
+      restore: async () => ({ lastModified: 0 }),
+    } as unknown as DeviceChrome['sessions'];
+    expect(await source.read()).toEqual([device]);
+  });
+
   it('restores a window through chrome.sessions, recording it as opened here', async () => {
     const { source, calls, opened } = stub(true);
     await source.openHere(win!, win!.id);

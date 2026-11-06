@@ -195,9 +195,10 @@ test("right-clicking a window header copies all its tabs' URLs in tab order", as
   sw,
   view,
 }) => {
-  // Lets the test read the clipboard back (the extension itself only asks for clipboardWrite).
+  // Lets the test read the clipboard back. Writing is deliberately not granted: the extension has
+  // no clipboardWrite permission, and the view writes from the user's click without one.
   // No origin: Playwright can't parse chrome-extension:// origins, and this profile is throwaway.
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await context.grantPermissions(['clipboard-read']);
   const s = await buildLayout(sw);
   const expected = await sw.evaluate(
     async (id) => (await chrome.tabs.query({ windowId: id })).map((t) => t.url || t.pendingUrl),

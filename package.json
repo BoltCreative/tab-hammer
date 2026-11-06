@@ -13,6 +13,8 @@
     "dev": "npm run dev -w @tab-hammer/extension",
     "build": "npm run build -w @tab-hammer/extension",
     "build:e2e": "npm run build:e2e -w @tab-hammer/extension",
+    "build:store": "npm run build:store -w @tab-hammer/extension",
+    "release": "node scripts/release.ts",
     "test": "npm test --workspaces --if-present",
     "test:e2e": "npm run test:e2e -w @tab-hammer/extension --",
     "typecheck": "npm run typecheck --workspaces --if-present",

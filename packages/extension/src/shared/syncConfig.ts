@@ -6,5 +6,11 @@
 export const GOOGLE_OAUTH_CLIENT_ID: string =
   '652721949721-idna0tvksq0l7dvka1qd0cjcc7dlsj4c.apps.googleusercontent.com';
 
+// The same for the Chrome Web Store build (`npm run build:store`), which has no manifest key and
+// so runs under the ID the store assigns: an OAuth client is bound to one extension ID, so the
+// store needs its own ("Chrome extension" type, for the store's item ID). While it's empty, the
+// store build ships with Drive sync off.
+export const STORE_GOOGLE_OAUTH_CLIENT_ID: string = '';
+
 /** Drive's hidden per-app folder only: Tab Hammer can't see the user's other Drive files. */
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
