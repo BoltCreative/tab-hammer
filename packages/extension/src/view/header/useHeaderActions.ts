@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { clearAllPreviews } from '../chrome/captureOutcome';
+import { openSidePanelSettings, surface } from '../chrome/dock';
 import type { MenuItem } from '../components/ContextMenu';
 import type { RefreshProgress } from '../refresh/refreshRun';
 import { useRefreshPreviews, type RefreshState } from '../refresh/useRefreshPreviews';
@@ -38,7 +39,7 @@ export interface HeaderActions {
 }
 
 /**
- * The view's bulk actions (Other devices, Close duplicates, Capture missing, Refresh all, Clear previews) and their live
+ * The view's bulk actions (Other devices, Close duplicates, Capture missing, Refresh all, Panel side when docked, Clear previews) and their live
  * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
@@ -107,6 +108,18 @@ export function useHeaderActions(opts: {
       disabled: refreshing,
       onSelect: () => refresh.start('all'),
     },
+    // Docked only. Chrome lets extensions read which side its side panel is on but not set it, so
+    // this opens the setting (one choice for every window).
+    ...(surface === 'panel'
+      ? [
+          {
+            label: 'Panel side…',
+            title:
+              "Open Chrome's Appearance settings, where Side panel puts it on the left or right in every window",
+            onSelect: openSidePanelSettings,
+          },
+        ]
+      : []),
     {
       label: 'Clear previews',
       title: 'Delete every stored preview (a debug tool)',

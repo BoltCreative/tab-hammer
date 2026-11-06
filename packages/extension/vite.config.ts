@@ -24,7 +24,7 @@ export default defineConfig(({ command }) => ({
   build: {
     ...(command === 'serve' && { outDir: DEV_OUT_DIR, emptyOutDir: true }),
     rollupOptions: {
-      input: { view: 'src/view/index.html' },
+      input: { view: 'src/view/index.html', panel: 'src/view/panel.html' },
     },
   },
   server: { port: 5174, strictPort: true },

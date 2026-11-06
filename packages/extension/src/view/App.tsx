@@ -22,6 +22,7 @@ import {
 } from '../model/visibleRows';
 import { planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
+import { useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -65,15 +66,33 @@ export function App() {
   // Moves still plan against the whole tree.
   const [query, setQuery] = useState('');
   const shown = useMemo(() => filterTree(tree, query), [tree, query]);
+  const filtering = shown !== tree;
+  // A docked panel marks the browser window it sits in, and opens scrolled to it.
+  const hostWindowId = useHostWindowId();
   // Duplicates are found across the whole tree, whatever the search shows.
   const duplicates = useMemo(() => findDuplicates(tree), [tree]);
-  const filtering = shown !== tree;
   const shownCollapse = filtering ? EXPAND_ALL : collapse;
   const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
   const visible = useMemo(() => rows.map((r) => r.key), [rows]);
   const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
+
+  // Once, when a docked panel opens: scroll its own window's card to the top of the list.
+  const scrolledToHost = useRef(false);
+  useEffect(() => {
+    if (scrolledToHost.current || hostWindowId === undefined) return;
+    const list = listRef.current;
+    const card = list
+      ?.querySelector(`[data-kind="window"][data-window-id="${hostWindowId}"]`)
+      ?.closest('section');
+    if (!list || !card) return; // not in the outline yet; try again on the next broadcast
+    scrolledToHost.current = true;
+    // Set directly: scrollIntoView would honor the list's scroll-padding (room for keyboard focus
+    // under a pinned bar) and stop short. The list's bottom padding lets even the last window
+    // reach the top.
+    list.scrollTop += card.getBoundingClientRect().top - list.getBoundingClientRect().top;
+  }, [hostWindowId, tree]);
 
   // Rows a search hides leave the selection, so a drag never carries rows the user can't see.
   useEffect(() => {
@@ -321,6 +340,7 @@ export function App() {
               hover={hover}
               rowProps={rowProps}
               commands={commands}
+              here={hostWindowId !== undefined && w.windowId === hostWindowId}
               renaming={renaming === w.key}
               onStartRename={setRenaming}
               onEndRename={onEndRename}

@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { ContextMenu } from '../components/ContextMenu';
+import { dockEverywhere, popOut, surface, useSidePanelSide } from '../chrome/dock';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
 import type { HeaderActions } from './useHeaderActions';
 
@@ -28,6 +29,8 @@ export function AppHeader({
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; keyboard: boolean } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // Keeps the root's data-side current, so a docked panel's border faces the page.
+  useSidePanelSide();
   const toggleMenu = (keyboard: boolean) => {
     if (menu) return setMenu(null);
     const r = button.current!.getBoundingClientRect();
@@ -59,6 +62,7 @@ export function AppHeader({
             {matchCount === 1 ? '1 tab' : `${matchCount} tabs`}
           </span>
         )}
+        <DockToggle />
         <button
           ref={button}
           type="button"
@@ -106,5 +110,39 @@ export function AppHeader({
         />
       )}
     </header>
+  );
+}
+
+/**
+ * Float ⇄ dock. In the standalone window it docks the outline into Chrome's side panel in every
+ * browser window (this click is what lets it open them) and closes the window; in a docked panel
+ * it pops the outline back out to the standalone window and closes the panels.
+ */
+function DockToggle() {
+  const docked = surface === 'panel';
+  const label = docked ? 'Pop out to a window' : 'Dock in the side panel';
+  const run = () =>
+    void (docked ? popOut() : dockEverywhere()).catch((err: unknown) =>
+      console.error('Tab Hammer: switching between window and side panel failed', err),
+    );
+  return (
+    <button
+      type="button"
+      className="toolbar-button menu-button dock-toggle"
+      aria-label={label}
+      title={label}
+      onClick={run}
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+        <rect x="0.5" y="1.5" width="11" height="9" rx="1" fill="none" stroke="currentColor" />
+        {docked ? (
+          // A window with an arrow leaving it: out of the panel.
+          <path d="M4 8 L8 4 M5 4 H8 V7" fill="none" stroke="currentColor" />
+        ) : (
+          // A window with its right strip filled: the side panel.
+          <rect x="7.5" y="2" width="3.5" height="8" fill="currentColor" />
+        )}
+      </svg>
+    </button>
   );
 }

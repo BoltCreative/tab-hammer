@@ -2,6 +2,7 @@ import type { WindowRec } from '../model/outline/types';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { getPreview } from '../shared/previewStore';
 import { connectBridge } from './bridge';
+import { registerDock } from './dock';
 import { registerOutline } from './outline/outlineOwner';
 import { OUTLINE_SCHEMA_VERSION } from './outline/outlineStore';
 import { registerPreviewCapture, viewWindows } from './previews';
@@ -35,9 +36,25 @@ async function openOrFocus(): Promise<void> {
   await ensureViewWindow(viewWindowDeps, true);
 }
 
+/** Closes every standalone Tab Hammer window (docking moves the outline into the side panels). */
+async function closeStandalone(): Promise<void> {
+  const tabs = await viewWindows.viewTabs();
+  for (const id of new Set(tabs.map((t) => t.windowId))) {
+    await chrome.windows.remove(id).catch(() => undefined);
+  }
+}
+
+const dock = registerDock({
+  openStandalone: openOrFocus,
+  closeStandalone,
+  onPanelConnect: connectBridge,
+});
+
+// Docked, Chrome opens the side panel on a toolbar click itself and this doesn't fire; the mode
+// check covers the moment before that behavior is applied.
 chrome.action.onClicked.addListener(() => {
   connectBridge();
-  void openOrFocus();
+  void dock.mode().then((mode) => (mode === 'float' ? openOrFocus() : undefined));
 });
 registerPreviewCapture();
 // The sync engine hears about every saved outline change, to push it to Drive. (Saves are async,
@@ -82,6 +99,7 @@ export interface TestHooks {
   syncNow: () => Promise<void>;
   syncState: () => Promise<SyncPickerState>;
   prunePreviews: () => Promise<void>;
+  panelWindows: () => number[];
 }
 (globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
   openOrFocus,
@@ -105,4 +123,6 @@ export interface TestHooks {
   syncState: () => syncHandle.engine.pickerState(),
   // Runs the preview prune now (after the outline's queued work), for asserting what it kept.
   prunePreviews: () => previewPruner.run(),
+  // Browser windows with a connected docked side panel.
+  panelWindows: () => dock.panelWindows(),
 };

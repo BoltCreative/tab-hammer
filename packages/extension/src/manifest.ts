@@ -12,7 +12,8 @@ export default defineManifest({
   manifest_version: 3,
   name: 'Tab Hammer',
   version: '0.1.0',
-  description: 'Every window, group, and tab as a live outline in its own window.',
+  description:
+    'Every window, group, and tab as a live outline, in its own window or docked in the side panel.',
   // Pins the extension ID (lpnkidobhhpmokecbinbliomjehmndia) no matter which folder Chrome loads it
   // from, so storage, previews, and permission grants survive switching between the repo root and
   // worktrees. Only the public key; unpacked loading never needs the private half.
@@ -30,6 +31,9 @@ export default defineManifest({
   // identity: the Chrome profile's Google sign-in (getAuthToken) for Drive sync. No install
   // warning; Google's consent screen asks for the Drive app-data scope the first time.
   // alarms: pulling the other computers' outlines every 5 minutes. No install warning.
+  // sidePanel: docked mode, the outline in Chrome's side panel (src/background/dock.ts). No
+  // install warning.
+  // contextMenus: the toolbar icon's right-click "Side panel: left or right…". No install warning.
   permissions: [
     'tabs',
     'tabGroups',
@@ -43,6 +47,8 @@ export default defineManifest({
     'sessions',
     'identity',
     'alarms',
+    'sidePanel',
+    'contextMenus',
   ],
   // Drive sync's sign-in, only once a client ID is set (src/shared/syncConfig.ts): an empty
   // client ID never ships. The e2e build leaves it out too (TAB_HAMMER_NO_OAUTH), so tests can only
@@ -57,4 +63,6 @@ export default defineManifest({
   // Rendered from icons/icon.svg by scripts/render-icons.ts.
   icons: ICONS,
   action: { default_title: 'Open Tab Hammer', default_icon: ICONS },
+  // The same view, docked (src/view/panel.html marks it as the panel surface).
+  side_panel: { default_path: 'src/view/panel.html' },
 });
