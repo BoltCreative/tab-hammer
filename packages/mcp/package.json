@@ -1,24 +1,48 @@
 {
-  "name": "@tab-hammer/mcp",
+  "name": "tab-hammer-mcp",
   "version": "0.1.0",
   "license": "MIT",
-  "private": true,
+  "description": "MCP server that lets AI agents list, group, move, focus, open, and close browser tabs through the Tab Hammer extension. One command installs it for every Chromium browser and agent harness.",
+  "mcpName": "io.github.BoltCreative/tab-hammer",
   "type": "module",
-  "engines": {
-    "node": ">=22.18"
+  "bin": {
+    "tab-hammer-mcp": "dist/cli.js"
   },
+  "files": [
+    "dist/cli.js",
+    "dist/server.js",
+    "dist/host.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BoltCreative/tab-hammer.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/BoltCreative/tab-hammer#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "chrome",
+    "tabs",
+    "native-messaging",
+    "claude"
+  ],
   "scripts": {
+    "build": "node build.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "install-host": "node src/install.ts",
-    "uninstall-host": "node src/install.ts --uninstall"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "@tab-hammer/protocol": "*",
-    "zod": "^4.6.7"
+    "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@tab-hammer/protocol": "*",
+    "zod": "^4.6.7",
+    "jsonc-parser": "^3.3.1",
+    "rolldown": "^1.2.11",
     "vitest": "^5.1.0"
   }
 }

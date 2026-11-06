@@ -12,6 +12,8 @@ import { deployHost, hostManifest } from '../../../mcp/src/deploy.ts';
 import { expect, launchWithExtension, liveRow, readOutline, test as base } from './fixtures';
 
 const MCP_MAIN = path.resolve(import.meta.dirname, '../../../mcp/src/main.ts');
+// The built host, as the published package ships it (`npm run build:e2e` builds it first).
+const MCP_BUILT = path.resolve(import.meta.dirname, '../../../mcp/dist');
 
 const test = base.extend<{ dir: string; sock: string; mcp: Client }>({
   // eslint-disable-next-line no-empty-pattern
@@ -27,7 +29,7 @@ const test = base.extend<{ dir: string; sock: string; mcp: Client }>({
     const profile = path.join(dir, 'profile');
     const hosts = path.join(profile, 'NativeMessagingHosts');
     fs.mkdirSync(hosts, { recursive: true });
-    const launcher = deployHost(path.join(dir, 'host'));
+    const launcher = deployHost(path.join(dir, 'host'), { builtDir: MCP_BUILT });
     fs.writeFileSync(
       path.join(hosts, `${NATIVE_HOST_NAME}.json`),
       JSON.stringify(hostManifest(launcher)),

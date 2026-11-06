@@ -11,8 +11,15 @@
 /** Native messaging host name. Chrome finds the host by a manifest file with this name. */
 export const NATIVE_HOST_NAME = 'com.boltcreative.tab_hammer';
 
-/** Tab Hammer's extension ID, pinned by the manifest `key`. */
+/** Tab Hammer's extension ID, pinned by the manifest `key` (local and dev builds). */
 export const EXTENSION_ID = 'lpnkidobhhpmokecbinbliomjehmndia';
+
+/**
+ * The Chrome Web Store listing's extension ID, which the store assigns (it ignores the manifest
+ * `key`). Empty until the listing exists; the installer then allows it alongside EXTENSION_ID.
+ * `npx tab-hammer-mcp install --extension-id <id>` allows another ID in the meantime.
+ */
+export const STORE_EXTENSION_ID: string = '';
 
 export type GroupColor =
   'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange';

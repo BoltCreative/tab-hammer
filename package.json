@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "npm run dev -w @tab-hammer/extension",
     "build": "npm run build -w @tab-hammer/extension",
-    "build:e2e": "npm run build:e2e -w @tab-hammer/extension",
+    "build:e2e": "npm run build -w tab-hammer-mcp && npm run build:e2e -w @tab-hammer/extension",
     "build:store": "npm run build:store -w @tab-hammer/extension",
     "release": "node scripts/release.ts",
     "test": "npm test --workspaces --if-present",
@@ -23,8 +23,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "gate": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build:e2e && npm run test:e2e",
-    "install-mcp": "npm run install-host -w @tab-hammer/mcp",
-    "uninstall-mcp": "npm run uninstall-host -w @tab-hammer/mcp",
+    "install-mcp": "npm run build -w tab-hammer-mcp && node packages/mcp/dist/cli.js install",
+    "uninstall-mcp": "node packages/mcp/dist/cli.js uninstall",
     "make:chrome-launcher": "npm run make:chrome-launcher -w @tab-hammer/extension"
   },
   "devDependencies": {

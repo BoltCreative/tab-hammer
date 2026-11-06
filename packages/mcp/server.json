@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.BoltCreative/tab-hammer",
+  "title": "Tab Hammer",
+  "description": "List, group, move, focus, open, and close browser tabs through the Tab Hammer extension.",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/BoltCreative/tab-hammer#connect-an-ai-agent-mcp",
+  "repository": {
+    "url": "https://github.com/BoltCreative/tab-hammer",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "tab-hammer-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

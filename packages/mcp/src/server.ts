@@ -6,12 +6,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { GROUP_COLORS, type GroupColor, type Method, type Methods } from '@tab-hammer/protocol';
 import { z } from 'zod';
 import { callBridge } from './bridgeClient.ts';
+import pkg from '../package.json' with { type: 'json' };
 
 const tabIds = z.array(z.number().int()).min(1).describe('Tab IDs from list_tabs');
 const color = z.enum(GROUP_COLORS as [GroupColor, ...GroupColor[]]);
 
 export function createServer(socketPath: string): McpServer {
-  const server = new McpServer({ name: 'tab-hammer', version: '0.1.0' });
+  const server = new McpServer({ name: 'tab-hammer', version: pkg.version });
 
   const run = async <M extends Method>(method: M, params: Methods[M]['params']) => {
     try {
