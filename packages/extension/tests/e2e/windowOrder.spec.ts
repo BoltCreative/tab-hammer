@@ -267,3 +267,43 @@ test('right-click "Open in new window" seeds a new window with the selected tabs
   const shown = await shownIds(sw);
   expect(shown.indexOf(added.id)).toBe(shown.indexOf(b!.id) - 1);
 });
+
+test('a window emptied of its open tabs by Open in new window stays a hibernated row, not trash', async ({
+  sw,
+  view,
+}) => {
+  const winId = await sw.evaluate(async () => {
+    const w = await chrome.windows.create({
+      url: ['data:text/html,<title>Echo</title>', 'data:text/html,<title>Foxtrot</title>'],
+    });
+    return w!.id!;
+  });
+  let rec: WindowRec | undefined;
+  await expect
+    .poll(async () => {
+      rec = (await readOutline(sw)).windows.find((w) => w.chromeWindowId === winId);
+      return rec?.tabs.length;
+    })
+    .toBe(2);
+  const [echo, foxtrot] = rec!.tabs;
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [foxtrot!.id] });
+  await expect(view.locator(`[data-key="t:${foxtrot!.id}"]`)).toHaveClass(/hibernated/);
+
+  // Echo, the window's only open tab, moves out: Chrome closes the window.
+  const echoRow = view.locator(`[data-key="t:${echo!.id}"]`);
+  await echoRow.click({ button: 'right' });
+  await view.getByRole('menuitem', { name: 'Open in new window (1 tab)' }).click();
+
+  await expect
+    .poll(async () => {
+      const { windows } = await readOutline(sw);
+      const source = windows.find((w) => w.id === rec!.id);
+      const moved = windows.find((w) => w.tabs.some((t) => t.id === echo!.id));
+      return {
+        source: source && [source.state, source.tabs.map((t) => t.id)],
+        movedLive: moved?.state === 'live' && moved.id !== rec!.id,
+        windowOpen: (await sw.evaluate(() => chrome.windows.getAll())).some((w) => w.id === winId),
+      };
+    })
+    .toEqual({ source: ['hibernated', [foxtrot!.id]], movedLive: true, windowOpen: false });
+});
