@@ -18,7 +18,14 @@ import { insertEntry, removeEntry, type JsonInsertion } from './jsonEdit.ts';
 import { insertTable, removeTable, tomlTable, type TomlInsertion } from './tomlEdit.ts';
 
 export type BrowserRecord =
-  { kind: 'file'; path: string } | { kind: 'registry'; key: string; previous?: string };
+  | { kind: 'file'; path: string }
+  | {
+      kind: 'registry';
+      key: string;
+      previous?: string;
+      /** Parent keys install had to create, deepest first; uninstall removes them if empty. */
+      createdKeys?: string[];
+    };
 
 export type HarnessRecord =
   | { kind: 'json'; file: string; insertion: JsonInsertion }
@@ -141,20 +148,23 @@ export function install(env: InstallEnv, opts: Options = {}): Report {
   };
   state.launcher = deployHost(L.dir, deployOpts);
   deployServer(L.dir, deployOpts);
-  // The old repo installer's copy; its registrations are replaced below.
-  fs.rmSync(L.legacyHostDir, { recursive: true, force: true });
   const manifest = JSON.stringify(hostManifest(state.launcher, state.extensionIds), null, 2) + '\n';
   if (env.os === 'win32') fs.writeFileSync(L.winManifest, manifest);
   log(`Deployed the host and MCP server to ${L.dir}`);
   // Saved now so a failure below still leaves uninstall able to undo what happened so far.
   saveState(env, state);
 
-  const browsersFound = registerBrowsers(env, opts, state, manifest, report, log);
-  if (!browsersFound) {
+  registerBrowsers(env, opts, state, manifest, report, log);
+  const anyBrowser = BROWSERS.some((b) => {
+    const t = resolveBrowser(env, b);
+    return t !== undefined && detectBrowser(env, t);
+  });
+  if (!anyBrowser) {
     log(
       'No supported browser found (Chrome, Chromium, Brave, Edge, Arc). Install one, then re-run.',
     );
   }
+  removeLegacyHost(env);
   saveState(env, state);
 
   for (const h of HARNESSES) {
@@ -183,14 +193,12 @@ function registerBrowsers(
   manifest: string,
   report: Report,
   log: (s: string) => void,
-): boolean {
-  let found = false;
+): void {
   const keysDone = new Set<string>();
   for (const b of BROWSERS) {
     if (!selected(b.id, opts)) continue;
     const t = resolveBrowser(env, b);
     if (!t || !detectBrowser(env, t)) continue;
-    found = true;
     if (t.kind === 'file') {
       ensureDir(env, t.manifestDir, state);
       fs.writeFileSync(t.manifestPath, manifest);
@@ -202,12 +210,15 @@ function registerBrowsers(
           (r) => r.kind === 'registry' && r.key === t.key,
         ) as Extract<BrowserRecord, { kind: 'registry' }> | undefined;
         const previous = earlier ? earlier.previous : env.registry.get(t.key);
+        // `reg add` creates missing parents (…\NativeMessagingHosts, even Software\Chromium).
+        const createdKeys = earlier?.createdKeys ?? missingParents(env, t.key);
         env.registry.set(t.key, layout(env).winManifest);
         keysDone.add(t.key);
         state.browsers[b.id] = {
           kind: 'registry',
           key: t.key,
           ...(previous !== undefined && { previous }),
+          ...(createdKeys.length && { createdKeys }),
         };
       } else {
         const first = Object.values(state.browsers).find(
@@ -219,7 +230,40 @@ function registerBrowsers(
     report.done.push(b.id);
     log(`Registered the host with ${b.name}`);
   }
-  return found;
+}
+
+/** Ancestors of `key` (below HKCU\Software) that don't exist yet, deepest first. */
+function missingParents(env: InstallEnv, key: string): string[] {
+  const out: string[] = [];
+  for (
+    let k = key.slice(0, key.lastIndexOf('\\'));
+    k.includes('\\');
+    k = k.slice(0, k.lastIndexOf('\\'))
+  ) {
+    if (env.registry.exists(k)) break;
+    out.push(k);
+  }
+  return out;
+}
+
+/**
+ * The old repo installer deployed the host to ~/.tab-hammer/native-host. Remove it once no host
+ * manifest on disk points into it any more (an install limited by --only may leave some).
+ */
+function removeLegacyHost(env: InstallEnv): void {
+  const L = layout(env);
+  if (!fs.existsSync(L.legacyHostDir)) return;
+  const inUse = BROWSERS.some((b) => {
+    const t = resolveBrowser(env, b);
+    if (t?.kind !== 'file') return false;
+    try {
+      const m = JSON.parse(fs.readFileSync(t.manifestPath, 'utf8')) as { path?: string };
+      return !!m.path?.startsWith(L.legacyHostDir);
+    } catch {
+      return false;
+    }
+  });
+  if (!inUse) fs.rmSync(L.legacyHostDir, { recursive: true, force: true });
 }
 
 function registerHarness(
@@ -283,7 +327,10 @@ export function uninstall(env: InstallEnv, opts: Options = {}): Report {
     if (!kept && !undone.has(where(rec))) {
       if (rec.kind === 'file') fs.rmSync(rec.path, { force: true });
       else if (rec.previous !== undefined) env.registry.set(rec.key, rec.previous);
-      else env.registry.delete(rec.key);
+      else {
+        env.registry.delete(rec.key);
+        for (const k of rec.createdKeys ?? []) if (env.registry.isEmpty(k)) env.registry.delete(k);
+      }
       undone.add(where(rec));
     }
     delete state.browsers[id];

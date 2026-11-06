@@ -3,7 +3,13 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BROWSERS, resolveBrowser } from '../install/browsers.ts';
-import { parseRegQueryDefault, winQuote, type InstallEnv, type OsName } from '../install/env.ts';
+import {
+  parseRegQueryDefault,
+  regQueryIsEmpty,
+  winQuote,
+  type InstallEnv,
+  type OsName,
+} from '../install/env.ts';
 import { HARNESSES } from '../install/harnesses.ts';
 import { layout } from '../install/installer.ts';
 import { isPipePath, socketPath } from '../paths.ts';
@@ -22,7 +28,13 @@ function env(osName: OsName): InstallEnv {
     codexHome: p.join(home, '.codex'),
     nodePath: win ? 'C:\\Program Files\\nodejs\\node.exe' : '/usr/local/bin/node',
     user: 'ada',
-    registry: { get: () => undefined, set: () => {}, delete: () => {} },
+    registry: {
+      get: () => undefined,
+      set: () => {},
+      delete: () => {},
+      exists: () => false,
+      isEmpty: () => false,
+    },
     runner: { has: () => false, run: () => ({ status: 1, stdout: '', stderr: '' }) },
   };
 }
@@ -181,6 +193,18 @@ describe('Windows helpers', () => {
       'C:\\Users\\ada\\AppData\\Local\\TabHammer\\mcp\\x.json',
     );
     expect(parseRegQueryDefault('\r\nHKEY_CURRENT_USER\\Software\\x\r\n')).toBeUndefined();
+  });
+
+  it('tells an empty key from one with values or subkeys in `reg query` output', () => {
+    expect(
+      regQueryIsEmpty('\r\nHKEY_CURRENT_USER\\Software\\Chromium\\NativeMessagingHosts\r\n'),
+    ).toBe(true);
+    expect(
+      regQueryIsEmpty(
+        '\r\nHKEY_CURRENT_USER\\Software\\Chromium\\NativeMessagingHosts\r\n' +
+          'HKEY_CURRENT_USER\\Software\\Chromium\\NativeMessagingHosts\\com.other.host\r\n',
+      ),
+    ).toBe(false);
   });
 
   it('quotes shell arguments that need it', () => {

@@ -14,7 +14,11 @@ export interface Registry {
   /** The key's default value, or undefined if the key doesn't exist. */
   get(key: string): string | undefined;
   set(key: string, value: string): void;
+  /** Deletes the key and everything under it. */
   delete(key: string): void;
+  exists(key: string): boolean;
+  /** Whether the key has no values and no subkeys (unknown counts as not empty). */
+  isEmpty(key: string): boolean;
 }
 
 export interface RunResult {
@@ -74,6 +78,8 @@ export function realEnv(): InstallEnv {
 
 const noRegistry: Registry = {
   get: () => undefined,
+  exists: () => false,
+  isEmpty: () => false,
   set: () => {
     throw new Error('no registry on this platform');
   },
@@ -96,6 +102,13 @@ export function regExeRegistry(run = spawnSync): Registry {
     delete(key) {
       reg(['delete', `HKCU\\${key}`, '/f']);
     },
+    exists(key) {
+      return reg(['query', `HKCU\\${key}`]).status === 0;
+    },
+    isEmpty(key) {
+      const r = reg(['query', `HKCU\\${key}`]);
+      return r.status === 0 && regQueryIsEmpty(String(r.stdout));
+    },
   };
 }
 
@@ -106,6 +119,11 @@ export function parseRegQueryDefault(stdout: string): string | undefined {
     if (m) return m[1]!.trim();
   }
   return undefined;
+}
+
+/** `reg query <key>` prints the key's own path, then a line per value and subkey. */
+export function regQueryIsEmpty(stdout: string): boolean {
+  return stdout.split(/\r?\n/).filter((l) => l.trim()).length <= 1;
 }
 
 function realRunner(osName: OsName): Runner {

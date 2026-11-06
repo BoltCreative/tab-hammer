@@ -8,7 +8,10 @@ import type { InstallEnv, OsName, RunResult } from '../install/env.ts';
 
 export interface FakeEnv extends InstallEnv {
   root: string;
+  /** Default values by key. */
   reg: Map<string, string>;
+  /** Every key that exists (setting one creates its parents, as `reg add` does). */
+  regKeys: Set<string>;
   calls: string[][];
   /** Programs the fake PATH has, and what running them returns. */
   programs: Map<string, (args: string[]) => RunResult>;
@@ -25,11 +28,14 @@ export function fakeEnv(osName: OsName): FakeEnv {
   const home = path.join(root, 'home');
   fs.mkdirSync(home);
   const reg = new Map<string, string>();
+  const regKeys = new Set<string>(['Software']);
+  const under = (k: string, parent: string) => k === parent || k.startsWith(parent + '\\');
   const calls: string[][] = [];
   const programs = new Map<string, (args: string[]) => RunResult>();
   return {
     root,
     reg,
+    regKeys,
     calls,
     programs,
     os: osName,
@@ -43,8 +49,19 @@ export function fakeEnv(osName: OsName): FakeEnv {
     user: 'tester',
     registry: {
       get: (k) => reg.get(k),
-      set: (k, v) => void reg.set(k, v),
-      delete: (k) => void reg.delete(k),
+      set: (k, v) => {
+        reg.set(k, v);
+        for (let p = k; p; p = p.includes('\\') ? p.slice(0, p.lastIndexOf('\\')) : '') {
+          regKeys.add(p);
+        }
+      },
+      delete: (k) => {
+        for (const x of [...regKeys]) if (under(x, k)) regKeys.delete(x);
+        for (const x of [...reg.keys()]) if (under(x, k)) reg.delete(x);
+      },
+      exists: (k) => regKeys.has(k),
+      isEmpty: (k) =>
+        regKeys.has(k) && !reg.has(k) && ![...regKeys].some((x) => x !== k && under(x, k)),
     },
     runner: {
       has: (cmd) => programs.has(cmd),
@@ -56,6 +73,11 @@ export function fakeEnv(osName: OsName): FakeEnv {
     },
     cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
   };
+}
+
+/** A browser user data folder that has been run (Chromium writes `Local State` on first launch). */
+export function browserData(dir: string): void {
+  write(path.join(dir, 'Local State'), '{}');
 }
 
 /** Every file and folder under `dir`, with file contents, for byte-for-byte comparisons. */

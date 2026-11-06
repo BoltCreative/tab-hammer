@@ -10,7 +10,6 @@
 import fs from 'node:fs';
 import { NATIVE_HOST_NAME } from '@tab-hammer/protocol';
 import type { InstallEnv } from './env.ts';
-import { isDir } from './env.ts';
 
 export interface BrowserDef {
   id: string;
@@ -166,7 +165,11 @@ export function resolveBrowser(env: InstallEnv, b: BrowserDef): BrowserTarget | 
   return undefined;
 }
 
-/** Whether a browser has a user data folder here (Arc's Windows package folder has a suffix). */
+/**
+ * Whether a browser has been run here: its user data folder holds the `Local State` file every
+ * Chromium browser writes on first launch. (A bare folder isn't enough: registering Brave on macOS
+ * creates Chrome's folder.) Arc's Windows package folder has a publisher suffix.
+ */
 export function detectBrowser(env: InstallEnv, t: BrowserTarget): boolean {
   if (env.os === 'win32' && t.browser.id === 'arc') {
     const parent = env.path.dirname(t.dataDir);
@@ -177,5 +180,5 @@ export function detectBrowser(env: InstallEnv, t: BrowserTarget): boolean {
       return false;
     }
   }
-  return isDir(t.dataDir);
+  return fs.existsSync(env.path.join(t.dataDir, 'Local State'));
 }

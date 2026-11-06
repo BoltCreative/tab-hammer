@@ -12,6 +12,8 @@ export interface JsonInsertion {
   text: string;
   /** The entry existed before install (not written by us), so install replaced its value. */
   replaced?: boolean;
+  /** Install added the container object too, so uninstall drops it if it's left empty. */
+  addedContainer?: boolean;
 }
 
 export class ConfigFormatError extends Error {}
@@ -131,22 +133,33 @@ export function insertEntry(
   }
 
   if (!text.trim()) {
+    // No file, or only whitespace: write a whole object after whatever was there.
     const eol = detectEol(text);
     const body = render({ [container]: { [key]: value } }, '  ', '', eol) + eol;
-    return { text: body, insertion: { createdFile: true, text: body } };
+    return {
+      text: text + body,
+      insertion: { createdFile: text === '', text: body, addedContainer: true },
+    };
   }
 
   const root = parseRoot(text);
   const existing = findNodeAtLocation(root, [container, key]);
   if (existing) {
-    // Someone else's entry under our name (an older install, or hand-written): replace its value.
     const fo = {
       insertSpaces: !detectIndentUnit(text).includes('\t'),
       tabSize: 2,
       eol: detectEol(text),
     };
     const next = applyEdits(text, modify(text, [container, key], value, { formattingOptions: fo }));
-    return { text: next, insertion: { createdFile: false, text: '', replaced: true } };
+    // Our own entry, edited since the first install: keep what that install recorded. Otherwise
+    // it's someone else's entry under our name (the old repo installer, or hand-written).
+    return {
+      text: next,
+      insertion:
+        previous && !previous.replaced
+          ? previous
+          : { createdFile: false, text: '', replaced: true },
+    };
   }
 
   const holder = findNodeAtLocation(root, [container]);
@@ -158,7 +171,7 @@ export function insertEntry(
     : memberInsertion(text, root, container, { [key]: value });
   return {
     text: text.slice(0, ins.offset) + ins.text + text.slice(ins.offset),
-    insertion: { createdFile: false, text: ins.text },
+    insertion: { createdFile: false, text: ins.text, addedContainer: !holder },
   };
 }
 
@@ -181,7 +194,8 @@ export function removeEntry(
     if (at !== -1 && text.indexOf(insertion.text, at + 1) === -1) {
       const next = text.slice(0, at) + text.slice(at + insertion.text.length);
       // Only trust the cut if the entry is really gone and the rest still parses.
-      if (next.trim() && readEntry(next, container, key) === undefined && safeParse(next)) {
+      // (A file that was only whitespace before install is only whitespace again.)
+      if (!next.trim() || (readEntry(next, container, key) === undefined && safeParse(next))) {
         return { text: next, deleteFile: false, removedExactly: true, found: true };
       }
     }
@@ -195,7 +209,7 @@ export function removeEntry(
     eol: detectEol(text),
   };
   let next = applyEdits(text, modify(text, [container, key], undefined, { formattingOptions: fo }));
-  if (insertion?.createdFile || insertion?.text.trimStart().startsWith(JSON.stringify(container))) {
+  if (insertion?.addedContainer) {
     // We added the container too: drop it if we leave it empty.
     const root = parseTree(next);
     const holder = root && findNodeAtLocation(root, [container]);

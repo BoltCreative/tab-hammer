@@ -9,6 +9,7 @@ const ENTRY = { command: '/usr/local/bin/node', args: ['/Users/ada/.tab-hammer/m
 
 const JSON_FILES: Record<string, string> = {
   empty: '',
+  'only whitespace': '\n',
   'empty object': '{}',
   'empty object, newline': '{}\n',
   'empty container': '{\n  "mcpServers": {}\n}\n',
@@ -31,7 +32,9 @@ describe('JSON config entries', () => {
         mcpServers: Record<string, unknown>;
       };
       expect(parsed.mcpServers['tab-hammer']).toEqual(ENTRY);
-      const before = original ? (parse(original, [], { allowTrailingComma: true }) as object) : {};
+      const before = original.trim()
+        ? (parse(original, [], { allowTrailingComma: true }) as object)
+        : {};
       // Nothing else changed.
       const others = { ...parsed.mcpServers };
       delete others['tab-hammer'];
@@ -116,6 +119,7 @@ const TABLE = tomlTable('mcp_servers.tab-hammer', {
 
 const TOML_FILES: Record<string, string> = {
   empty: '',
+  'only whitespace': '\n',
   'settings, trailing newline': 'model = "o4"\n\n[mcp_servers.github]\ncommand = "gh-mcp"\n',
   'no trailing newline': 'model = "o4"',
   CRLF: 'model = "o4"\r\n[tui]\r\nnotifications = true\r\n',
@@ -151,6 +155,15 @@ describe('TOML config tables (Codex)', () => {
     const edited = text + '\n[tui]\nnotifications = true\n';
     const back = removeTable(edited, 'mcp_servers.tab-hammer', insertion);
     expect(back.text).toBe('model = "o4"\n\n[tui]\nnotifications = true\n');
+  });
+
+  it('recognises a quoted table name, and removes sub-tables with it', () => {
+    const original =
+      'model = "o4"\n\n[mcp_servers."tab-hammer"]\ncommand = "old"\n\n[mcp_servers.tab-hammer.env]\nX = "1"\n';
+    const { text, insertion } = insertTable(original, 'mcp_servers.tab-hammer', TABLE);
+    expect(insertion.replaced).toBe(true);
+    expect(text.match(/\[mcp_servers\.("?)tab-hammer\1\]/g)).toHaveLength(1);
+    expect(removeTable(text, 'mcp_servers.tab-hammer', insertion).text).toBe('model = "o4"\n');
   });
 
   it('replaces a table of the same name it did not write', () => {

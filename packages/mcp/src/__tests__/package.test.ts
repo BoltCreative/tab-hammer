@@ -29,6 +29,7 @@ beforeEach(() => {
       ? path.join(home, 'Library', 'Application Support', 'Google', 'Chrome')
       : path.join(home, '.config', 'google-chrome');
   fs.mkdirSync(chrome, { recursive: true });
+  fs.writeFileSync(path.join(chrome, 'Local State'), '{}');
   fs.mkdirSync(path.join(home, '.cursor'));
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EXTENSION_ID, NATIVE_HOST_NAME } from '@tab-hammer/protocol';
 import { install, layout, loadState, uninstall } from '../install/installer.ts';
-import { fakeClaude, fakeEnv, snapshot, write, type FakeEnv } from './fakeEnv.ts';
+import { browserData, fakeClaude, fakeEnv, snapshot, write, type FakeEnv } from './fakeEnv.ts';
 
 const BUILT = path.resolve(import.meta.dirname, '../../dist');
 const envs: FakeEnv[] = [];
@@ -24,8 +24,9 @@ const support = (e: FakeEnv, ...p: string[]) =>
 /** A Mac with Chrome, Brave, and Arc, and every harness with some existing config of its own. */
 function busyMac(): FakeEnv {
   const e = machine('darwin');
-  fs.mkdirSync(support(e, 'Google', 'Chrome'), { recursive: true });
-  fs.mkdirSync(support(e, 'BraveSoftware', 'Brave-Browser'), { recursive: true });
+  browserData(support(e, 'Google', 'Chrome'));
+  browserData(support(e, 'BraveSoftware', 'Brave-Browser'));
+  browserData(support(e, 'Arc', 'User Data'));
   write(
     support(e, 'Arc', 'User Data', 'NativeMessagingHosts', 'other.host.json'),
     '{"name":"other"}',
@@ -112,7 +113,7 @@ describe('install', () => {
 
   it('leaves alone browsers and harnesses that are not there', () => {
     const e = machine('linux');
-    fs.mkdirSync(path.join(e.xdgConfig, 'chromium'), { recursive: true });
+    browserData(path.join(e.xdgConfig, 'chromium'));
     const report = install(e, opts);
     expect(report.done).toEqual(['chromium']);
     expect(fs.existsSync(path.join(e.xdgConfig, 'google-chrome'))).toBe(false);
@@ -133,7 +134,7 @@ describe('install', () => {
 
   it('allows extra extension IDs in every manifest', () => {
     const e = machine('linux');
-    fs.mkdirSync(path.join(e.xdgConfig, 'google-chrome'), { recursive: true });
+    browserData(path.join(e.xdgConfig, 'google-chrome'));
     const store = 'abcdefghijklmnopabcdefghijklmnop';
     install(e, { ...opts, extensionIds: [store] });
     const m = JSON.parse(
@@ -178,8 +179,8 @@ describe('install then uninstall', () => {
 
   it('leaves a Linux machine byte-identical, including folders install had to create', () => {
     const e = machine('linux');
-    fs.mkdirSync(path.join(e.xdgConfig, 'google-chrome'), { recursive: true });
-    fs.mkdirSync(path.join(e.xdgConfig, 'BraveSoftware', 'Brave-Browser'), { recursive: true });
+    browserData(path.join(e.xdgConfig, 'google-chrome'));
+    browserData(path.join(e.xdgConfig, 'BraveSoftware', 'Brave-Browser'));
     fs.mkdirSync(path.join(e.xdgConfig, 'Claude'), { recursive: true });
     fs.mkdirSync(path.join(e.xdgConfig, 'devin'), { recursive: true });
     const before = snapshot(e.root);
@@ -232,15 +233,18 @@ describe('install then uninstall', () => {
 describe('Windows (simulated: posix temp paths, fake registry)', () => {
   function windows(): FakeEnv {
     const e = machine('win32');
-    fs.mkdirSync(path.join(e.localAppData, 'Google', 'Chrome', 'User Data'), { recursive: true });
-    fs.mkdirSync(path.join(e.localAppData, 'Google', 'Chrome SxS', 'User Data'), {
-      recursive: true,
-    });
-    fs.mkdirSync(path.join(e.localAppData, 'Microsoft', 'Edge', 'User Data'), { recursive: true });
+    browserData(path.join(e.localAppData, 'Google', 'Chrome', 'User Data'));
+    browserData(path.join(e.localAppData, 'Google', 'Chrome SxS', 'User Data'));
+    browserData(path.join(e.localAppData, 'Microsoft', 'Edge', 'User Data'));
     fs.mkdirSync(path.join(e.localAppData, 'Packages', 'TheBrowserCompany.Arc_ttt1ap7aakyb4'), {
       recursive: true,
     });
     write(path.join(e.appData, 'Claude', 'claude_desktop_config.json'), '{}\r\n');
+    // Chrome makes its own key when installed; Edge's NativeMessagingHosts key already exists.
+    for (const k of ['Google', 'Google\\Chrome', 'Microsoft', 'Microsoft\\Edge']) {
+      e.regKeys.add(`Software\\${k}`);
+    }
+    e.regKeys.add('Software\\Microsoft\\Edge\\NativeMessagingHosts');
     return e;
   }
 
@@ -271,11 +275,15 @@ describe('Windows (simulated: posix temp paths, fake registry)', () => {
 
   it('uninstall deletes the keys and files, and restores a key value it replaced', () => {
     const e = windows();
-    e.reg.set(edgeKey, 'C:\\old\\manifest.json');
+    e.registry.set(edgeKey, 'C:\\old\\manifest.json');
     const before = snapshot(e.root);
+    const keysBefore = [...e.regKeys].sort();
     install(e, opts);
+    expect(e.regKeys.has('Software\\Google\\Chrome\\NativeMessagingHosts')).toBe(true);
     uninstall(e);
     expect([...e.reg.entries()]).toEqual([[edgeKey, 'C:\\old\\manifest.json']]);
+    // The NativeMessagingHosts key install created under Chrome's is gone again.
+    expect([...e.regKeys].sort()).toEqual(keysBefore);
     expect(snapshot(e.root)).toEqual(before);
   });
 
@@ -302,5 +310,62 @@ describe('uninstall with no install state (the old repo installer)', () => {
     expect(fs.readdirSync(hosts)).toEqual(['other.json']);
     expect(fs.existsSync(path.join(e.home, '.tab-hammer', 'native-host'))).toBe(false);
     expect(claude.has('tab-hammer')).toBe(false);
+  });
+});
+
+describe('review regressions', () => {
+  it('a Brave-only Mac does not start counting Chrome as installed', () => {
+    const e = machine('darwin');
+    browserData(support(e, 'BraveSoftware', 'Brave-Browser'));
+    expect(install(e, opts).done).toEqual(['brave']);
+    // Chrome's folder now exists (Brave reads its manifest from there), but Chrome isn't installed.
+    expect(install(e, opts).done).toEqual(['brave']);
+  });
+
+  it('no false "no browser" message when --only leaves browsers out', () => {
+    const e = busyMac();
+    const lines: string[] = [];
+    install(e, { ...opts, only: ['cursor'], log: (l) => lines.push(l) });
+    expect(lines.join('\n')).not.toMatch(/No supported browser/);
+  });
+
+  it('keeps the old repo host while a manifest still points at it', () => {
+    const e = machine('linux');
+    const chrome = path.join(e.xdgConfig, 'google-chrome');
+    browserData(chrome);
+    const legacy = path.join(e.home, '.tab-hammer', 'native-host');
+    write(path.join(legacy, 'tab-hammer-host'), '#!/bin/sh\n');
+    write(
+      path.join(chrome, 'NativeMessagingHosts', `${NATIVE_HOST_NAME}.json`),
+      JSON.stringify({ path: path.join(legacy, 'tab-hammer-host') }),
+    );
+    fs.mkdirSync(path.join(e.home, '.cursor'));
+    install(e, { ...opts, only: ['cursor'] });
+    expect(fs.existsSync(legacy)).toBe(true);
+    install(e, opts); // now Chrome's manifest points at the new host
+    expect(fs.existsSync(legacy)).toBe(false);
+  });
+
+  it('a Codex setting the user added under our table leaves with it, not into another table', () => {
+    const e = machine('linux');
+    const toml = path.join(e.codexHome, 'config.toml');
+    const original = '[mcp_servers.github]\ncommand = "gh"\n';
+    write(toml, original);
+    install(e, opts);
+    fs.appendFileSync(toml, 'startup_timeout_sec = 60\n\n[mcp_servers.tab-hammer.env]\nX = "1"\n');
+    uninstall(e);
+    expect(fs.readFileSync(toml, 'utf8')).toBe(original);
+  });
+
+  it('re-installing after the harness reformatted its config still cleans up fully', () => {
+    const e = machine('linux');
+    fs.mkdirSync(path.join(e.home, '.cursor'));
+    const before = snapshot(e.root);
+    install(e, opts);
+    const file = path.join(e.home, '.cursor', 'mcp.json');
+    fs.writeFileSync(file, JSON.stringify(JSON.parse(fs.readFileSync(file, 'utf8'))));
+    install(e, opts);
+    uninstall(e);
+    expect(snapshot(e.root)).toEqual(before);
   });
 });

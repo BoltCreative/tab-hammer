@@ -9,7 +9,7 @@ import { doctor, formatChecks } from '../install/doctor.ts';
 import { install, layout } from '../install/installer.ts';
 import { encodeFrame, FrameDecoder } from '../framing.ts';
 import { runNativeHost } from '../nativeHost.ts';
-import { fakeClaude, fakeEnv, write, type FakeEnv } from './fakeEnv.ts';
+import { browserData, fakeClaude, fakeEnv, write, type FakeEnv } from './fakeEnv.ts';
 
 const BUILT = path.resolve(import.meta.dirname, '../../dist');
 const envs: FakeEnv[] = [];
@@ -22,7 +22,7 @@ afterEach(async () => {
 function installed(): FakeEnv {
   const e = fakeEnv('linux');
   envs.push(e);
-  fs.mkdirSync(path.join(e.xdgConfig, 'google-chrome'), { recursive: true });
+  browserData(path.join(e.xdgConfig, 'google-chrome'));
   fs.mkdirSync(path.join(e.home, '.cursor'), { recursive: true });
   fakeClaude(e);
   install(e, { builtDir: BUILT });
