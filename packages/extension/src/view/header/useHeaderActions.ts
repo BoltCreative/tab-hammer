@@ -11,7 +11,7 @@ const CONFIRM_MS = 1500;
 // this browser" banner (and shifts this window's content) unless Chrome was launched with
 // --silent-debugger-extension-api.
 const REFRESH_NOTE =
-  'Captures in the background, one tab at a time. Sleeping tabs are skipped. Chrome shows its debugging banner while it runs.';
+  'Captures in the background, one tab at a time. Sleeping tabs are woken to capture them and stay loaded. Chrome shows its debugging banner while it runs.';
 
 function refreshStatus(state: RefreshState): string {
   if (state.phase === 'idle') return '';

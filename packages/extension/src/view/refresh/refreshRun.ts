@@ -18,35 +18,29 @@ export interface RefreshTab {
 }
 
 /**
- * Sleeping tabs are left alone: a discarded one would reload when the debugger attached, and an
- * unloaded one (lazily restored after a browser restart) the capture would load first. Loading
- * every sleeping tab is what Chrome's memory saving avoids.
+ * Whether the tab is worth capturing for this run, given when its page was last captured.
+ * Sleeping tabs (discarded by Chrome's memory saver, or not loaded since a browser restart) are
+ * included: the capture wakes them in the background first, and they stay loaded until Chrome
+ * puts them to sleep again.
  */
-export function isAsleep(tab: Pick<RefreshTab, 'discarded' | 'status'>): boolean {
-  return tab.discarded || tab.status === 'unloaded';
-}
-
-/** Whether the tab is worth capturing for this run, given when its page was last captured. */
 export function wantsRefresh(
   tab: RefreshTab,
   capturedAt: number | undefined,
   mode: RefreshMode,
   now: number,
 ): boolean {
-  if (tab.incognito || isAsleep(tab) || !isCapturableUrl(tab.url)) return false;
+  if (tab.incognito || !isCapturableUrl(tab.url)) return false;
   return mode === 'all' || capturedAt === undefined || now - capturedAt > STALE_PREVIEW_MS;
 }
 
 /**
  * What the preview panel says about a background tab with no preview that no Refresh run has
  * recorded anything for. It only points at Refresh stale when a run would actually take the tab
- * (the same rule, wantsRefresh): a sleeping tab, including one Chrome hasn't loaded since a
- * restart, is skipped by Refresh, so it says to open the tab instead.
+ * (the same rule, wantsRefresh), and says why not otherwise. Read from Chrome's live tab.
  */
 export function backgroundTabNote(tab: RefreshTab | undefined): CaptureOutcome {
   if (!tab) return 'skipped:no-tab';
   if (tab.incognito) return 'skipped:incognito';
-  if (isAsleep(tab)) return 'skipped:discarded';
   if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
   return 'skipped:background-tab';
 }
@@ -78,7 +72,7 @@ export interface RefreshProgress {
   total: number; // pages to capture: tabs on the same page share one preview
   saved: number;
   failed: number;
-  /** Left alone after all: closed, fell asleep, already fresh, or the capture skipped it. */
+  /** Left alone after all: closed, already fresh, or the capture skipped it. */
   skipped: number;
 }
 
@@ -94,7 +88,7 @@ export interface RefreshDeps {
 
 /**
  * Captures each target in turn. Just before each, the tab is looked up again and skipped if it
- * closed, went to sleep, or (in 'stale' mode) got a fresh preview meanwhile, e.g. because the
+ * closed, or (in 'stale' mode) got a fresh preview meanwhile, e.g. because the
  * user looked at it. Resolves with the final progress once done or stopped.
  */
 export async function runRefresh(

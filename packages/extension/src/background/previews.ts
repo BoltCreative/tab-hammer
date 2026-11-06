@@ -106,6 +106,8 @@ const scheduler = createCaptureScheduler<CaptureOutcome>({
   debounceMs: 500,
   // Chrome allows 2 captureVisibleTab calls per second; leave a little headroom.
   minIntervalMs: 550,
+  // Well past a normal capture (a screenshot, a downscale, a save).
+  captureTimeoutMs: 10_000,
   capture: captureWindow,
 });
 
@@ -156,8 +158,8 @@ const captureTab = createTabCapturer({
   record: (tabId, outcome, url) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome, url),
   sessionId: () => browserSession.current(),
   waitForComplete,
-  // To be confirmed in real Chrome: reloading a lazily restored ('unloaded') background tab
-  // loads it without activating it.
+  // To be confirmed in real Chrome: reloading a sleeping background tab (lazily restored, or
+  // discarded) loads it without activating it, and keeps its tab ID.
   reload: (tabId) => chrome.tabs.reload(tabId),
 });
 

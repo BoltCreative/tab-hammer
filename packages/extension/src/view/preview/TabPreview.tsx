@@ -60,9 +60,8 @@ export function TabPreview({ tab, previewEpoch }: Props) {
     // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
     // A background tab is never captured from a hover (see wantsOnDemandCapture): unless a
     // Refresh run recorded something for it, say how to get its preview, by the same rule Refresh
-    // stale picks tabs with (backgroundTabNote; Chrome's live tab, since a tab not loaded since a
-    // restart is asleep without being discarded). (A page Chrome won't capture at all keeps the
-    // usual note.)
+    // stale picks tabs with (backgroundTabNote, from Chrome's live tab). (A page Chrome won't
+    // capture at all keeps the usual note.)
     const noPreview = async () => {
       if (tabId === undefined || windowId === undefined) return done(null, null);
       const o =

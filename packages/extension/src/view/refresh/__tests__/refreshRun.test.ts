@@ -41,12 +41,12 @@ describe('pickRefreshTargets', () => {
   const pick = (mode: 'stale' | 'all') =>
     pickRefreshTargets(tabs, (u) => shots[u], mode, NOW, 99).map((t) => t.id);
 
-  it('stale mode takes missing and stale previews, once per page, skipping sleeping tabs', () => {
-    expect(pick('stale')).toEqual([2, 3]);
+  it('stale mode takes missing and stale previews once per page, sleeping tabs included', () => {
+    expect(pick('stale')).toEqual([2, 3, 5, 6]);
   });
 
   it('all mode also retakes fresh previews', () => {
-    expect(pick('all')).toEqual([1, 2, 3]);
+    expect(pick('all')).toEqual([1, 2, 3, 5, 6]);
   });
 });
 
@@ -68,11 +68,11 @@ describe('backgroundTabNote', () => {
     }
   });
 
-  it('calls both kinds of sleeping tab asleep', () => {
+  it('points sleeping tabs at Refresh stale too (it wakes them)', () => {
     expect(tabs.map(backgroundTabNote)).toEqual([
       'skipped:background-tab',
-      'skipped:discarded',
-      'skipped:discarded',
+      'skipped:background-tab',
+      'skipped:background-tab',
       'skipped:incognito',
       'skipped:not-capturable-url',
     ]);
@@ -123,7 +123,7 @@ describe('runRefresh', () => {
     expect(c.progress.map((p) => p.done)).toEqual([0, 1, 2, 3]);
   });
 
-  it('skips tabs that closed, fell asleep, or got a fresh preview since the run started', async () => {
+  it('skips tabs that closed or got a fresh preview since the run started', async () => {
     const tabs = [
       tab(1, 'https://a.test/'),
       tab(2, 'https://b.test/'),
@@ -134,12 +134,12 @@ describe('runRefresh', () => {
     c.onCapture = (id) => {
       if (id !== 1) return;
       c.live.delete(2);
-      c.live.get(3)!.discarded = true;
+      c.live.get(3)!.discarded = true; // still captured: the capture wakes it
       c.shots['https://d.test/'] = NOW; // the user looked at it meanwhile
     };
     const result = await runRefresh(tabs, 'stale', c.deps, new AbortController().signal);
-    expect(c.captured).toEqual([1]);
-    expect(result).toMatchObject({ done: 4, saved: 1, skipped: 3 });
+    expect(c.captured).toEqual([1, 3]);
+    expect(result).toMatchObject({ done: 4, saved: 2, skipped: 2 });
   });
 
   it('stops before the next capture once aborted', async () => {

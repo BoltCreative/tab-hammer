@@ -8,6 +8,11 @@ export interface SchedulerOptions<R = unknown> {
   minIntervalMs: number;
   /** Captures one window. Rejections are swallowed: a failed capture just means no preview. */
   capture: (windowId: number) => Promise<R>;
+  /**
+   * A capture still running after this long is given up on (its result counts as a failure), so
+   * one Chrome call that never settles can't hold up every later capture, of every window.
+   */
+  captureTimeoutMs: number;
   now?: () => number;
 }
 
@@ -51,14 +56,16 @@ export function createCaptureScheduler<R = unknown>(
     const windowId = queue.shift()!;
     running = true;
     lastStart = now();
-    opts
-      .capture(windowId)
-      .catch(() => undefined)
-      .then((result) => {
-        running = false;
-        settle(windowId, result);
-        pump();
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), opts.captureTimeoutMs);
+    });
+    Promise.race([opts.capture(windowId).catch(() => undefined), gaveUp]).then((result) => {
+      clearTimeout(timer);
+      running = false;
+      settle(windowId, result);
+      pump();
+    });
   };
 
   return {
