@@ -1,0 +1,3 @@
+# Every change needs the maintainer's review before it merges (enforced by the dev and main
+# rulesets: a code owner must approve).
+* @davecazz

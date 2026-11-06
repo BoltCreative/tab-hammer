@@ -12,6 +12,10 @@ If you work in a git worktree, run `npm install` at the worktree root after `git
 
 `docs/superpowers/` holds the design records written while building Tab Hammer: design specs (`specs/YYYY-MM-DD-<topic>-design.md`) and implementation plans (`plans/YYYY-MM-DD-<topic>.md`). They are historical: they explain why things were built the way they were, but the code and this file describe the current state, and the docs aren't updated when later work changes the design. Add a new spec and plan for substantial new work rather than editing old ones.
 
+## Branches
+
+Work lands on `dev` through pull requests; `main` is the release branch and takes only `dev` (CI's `source` job fails a pull request into `main` from any other branch, and the `main` ruleset requires it). Both rulesets require the `gate` check, and `dev` requires a code owner's approval (`.github/CODEOWNERS`). Every merge to `main` uploads a store draft (`.github/workflows/store.yml`).
+
 ## Completion gates
 
 Pick the gate by change class. Report the gate name and result when declaring work complete.
