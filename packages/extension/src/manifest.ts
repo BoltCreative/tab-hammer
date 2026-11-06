@@ -33,6 +33,7 @@ export default defineManifest({
   // alarms: pulling the other computers' outlines every 5 minutes. No install warning.
   // sidePanel: docked mode, the outline in Chrome's side panel (src/background/dock.ts). No
   // install warning.
+  // contextMenus: the toolbar icon's right-click "Side panel: left or right…". No install warning.
   permissions: [
     'tabs',
     'tabGroups',
@@ -47,6 +48,7 @@ export default defineManifest({
     'identity',
     'alarms',
     'sidePanel',
+    'contextMenus',
   ],
   // Drive sync's sign-in, only once a client ID is set (src/shared/syncConfig.ts): an empty
   // client ID never ships. The e2e build leaves it out too (TAB_HAMMER_NO_OAUTH), so tests can only

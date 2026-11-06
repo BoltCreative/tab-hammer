@@ -5,6 +5,7 @@ import {
   MISSING_PANELS,
   PANEL_PORT,
   SET_VIEW_MODE,
+  SIDE_PANEL_SETTINGS_URL,
   type MissingPanelsReply,
   type PanelHello,
   type SetViewModeRequest,
@@ -15,9 +16,6 @@ import {
 export type Surface = 'window' | 'panel';
 export const surface: Surface =
   document.documentElement.dataset.surface === 'panel' ? 'panel' : 'window';
-
-/** Where to set which side Chrome puts its side panel on. */
-export const SIDE_PANEL_SETTINGS_URL = 'chrome://settings/appearance';
 
 const RECONNECT_MS = 500;
 /** Clicks in a panel ask the worker for windows still without one at most this often. */

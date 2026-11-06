@@ -3,6 +3,7 @@ import {
   isSetViewModeRequest,
   PANEL_PORT,
   readViewMode,
+  SIDE_PANEL_SETTINGS_URL,
   VIEW_MODE_KEY,
   type MissingPanelsReply,
   type PanelHello,
@@ -24,6 +25,7 @@ import {
  */
 
 const DECLINED_KEY = 'dockDeclined';
+const PANEL_SIDE_MENU_ID = 'panelSide';
 
 export interface DockDeps {
   /** Opens (or focuses) the standalone Tab Hammer window. */
@@ -133,6 +135,23 @@ export function registerDock(deps: DockDeps): {
       return true;
     }
     return false;
+  });
+
+  // The toolbar icon's right-click menu: Chrome lets extensions read the side panel's side but not
+  // set it, so this opens the setting. Menu items persist, so they're (re)made on install/update.
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: PANEL_SIDE_MENU_ID,
+        title: 'Side panel: left or right…',
+        contexts: ['action'],
+      });
+    });
+  });
+  chrome.contextMenus.onClicked.addListener((info) => {
+    if (info.menuItemId === PANEL_SIDE_MENU_ID) {
+      void chrome.tabs.create({ url: SIDE_PANEL_SETTINGS_URL });
+    }
   });
 
   // Chrome keeps the panel behavior, but re-assert it in case the stored mode and Chrome disagree

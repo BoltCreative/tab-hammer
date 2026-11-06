@@ -6,6 +6,12 @@ export type ViewMode = 'float' | 'dock';
 export const VIEW_MODE_KEY = 'viewMode';
 export const DEFAULT_VIEW_MODE: ViewMode = 'float';
 
+/**
+ * Where the user picks which side Chrome shows side panels on: one Chrome-wide setting, for every
+ * window and every side panel (not just Tab Hammer's). Extensions can read it but not set it.
+ */
+export const SIDE_PANEL_SETTINGS_URL = 'chrome://settings/appearance';
+
 export function isViewMode(v: unknown): v is ViewMode {
   return v === 'float' || v === 'dock';
 }

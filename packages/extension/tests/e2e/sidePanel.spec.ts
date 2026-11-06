@@ -2,7 +2,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserContext, Page, Worker } from '@playwright/test';
-import { expect, launchWithExtension, relaunch, serviceWorkerOf, test } from './fixtures';
+import {
+  expect,
+  launchWithExtension,
+  relaunch,
+  runMenuAction,
+  serviceWorkerOf,
+  test,
+} from './fixtures';
 
 // Docked mode. Headless Chromium runs real side panels (each one's page connects to the worker),
 // but Playwright can't reach a side panel's page, so a panel's own clicks are driven on panel.html
@@ -158,17 +165,38 @@ test('the docked layout fits Chrome’s narrowest side panel', async ({ context,
   }
   await expect(panel.locator('.preview-panel')).toBeInViewport();
 
-  // Chrome's default side is the right, so there's no hint; the panel's left edge faces the page.
-  await expect(panel.getByTestId('side-hint')).toHaveCount(0);
+  // Chrome's default side is the right, so the panel's border is on its left, facing the page.
   await expect(panel.locator('html')).toHaveAttribute('data-side', 'right');
 
-  // With Chrome's side panel on the left (stubbed: headless can't change the setting), a one-line
-  // hint says how to move it.
+  // With Chrome's side panel on the left (stubbed: headless can't change the setting), the border
+  // moves to the panel's right.
   await panel.evaluate(() => {
     chrome.sidePanel.getLayout = (() =>
       Promise.resolve({ side: 'left' })) as typeof chrome.sidePanel.getLayout;
     window.dispatchEvent(new Event('focus'));
   });
-  await expect(panel.getByTestId('side-hint')).toBeVisible();
   await expect(panel.locator('html')).toHaveAttribute('data-side', 'left');
+});
+
+test('a docked panel’s Panel side… opens Chrome’s side panel setting', async ({
+  context,
+  sw,
+  view,
+}) => {
+  // The standalone window has no panel side to set.
+  await view.getByRole('button', { name: 'Actions' }).click();
+  await expect(view.getByRole('menuitem', { name: 'Panel side…' })).toHaveCount(0);
+  await view.keyboard.press('Escape');
+
+  const panel = await openPanelPage(context, sw);
+  await runMenuAction(panel, 'Panel side…');
+  await expect
+    .poll(() =>
+      sw.evaluate(async () =>
+        (await chrome.tabs.query({})).some((t) =>
+          (t.url || t.pendingUrl || '').startsWith('chrome://settings/appearance'),
+        ),
+      ),
+    )
+    .toBe(true);
 });

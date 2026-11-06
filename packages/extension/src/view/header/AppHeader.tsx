@@ -1,12 +1,6 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { ContextMenu } from '../components/ContextMenu';
-import {
-  dockEverywhere,
-  openSidePanelSettings,
-  popOut,
-  surface,
-  useSidePanelSide,
-} from '../chrome/dock';
+import { dockEverywhere, popOut, surface, useSidePanelSide } from '../chrome/dock';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
 import type { HeaderActions } from './useHeaderActions';
 
@@ -35,7 +29,8 @@ export function AppHeader({
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; keyboard: boolean } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
-  const side = useSidePanelSide();
+  // Keeps the root's data-side current, so a docked panel's border faces the page.
+  useSidePanelSide();
   const toggleMenu = (keyboard: boolean) => {
     if (menu) return setMenu(null);
     const r = button.current!.getBoundingClientRect();
@@ -45,16 +40,6 @@ export function AppHeader({
   return (
     <header className="app-header">
       <PreviewPermissionBanner />
-      {side === 'left' && (
-        <div className="permission-banner side-hint" role="note" data-testid="side-hint">
-          <span>
-            Side panel is on the left. Chrome&apos;s Appearance settings put it on the right.
-          </span>
-          <button type="button" onClick={openSidePanelSettings}>
-            Settings
-          </button>
-        </div>
-      )}
       {banner}
       <div className="toolbar" role="toolbar" aria-label="Tab Hammer tools">
         <input
