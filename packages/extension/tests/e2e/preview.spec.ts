@@ -325,33 +325,6 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
   await expect(panel.locator('.preview-shot')).toHaveCount(0);
 });
 
-test("clearing Chrome's history deletes the matching previews, and all of them on a full wipe", async ({
-  context,
-  sw,
-}) => {
-  await servePages(context);
-  const forget = `${ORIGIN}/forget`;
-  const keep = `${ORIGIN}/keep`;
-  // Each in its own window, so each is a visible tab the service worker captures.
-  await sw.evaluate(
-    async (urls) => {
-      for (const url of urls) await chrome.windows.create({ url });
-    },
-    [forget, keep],
-  );
-  await expect.poll(() => hasPreview(sw, forget)).toBe(true);
-  await expect.poll(() => hasPreview(sw, keep)).toBe(true);
-
-  // Removing one page's history (the History page's "Remove from history").
-  await sw.evaluate((url) => chrome.history.deleteUrl({ url }), forget);
-  await expect.poll(() => hasPreview(sw, forget)).toBe(false);
-  expect(await hasPreview(sw, keep)).toBe(true);
-
-  // "Clear browsing data" for all time.
-  await sw.evaluate(() => chrome.history.deleteAll());
-  await expect.poll(() => hasPreview(sw, keep)).toBe(false);
-});
-
 test('Capture missing captures background tabs without switching to them', async ({
   context,
   sw,

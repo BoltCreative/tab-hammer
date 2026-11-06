@@ -20,11 +20,10 @@ export default defineManifest({
   // debugger: on-demand hover previews of background tabs (CDP Page.captureScreenshot).
   // clipboardWrite: the window menu's "Copy all URLs".
   // nativeMessaging: the bridge to Claude's MCP server (packages/mcp).
-  // history: deleting previews when the user clears Chrome's browsing history.
   // system.display: reopening the view window on a visible screen if its saved spot is gone.
   // webNavigation: each tab's launch URL (its first committed address), for re-linking windows
   // Chrome restores to their saved rows. Its "Read your browsing history" warning is already
-  // covered by history's (and tabs') warning, so it adds no install prompt line.
+  // covered by tabs' warning, so it adds no install prompt line.
   // sessions: the device picker's other devices (chrome.sessions.getDevices, Chrome Sync's open
   // tabs on the user's phones and other computers) and reopening them here. Adds the install
   // warning "Read your browsing history on all your signed-in devices".
@@ -39,7 +38,6 @@ export default defineManifest({
     'debugger',
     'clipboardWrite',
     'nativeMessaging',
-    'history',
     'system.display',
     'webNavigation',
     'sessions',
