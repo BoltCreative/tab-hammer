@@ -57,6 +57,16 @@ body,
   flex-direction: column;
   height: 100%;
 }
+/* Docked in Chrome's side panel (panel.html): one edge faces the page, the right side's left edge
+   by default, the other when the user has Chrome put the panel on the left. The layout works from
+   Chrome's ~360px minimum panel width up. */
+html[data-surface='panel'] .app {
+  border-left: 1px solid var(--card-border);
+}
+html[data-surface='panel'][data-side='left'] .app {
+  border-left: none;
+  border-right: 1px solid var(--card-border);
+}
 .app-header {
   flex: none;
   border-bottom: 1px solid var(--card-border);
