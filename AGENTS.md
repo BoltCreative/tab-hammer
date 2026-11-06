@@ -29,6 +29,10 @@ Agents must never run `npm run install-mcp`: it writes into the developer's Chro
 
 The e2e suite runs headless (new-headless Chromium). Headless Chromium ignores window focus changes, so window focus is asserted via recorded `chrome.windows.update` calls rather than by observing which window is focused. It must stay headless: developers keep working on the same machine while gates run, and headed windows steal their workspace.
 
+## Store build and releases
+
+`npm run build:store` (`TAB_HAMMER_STORE=1`) builds the Chrome Web Store package into `packages/extension/dist-store/` and zips it to `packages/extension/release/tab-hammer-<version>.zip` (`scripts/pack-store.ts`). It has no manifest `key` (the store rejects one) and signs in to Drive with `STORE_GOOGLE_OAUTH_CLIENT_ID` from `src/shared/syncConfig.ts`, not the dev client; while that's empty the store build has Drive sync off. It never touches `~/.tab-hammer/dist`, so it's safe to run. `npm run release -- patch|minor|major|x.y.z` (`scripts/release.ts`) bumps the version in `src/manifest.ts`, every package.json, and package-lock.json together, without committing; the release steps are in `docs/store/release.md`. Every permission's reason is commented in `src/manifest.ts`; keep `docs/store/listing.md`'s justifications in step with it.
+
 ## Architecture
 
 Extension paths below are relative to `packages/extension/`. Chrome window and tab IDs are not stable across restarts, which is why the outline carries Tab Hammer's own IDs.
@@ -56,7 +60,7 @@ Extension paths below are relative to `packages/extension/`. Chrome window and t
 ### View
 
 - The view doesn't read Chrome for the tree: it subscribes to the outline over the `tabHammer.outline` port (`src/view/chrome/outlineClient.ts`) and sends commands (rename, hibernate, delete, restore) as runtime messages.
-- `src/model/buildTree.ts` turns the outline into the window/group/tab view model, and `src/view/chrome/chromeSource.ts`, the only view module that touches `chrome.*`, keeps just the direct live actions (activate, focus, move, close). `src/model/selection.ts` is the pure multi-select reducer. Then it renders React components.
+- `src/model/buildTree.ts` turns the outline into the window/group/tab view model, and `src/view/chrome/chromeSource.ts`, the only view module that touches `chrome.*` (permission checks and requests live in `src/view/chrome/permissions.ts`), keeps just the direct live actions (activate, focus, move, close). `src/model/selection.ts` is the pure multi-select reducer. Then it renders React components.
 - The view has a fixed header above the outline and a fixed preview panel below it, and only the outline list scrolls between them. The search box, the Actions menu, live progress (with Stop), and banners go in that header (`src/view/header/AppHeader.tsx`), never in the scrolling list.
 - Bulk actions (Close duplicates, Capture missing, Refresh all, Clear previews) live in `src/view/header/useHeaderActions.ts` and appear in both the header's Actions menu and a right-click on the outline's background. Add new ones there, not as header buttons.
 - The preview panel (`src/view/preview/PreviewPanel.tsx`) takes its own space in the window's column, so it never covers rows. It shows the tab last hovered (after a short rest) or moved to with the keyboard cursor, and keeps it when nothing is hovered (`usePreviewTarget.ts`). It collapses to a thin bar and resizes from its top edge, and both are remembered in `chrome.storage.local` (`src/view/chrome/panelSettings.ts`). There is no floating hover card.
@@ -80,7 +84,7 @@ Sync lives in `src/background/sync/`, with pure logic in `src/model/sync/`.
 - Nothing remote changes this computer's outline except Restore all, or the self-restore of an install whose outline database started empty (no push happens until that check is done). Self-restore brings the file's live windows in as re-link candidates and runs the restart matcher over the open windows, so they don't show twice.
 - Checkpoints are dated snapshots of this computer's outline, local and in Drive, one a day plus one before anything drastic, pruned to 14 daily then 8 weekly.
 - Drive sits behind `SyncBackend` (`driveBackend.ts`: REST with `fetch`, `chrome.identity.getAuthToken`; a 401 drops the cached token and retries once). Drive sync is off until `GOOGLE_OAUTH_CLIENT_ID` in `src/shared/syncConfig.ts` is set; the manifest's `oauth2` block exists only then, and never in the e2e build.
-- Chrome Sync devices (phones included) come from `chrome.sessions` (`devices.ts`), no Drive needed.
+- Chrome Sync devices (phones included) come from `chrome.sessions` (`devices.ts`), no Drive needed. `sessions` is an optional permission: the devices panel offers a button that requests it from the click (`src/view/chrome/permissions.ts`), and until it's granted `chrome.sessions` is undefined and the worker reports no devices. Chrome defines it in the running worker once granted, so `devices.ts` reads `chrome.sessions` at each call.
 - The Actions menu's "Other devices…" opens a devices panel in the header's banner area (`src/view/sync/`). It shows any of them, or a checkpoint, read-only in place of the outline (its banner also in the header), with Open here (a copy with new IDs), Restore all (missing windows come in hibernated), and Forget. It talks to the worker over the `tabHammer.sync` port and sync command messages.
 
 ### Claude bridge (MCP)

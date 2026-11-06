@@ -73,7 +73,31 @@ about the trip into its own window". Setup instructions are coming soon.
 
 ## Permissions
 
-PERMISSIONS_SECTION_PLACEHOLDER
+Tab Hammer asks for these when you install it:
+
+- **Read and change your tabs** (`tabs`, `tabGroups`, `webNavigation`): to show every window, group,
+  and tab in the outline, move and close them for you, and match the windows Chrome restores after a
+  restart back to their rows.
+- **Access to all sites** (`<all_urls>`): to screenshot the page a window is showing for its tab
+  preview. You can withhold it; Tab Hammer then shows a banner offering to grant it, and works
+  without previews until you do.
+- **Debugger** (`debugger`): to screenshot background tabs. It's attached only while you run
+  **Capture missing** or **Refresh all**, one tab at a time, so Chrome shows its "started debugging
+  this browser" banner only during those runs (see below to hide it). Chrome doesn't allow this
+  permission to be optional.
+- **Communicate with cooperating native applications** (`nativeMessaging`): the bridge to an AI
+  agent such as Claude Code. It does nothing unless you've installed the MCP server.
+- `storage`, `favicon`, `system.display`, `alarms`, and `identity`, which add no install warning:
+  settings, tab icons from Chrome's cache, keeping the window on a connected screen, checking for
+  your other computers' outlines every 5 minutes, and signing in to your own Google Drive for sync.
+
+Asked for only when you use the feature:
+
+- **Your other devices' tabs** (`sessions`): the devices panel asks when you click **Show your
+  phones and other Chrome Sync devices**.
+
+Previews are stored only on your computer, and each is kept as long as a window in your outline
+(open, hibernated, or recently closed) still has a tab at that address.
 
 ## Privacy
 
