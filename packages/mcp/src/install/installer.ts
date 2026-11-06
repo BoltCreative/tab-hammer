@@ -202,7 +202,9 @@ function registerBrowsers(
   for (const b of BROWSERS) {
     if (!selected(b.id, opts)) continue;
     const t = resolveBrowser(env, b);
-    if (!t || !detectBrowser(env, t)) continue;
+    // A Tab Hammer manifest already there (the old repo installer wrote one wherever the folder
+    // existed) is ours to update, so it doesn't keep pointing at a host that's gone.
+    if (!t || !(detectBrowser(env, t) || hasStaleManifest(env, t))) continue;
     if (t.kind === 'file') {
       ensureDir(env, t.manifestDir, state);
       fs.writeFileSync(t.manifestPath, manifest);
@@ -233,6 +235,20 @@ function registerBrowsers(
     }
     report.done.push(b.id);
     log(`Registered the host with ${b.name}`);
+  }
+}
+
+/** A Tab Hammer manifest pointing at some other host than ours (not one this installer wrote). */
+function hasStaleManifest(env: InstallEnv, t: BrowserTarget): boolean {
+  if (t.kind !== 'file') return false;
+  try {
+    const m = JSON.parse(fs.readFileSync(t.manifestPath, 'utf8')) as {
+      name?: unknown;
+      path?: unknown;
+    };
+    return m.name === NATIVE_HOST_NAME && !String(m.path).startsWith(layout(env).dir);
+  } catch {
+    return false;
   }
 }
 

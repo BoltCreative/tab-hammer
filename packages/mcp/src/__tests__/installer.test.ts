@@ -346,6 +346,26 @@ describe('review regressions', () => {
     expect(fs.existsSync(legacy)).toBe(false);
   });
 
+  it('takes over old Tab Hammer manifests in folders of browsers that never ran', () => {
+    // The old installer wrote one wherever the folder existed (other apps create these folders).
+    const e = machine('darwin');
+    browserData(support(e, 'Google', 'Chrome'));
+    const legacy = path.join(e.home, '.tab-hammer', 'native-host');
+    write(path.join(legacy, 'tab-hammer-host'), '#!/bin/sh\n');
+    const stale = support(e, 'Google', 'Chrome Beta', 'NativeMessagingHosts');
+    write(path.join(stale, 'com.1password.json'), '{}');
+    write(
+      path.join(stale, `${NATIVE_HOST_NAME}.json`),
+      JSON.stringify({ name: NATIVE_HOST_NAME, path: path.join(legacy, 'tab-hammer-host') }),
+    );
+    expect(install(e, opts).done).toContain('chrome-beta');
+    const m = JSON.parse(fs.readFileSync(path.join(stale, `${NATIVE_HOST_NAME}.json`), 'utf8'));
+    expect(m.path).toBe(path.join(layout(e).dir, 'tab-hammer-host'));
+    expect(fs.existsSync(legacy)).toBe(false);
+    uninstall(e);
+    expect(fs.readdirSync(stale)).toEqual(['com.1password.json']);
+  });
+
   it('a Codex setting the user added under our table leaves with it, not into another table', () => {
     const e = machine('linux');
     const toml = path.join(e.codexHome, 'config.toml');

@@ -125,7 +125,7 @@ describe('doctor', () => {
     const current = await doctor(e, { socket, latest: async () => PACKAGE_VERSION });
     expect(current.find((c) => c.name === 'Version')!.detail).toMatch(/\(latest\)/);
     const offline = await doctor(e, { socket, latest: async () => undefined });
-    expect(offline.find((c) => c.name === 'Version')!.detail).toMatch(/couldn't reach npm/);
+    expect(offline.find((c) => c.name === 'Version')!.detail).toMatch(/couldn't check npm/);
   });
 });
 

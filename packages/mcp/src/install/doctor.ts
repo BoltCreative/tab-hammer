@@ -81,7 +81,7 @@ export async function doctor(
         ok: true,
         detail: latest
           ? `${state.packageVersion} (latest)`
-          : `${state.packageVersion} (couldn't reach npm to check for updates)`,
+          : `${state.packageVersion} (couldn't check npm for a newer version)`,
       });
     }
   }
