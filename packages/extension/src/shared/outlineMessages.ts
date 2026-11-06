@@ -33,8 +33,9 @@ export type OutlineCommand =
   | { cmd: 'moveWindows'; ids: string[]; anchorId: string; side: WindowSide }
   // Opens an empty Chrome window; its row lands right after `afterWindowId` (null: at the end).
   | { cmd: 'newWindow'; afterWindowId: string | null }
-  // Moves these tab records (in this order) into a brand-new window at the end of the outline.
-  | { cmd: 'moveToNewWindow'; tabIds: string[] };
+  // Moves these tab records (in this order) into a brand-new window, its row right after
+  // `afterWindowId` (null: at the end).
+  | { cmd: 'moveToNewWindow'; tabIds: string[]; afterWindowId: string | null };
 
 export interface OutlineCommandRequest {
   type: typeof OUTLINE_COMMAND;

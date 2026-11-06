@@ -145,7 +145,7 @@ export function App() {
     },
     onNewWindow: (keys) => {
       const tabIds = draggedTabIds(tree, keys);
-      if (tabIds.length > 0) sendOpening({ cmd: 'moveToNewWindow', tabIds });
+      if (tabIds.length > 0) sendOpening({ cmd: 'moveToNewWindow', tabIds, afterWindowId: null });
     },
   });
   const rowProps: RowPropsFor = (key, kind) => {
@@ -208,6 +208,10 @@ export function App() {
   // acts on the window's current tabs even if they change while it is open. A null key is the
   // outline background's menu: the header's Actions.
   const [menu, setMenu] = useState<{ x: number; y: number; windowKey: string | null } | null>(null);
+  // Right-click menu on tab and group rows: the rows it acts on (the selection, if the click was
+  // on a selected row).
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; keys: string[] } | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
   const closeMenu = useCallback(() => setMenu(null), []);
   const onWindowContextMenu = (e: MouseEvent, win: WindowNode) => {
     e.preventDefault();
@@ -218,7 +222,20 @@ export function App() {
   const onBackgroundContextMenu = (e: MouseEvent) => {
     if (e.defaultPrevented) return;
     const target = e.target as Element;
-    if (target.closest('.row, input, textarea, button')) return;
+    if (target.closest('input, textarea, button')) return;
+    const row = target.closest<HTMLElement>('.row[data-kind="tab"], .row[data-kind="group"]');
+    if (row?.dataset.key) {
+      const key = row.dataset.key;
+      e.preventDefault();
+      if (!selection.selected.has(key)) {
+        dispatch({ type: 'click', key });
+        moveCursor(key);
+      }
+      const keys = selection.selected.has(key) ? [...selection.selected] : [key];
+      setRowMenu({ x: e.clientX, y: e.clientY, keys });
+      return;
+    }
+    if (target.closest('.row')) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, windowKey: null });
   };
@@ -418,6 +435,31 @@ export function App() {
           items={actions.items}
         />
       )}
+      {rowMenu && (
+        <ContextMenu
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            {
+              label: (() => {
+                const n = draggedTabIds(tree, rowMenu.keys).length;
+                return `Open in new window (${n} ${n === 1 ? 'tab' : 'tabs'})`;
+              })(),
+              title: 'Move these tabs into a new window, listed right after the one they came from',
+              onSelect: () => {
+                const tabIds = draggedTabIds(tree, rowMenu.keys);
+                const from = tree.find((w) =>
+                  w.children.some((c) => tabsIn(c).some((t) => t.id === tabIds[0])),
+                );
+                if (tabIds.length > 0) {
+                  sendOpening({ cmd: 'moveToNewWindow', tabIds, afterWindowId: from?.id ?? null });
+                }
+              },
+            },
+          ]}
+        />
+      )}
       {menu && menuWindow && (
         <ContextMenu
           x={menu.x}
@@ -441,6 +483,10 @@ function logActionError(err: unknown) {
 
 function logCommandError(err: unknown) {
   console.error('Tab Hammer: outline command failed', err);
+}
+
+function tabsIn(c: GroupNode | TabNode): TabNode[] {
+  return c.kind === 'group' ? c.tabs : [c];
 }
 
 function hasHibernatedRows(w: WindowNode): boolean {

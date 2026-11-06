@@ -238,3 +238,32 @@ test('dropping tabs on "new window" moves them into a brand-new window', async (
   );
   expect(chromeWindowOfGolf).not.toBe(winId);
 });
+
+test('right-click "Open in new window" seeds a new window with the selected tabs, after their window', async ({
+  sw,
+  view,
+}) => {
+  const [a, b] = await threeWindows(sw);
+  const extra = await sw.evaluate(
+    async (windowId) =>
+      (await chrome.tabs.create({ windowId, url: 'data:text/html,<title>Alpha2</title>' })).id!,
+    a!.chromeWindowId!,
+  );
+  await expect(liveRow(view, 'tab', extra)).toBeVisible();
+  const before = new Set((await readOutline(sw)).windows.map((w) => w.id));
+  const first = liveRow(view, 'tab', a!.tabs[0]!.chromeTabId!);
+  await first.click();
+  await liveRow(view, 'tab', extra).click({ modifiers: ['ControlOrMeta'] });
+  await liveRow(view, 'tab', extra).click({ button: 'right' });
+  await view.getByRole('menuitem', { name: 'Open in new window (2 tabs)' }).click();
+
+  const added = await addedWindow(sw, before);
+  await expect
+    .poll(async () =>
+      (await readOutline(sw)).windows.find((w) => w.id === added.id)?.tabs.map((t) => t.title),
+    )
+    .toEqual(['Alpha', 'Alpha2']);
+  // Alpha's window gave up its only tabs and closed; the new row sits where it was, before Bravo.
+  const shown = await shownIds(sw);
+  expect(shown.indexOf(added.id)).toBe(shown.indexOf(b!.id) - 1);
+});

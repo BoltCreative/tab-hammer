@@ -306,9 +306,10 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
         await commit(moveWindows(outline, c.ids, c.anchorId, c.side), live!);
         return;
       case 'newWindow':
-        return (await createWindow({ focused: true }, c.afterWindowId))?.chromeWindowId;
+        // In the background: it's a row to drag tabs into, not a place to go.
+        return (await createWindow({ focused: false }, c.afterWindowId))?.chromeWindowId;
       case 'moveToNewWindow':
-        return moveToNewWindow(c.tabIds);
+        return moveToNewWindow(c.tabIds, c.afterWindowId);
       default: {
         // Runtime messages aren't validated past `command` being an object.
         const unknown: never = c;
@@ -335,11 +336,14 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
   }
 
   /**
-   * Moves tab records into a brand-new window at the end of the outline, as Chrome does when a tab
-   * is dragged out of its strip: live tabs move in Chrome (out of their groups), and hibernated
+   * Moves tab records into a brand-new background window, its row after `afterId` (null: at the
+   * end of the outline), as Chrome does when a tab is dragged out of its strip: live tabs move in Chrome (out of their groups), and hibernated
    * ones follow in the outline. With no live tab among them, the new window is hibernated.
    */
-  async function moveToNewWindow(tabIds: string[]): Promise<number | undefined> {
+  async function moveToNewWindow(
+    tabIds: string[],
+    afterId: string | null,
+  ): Promise<number | undefined> {
     const recs = tabIds.flatMap((id) => {
       const row = findRow(outline, id);
       return row?.tab && row.window.state !== 'trashed' ? [row.tab] : [];
@@ -350,7 +354,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
     if (liveIds.length > 0) {
       const [first, ...rest] = liveIds;
       // Gone between the drop and now: the next reconcile records wherever Chrome has it.
-      target = await createWindow({ tabId: first, focused: true }, null);
+      target = await createWindow({ tabId: first, focused: false }, afterId);
       if (target && rest.length > 0) {
         await chrome.tabs.move(rest, { windowId: target.chromeWindowId!, index: -1 });
         await step();
@@ -366,7 +370,10 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
         tabs: [],
         groups: [],
       };
-      await commit({ windows: [...outline.windows, target] }, live!);
+      await commit(
+        placeWindowAfter({ windows: [...outline.windows, target] }, target.id, afterId),
+        live!,
+      );
     }
     if (!target) return undefined;
     const r = placeTabs(
