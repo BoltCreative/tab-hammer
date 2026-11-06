@@ -46,8 +46,8 @@ describe('assembleDevices', () => {
   it('prefers the Tab Hammer computer over a same-named Chrome Sync device', () => {
     const r = assembleDevices(
       'Desk',
-      [computer('a', "Dave's MacBook", 1)],
-      [device("dave's macbook ", 1), device('iPhone', 1)],
+      [computer('a', 'Work laptop', 1)],
+      [device('work laptop ', 1), device('iPhone', 1)],
     );
     expect(r.devices.map((d) => d.name)).toEqual(['iPhone']);
   });

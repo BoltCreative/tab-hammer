@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SyncPickerState, SyncSource } from '../../shared/syncMessages';
+import {
+  hasDevicesPermission,
+  requestDevicesPermission,
+  subscribePermissions,
+} from '../chrome/permissions';
 import { relativeTime } from '../preview/relativeTime';
 import { sendSyncCommand } from './syncClient';
 
@@ -70,9 +75,54 @@ function DriveStatusLine({ state }: { state: SyncPickerState }) {
 }
 
 /**
+ * Offers the optional `sessions` permission Chrome Sync devices need, until it's granted (here, or
+ * from chrome://extensions). Once granted, the worker reads them on the next refresh, which this
+ * asks for.
+ */
+function DevicesPermissionRow() {
+  const [granted, setGranted] = useState<boolean | null>(null);
+  const wasDenied = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      hasDevicesPermission()
+        .then((g) => {
+          if (cancelled) return;
+          if (g && wasDenied.current) void sendSyncCommand({ cmd: 'refresh' }).catch(logError);
+          wasDenied.current = !g;
+          setGranted(g);
+        })
+        .catch(logError);
+    };
+    check();
+    const unsubscribe = subscribePermissions(check);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  if (granted !== false) return null;
+  return (
+    <button
+      type="button"
+      className="picker-item"
+      data-testid="picker-allow-devices"
+      title="Lets Tab Hammer read the tabs Chrome Sync shows from your other signed-in devices"
+      // Called directly in the click, nothing awaited first: Chrome only allows the request in a
+      // user gesture. The grant itself is picked up by the subscription above.
+      onClick={() => void requestDevicesPermission().catch(logError)}
+    >
+      Show your phones and other Chrome Sync devices…
+    </button>
+  );
+}
+
+/**
  * The devices panel, opened from the Actions menu ("Other devices…"): this computer (renameable),
  * its checkpoints, other Tab Hammer computers (through Drive), Chrome Sync devices (through
- * chrome.sessions), and Drive sync's status. Picking one shows its outline read-only in place of
+ * chrome.sessions, once its optional permission is granted), and Drive sync's status. Picking one shows its outline read-only in place of
  * this computer's. It sits in the header's banner area, above the outline.
  */
 export function DevicesPanel({ state, current, onPick, onClose }: Props & { onClose: () => void }) {
@@ -210,6 +260,7 @@ export function DevicesPanel({ state, current, onPick, onClose }: Props & { onCl
             </button>
           ))}
           {state.devices.length > 0 && <div className="picker-heading">Other devices</div>}
+          <DevicesPermissionRow />
           {state.devices.map((d) => (
             <button
               key={d.name}

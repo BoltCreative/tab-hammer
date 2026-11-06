@@ -1,6 +1,7 @@
 {
   "name": "tab-hammer",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "A Chrome extension for seeing and organizing every open window and tab as an outline, in its own window. A spiritual successor to Tabs Outliner, built to fix its annoyances.",
@@ -13,6 +14,8 @@
     "dev": "npm run dev -w @tab-hammer/extension",
     "build": "npm run build -w @tab-hammer/extension",
     "build:e2e": "npm run build:e2e -w @tab-hammer/extension",
+    "build:store": "npm run build:store -w @tab-hammer/extension",
+    "release": "node scripts/release.ts",
     "test": "npm test --workspaces --if-present",
     "test:e2e": "npm run test:e2e -w @tab-hammer/extension --",
     "typecheck": "npm run typecheck --workspaces --if-present",

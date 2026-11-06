@@ -356,3 +356,18 @@ test('a wiped profile restores its own file, re-linking the windows Chrome has o
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test('the devices panel asks for Chrome Sync devices access, and the worker can read them at once', async ({
+  sw,
+  view,
+}) => {
+  // `sessions` is optional: not granted on install, so the worker has no chrome.sessions yet.
+  expect(await sw.evaluate(() => typeof chrome.sessions)).toBe('undefined');
+  await runMenuAction(view, 'Other devices…');
+  const allow = view.getByTestId('picker-allow-devices');
+  // Headless Chromium grants an optional permission request without a prompt.
+  await allow.click();
+  await expect(allow).toHaveCount(0);
+  // No reload needed: Chrome defines chrome.sessions in the running worker once it's granted.
+  await expect.poll(() => sw.evaluate(() => typeof chrome.sessions)).toBe('object');
+});

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   hasPreviewPermission,
   requestPreviewPermission,
-  subscribePreviewPermission,
+  subscribePermissions,
 } from '../chrome/permissions';
 import { shouldShowBanner } from './bannerVisibility';
 
@@ -27,7 +27,7 @@ export function PreviewPermissionBanner() {
         );
     };
     check();
-    const unsubscribe = subscribePreviewPermission(check);
+    const unsubscribe = subscribePermissions(check);
     return () => {
       cancelled = true;
       unsubscribe();
