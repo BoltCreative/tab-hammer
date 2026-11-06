@@ -147,16 +147,13 @@ test('New window, from the menu, opens an empty Chrome window as a known row', a
 }) => {
   const [a] = await threeWindows(sw);
   const before = new Set((await readOutline(sw)).windows.map((w) => w.id));
-  // Headless Chromium reports no focused window, so the view has none to put the row after: it
-  // goes to the end. (Placement after the focused window is checked through the command below.)
-  await expect(view.locator('[data-testid="window-card"].focused')).toHaveCount(0);
-
+  // Where the row lands depends on which window headless Chromium reports focused (one on Linux,
+  // none on macOS), so placement is checked through the command below, with a fixed anchor.
   await runMenuAction(view, 'New window');
 
   const added = await addedWindow(sw, before);
   expect(added.provisional).toBeUndefined();
   expect(added.tabs).toHaveLength(1);
-  expect((await shownIds(sw)).at(-1)).toBe(added.id);
   await expect(view.locator(`[data-key="w:${added.id}"]`)).toBeVisible();
   expect((await readOutline(sw)).windows.find((w) => w.id === a!.id)?.tabs).toHaveLength(1);
 

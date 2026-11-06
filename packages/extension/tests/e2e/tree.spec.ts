@@ -66,7 +66,9 @@ test('after an extension reload, opening reuses the old window and closes leftov
   expect(await popupIds(sw)).toHaveLength(2);
 
   await openOrFocus(sw);
-  expect(await popupIds(sw)).toEqual([viewWindowId]);
+  // chrome.windows.remove can resolve before the window leaves getAll (seen on Linux CI), so
+  // wait for the leftover to actually go.
+  await expect.poll(() => popupIds(sw)).toEqual([viewWindowId]);
   await expect(view.locator('main.outline')).toBeVisible();
 });
 
