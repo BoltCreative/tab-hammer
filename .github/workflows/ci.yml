@@ -1,43 +1,138 @@
 name: CI
 
+# The jobs below together run exactly `npm run gate` (the local completion gate): `checks` runs
+# typecheck, lint, format:check, and the unit tests; the `e2e` shards run build:e2e and the
+# Playwright suite. `gate` is the one check to require on main: it passes when both did, or when a
+# pull request changes only Markdown (then `checks` and `e2e` are skipped, so a docs PR finishes in
+# seconds). Docs-only PRs are detected in the `changes` job rather than with `paths-ignore`,
+# because a workflow skipped by a path filter never reports its checks, and a required check that
+# never reports blocks the PR forever.
+#
+# No secrets are used here, and pull requests (forks included) run with a read-only token. The
+# Chrome Web Store upload is store.yml, which runs after this workflow succeeds on main.
+
 on:
   pull_request:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a PR supersedes the run in flight. Every commit on main runs to the end: the
+  # store upload waits on it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  gate:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename')
+          echo "$files"
+          if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qv '\.md$'; then
+            echo "::notice::Only Markdown changed; skipping checks and e2e."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22.x'
           cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
 
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
       - run: npm ci
 
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
       # The e2e fixture launches Playwright's full Chromium (channel 'chromium', new headless),
-      # which loads extensions; the headless shell doesn't.
+      # which loads extensions; the headless shell isn't needed. The runner image already has the
+      # system libraries Chromium needs (it ships Google Chrome), so there's no apt step.
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --no-shell chromium
         working-directory: packages/extension
 
-      - run: npm run gate
+      - run: npm run build:e2e
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
       - name: Upload Playwright results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.shard }}
           path: |
             packages/extension/test-results/
             packages/extension/playwright-report/
           if-no-files-found: ignore
           retention-days: 14
+
+  gate:
+    needs: [changes, checks, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          CHECKS: ${{ needs.checks.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "changes=$CHANGES code=$CODE checks=$CHECKS e2e=$E2E"
+          [ "$CHANGES" = success ] || exit 1
+          if [ "$CODE" = true ]; then
+            [ "$CHECKS" = success ] && [ "$E2E" = success ]
+          else
+            [ "$CHECKS" = skipped ] && [ "$E2E" = skipped ]
+          fi

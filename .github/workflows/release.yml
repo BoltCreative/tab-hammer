@@ -1,0 +1,39 @@
+name: Release
+
+# Submits the Chrome Web Store draft (the last build Store upload put there) for review; the store
+# publishes it once it passes. Run it from Actions -> Release -> Run workflow, on main. If a review
+# is already pending it submits nothing and says so. docs/store/release.md has the whole flow.
+#
+# There's deliberately no version-tag trigger: a tag pushed with a merge would race that merge's
+# draft upload and could submit the draft before it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chrome-web-store
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      # The client is plain Node (fetch, node:crypto), so no npm ci.
+      - name: Submit the draft for review
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+          CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: node packages/extension/scripts/cws.ts publish
