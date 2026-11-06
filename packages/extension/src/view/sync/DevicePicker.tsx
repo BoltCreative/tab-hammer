@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SyncPickerState, SyncSource } from '../../shared/syncMessages';
-import { relativeTime } from '../hover/relativeTime';
+import { relativeTime } from '../preview/relativeTime';
 import { sendSyncCommand } from './syncClient';
 
 interface Props {

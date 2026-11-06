@@ -7,7 +7,7 @@ import type {
 } from '../../shared/syncMessages';
 import { faviconUrl } from '../chrome/favicon';
 import { RowToolbar, type RowAction } from '../components/RowToolbar';
-import { relativeTime } from '../hover/relativeTime';
+import { relativeTime } from '../preview/relativeTime';
 import { checkpointDate, sourceLabel } from './DevicePicker';
 import { sendSyncCommand } from './syncClient';
 
