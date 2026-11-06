@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { CaptureOutcome } from '../../../shared/captureOutcomes';
-import { STALE_PREVIEW_MS } from '../../../shared/previewPolicy';
 import {
   backgroundTabNote,
   pickRefreshTargets,
@@ -9,7 +8,7 @@ import {
   type RefreshTab,
 } from '../refreshRun';
 
-const NOW = 10 * STALE_PREVIEW_MS;
+const NOW = 1_000_000_000;
 const tab = (id: number, url: string, over: Partial<RefreshTab> = {}): RefreshTab => ({
   id,
   windowId: 1,
@@ -21,15 +20,13 @@ const tab = (id: number, url: string, over: Partial<RefreshTab> = {}): RefreshTa
 });
 
 describe('pickRefreshTargets', () => {
-  const fresh = NOW - 1000;
-  const stale = NOW - STALE_PREVIEW_MS - 1;
   const shots: Record<string, number> = {
-    'https://a.test/': fresh,
-    'https://b.test/': stale,
+    'https://a.test/': NOW - 1000,
+    'https://b.test/': 1, // ancient, but previews never go stale
   };
   const tabs = [
-    tab(1, 'https://a.test/'), // fresh preview
-    tab(2, 'https://b.test/'), // stale preview
+    tab(1, 'https://a.test/'), // recent preview
+    tab(2, 'https://b.test/'), // old preview
     tab(3, 'https://c.test/'), // none
     tab(4, 'https://c.test/#more'), // same page as 3
     tab(5, 'https://d.test/', { discarded: true }), // asleep
@@ -38,11 +35,11 @@ describe('pickRefreshTargets', () => {
     tab(8, 'https://f.test/', { incognito: true }),
     tab(9, 'https://g.test/', { windowId: 99 }), // Tab Hammer's own window
   ];
-  const pick = (mode: 'stale' | 'all') =>
-    pickRefreshTargets(tabs, (u) => shots[u], mode, NOW, 99).map((t) => t.id);
+  const pick = (mode: 'missing' | 'all') =>
+    pickRefreshTargets(tabs, (u) => shots[u], mode, 99).map((t) => t.id);
 
-  it('stale mode takes missing and stale previews once per page, sleeping tabs included', () => {
-    expect(pick('stale')).toEqual([2, 3, 5, 6]);
+  it('missing mode takes only pages with no preview, once each, sleeping tabs included', () => {
+    expect(pick('missing')).toEqual([3, 5, 6]);
   });
 
   it('all mode also retakes fresh previews', () => {
@@ -51,8 +48,8 @@ describe('pickRefreshTargets', () => {
 });
 
 describe('backgroundTabNote', () => {
-  // The panel's note for a background tab with no preview must agree with Refresh stale: it points
-  // at Refresh stale for exactly the tabs a run would take, and says why for the rest.
+  // The panel's note for a background tab with no preview must agree with Capture missing: it
+  // points at it for exactly the tabs a run would take, and says why for the rest.
   const tabs = [
     tab(1, 'https://a.test/'),
     tab(2, 'https://b.test/', { discarded: true }),
@@ -61,14 +58,14 @@ describe('backgroundTabNote', () => {
     tab(5, 'chrome://settings/'),
   ];
 
-  it('says Refresh stale only for tabs a Refresh stale run would capture', () => {
-    const picked = new Set(pickRefreshTargets(tabs, () => undefined, 'stale', NOW, null));
+  it('says Capture missing only for tabs a Capture missing run would capture', () => {
+    const picked = new Set(pickRefreshTargets(tabs, () => undefined, 'missing', null));
     for (const t of tabs) {
       expect(backgroundTabNote(t) === 'skipped:background-tab').toBe(picked.has(t));
     }
   });
 
-  it('points sleeping tabs at Refresh stale too (it wakes them)', () => {
+  it('points sleeping tabs at Capture missing too (it wakes them)', () => {
     expect(tabs.map(backgroundTabNote)).toEqual([
       'skipped:background-tab',
       'skipped:background-tab',
@@ -106,7 +103,6 @@ function fakeChrome(tabs: RefreshTab[], shots: Record<string, number> = {}) {
         return outcome;
       },
       onProgress: (p: RefreshProgress) => progress.push(p),
-      now: () => NOW,
     },
   };
 }
@@ -117,7 +113,7 @@ describe('runRefresh', () => {
     const c = fakeChrome(tabs);
     c.outcomes[2] = 'error:attach: DevTools is attached';
     c.outcomes[3] = 'skipped:superseded';
-    const result = await runRefresh(tabs, 'stale', c.deps, new AbortController().signal);
+    const result = await runRefresh(tabs, 'missing', c.deps, new AbortController().signal);
     expect(c.captured).toEqual([1, 2, 3]);
     expect(result).toEqual({ done: 3, total: 3, saved: 1, failed: 1, skipped: 1 });
     expect(c.progress.map((p) => p.done)).toEqual([0, 1, 2, 3]);
@@ -137,7 +133,7 @@ describe('runRefresh', () => {
       c.live.get(3)!.discarded = true; // still captured: the capture wakes it
       c.shots['https://d.test/'] = NOW; // the user looked at it meanwhile
     };
-    const result = await runRefresh(tabs, 'stale', c.deps, new AbortController().signal);
+    const result = await runRefresh(tabs, 'missing', c.deps, new AbortController().signal);
     expect(c.captured).toEqual([1, 3]);
     expect(result).toMatchObject({ done: 4, saved: 2, skipped: 2 });
   });
@@ -149,7 +145,7 @@ describe('runRefresh', () => {
     c.onCapture = (id) => {
       if (id === 1) stop.abort();
     };
-    const result = await runRefresh(tabs, 'stale', c.deps, stop.signal);
+    const result = await runRefresh(tabs, 'missing', c.deps, stop.signal);
     expect(c.captured).toEqual([1]);
     expect(result).toMatchObject({ done: 1, total: 3, saved: 1 });
   });

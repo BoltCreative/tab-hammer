@@ -121,7 +121,7 @@ export function liveRow(view: Page, kind: 'window' | 'group' | 'tab', chromeId: 
   return view.locator(`[data-${kind}-id="${chromeId}"]`);
 }
 
-/** Picks an action from the header's Actions menu (Refresh stale, Clear previews, …). */
+/** Picks an action from the header's Actions menu (Capture missing, Clear previews, …). */
 export async function runMenuAction(view: Page, label: string | RegExp) {
   await view.getByRole('button', { name: 'Actions' }).click();
   await view.getByRole('menu', { name: 'Actions' }).getByRole('menuitem', { name: label }).click();

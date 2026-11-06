@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  STALE_PREVIEW_MS,
-  isCapturableUrl,
-  pickEvictions,
-  previewKey,
-  wantsOnDemandCapture,
-} from '../previewPolicy';
+import { isCapturableUrl, pickEvictions, previewKey, wantsOnDemandCapture } from '../previewPolicy';
 
 describe('previewKey', () => {
   it('drops the fragment and keeps the query', () => {
@@ -65,12 +59,10 @@ describe('isCapturableUrl', () => {
 });
 
 describe('wantsOnDemandCapture', () => {
-  const NOW = 1_000_000_000;
   const tab = { url: 'https://example.com/a', discarded: false, active: true };
   it.each([
     ['no preview', tab, undefined, true],
-    ['a fresh preview', tab, NOW - STALE_PREVIEW_MS, false],
-    ['a stale preview', tab, NOW - STALE_PREVIEW_MS - 1, true],
+    ['a preview, however old (previews never go stale)', tab, 1, false],
     [
       'a background tab (only a Refresh run may attach the debugger)',
       { ...tab, active: false },
@@ -80,6 +72,6 @@ describe('wantsOnDemandCapture', () => {
     ['a discarded tab (attaching would reload it)', { ...tab, discarded: true }, undefined, false],
     ['a page Chrome will not capture', { ...tab, url: 'chrome://settings' }, undefined, false],
   ])('%s', (_name, t, capturedAt, want) => {
-    expect(wantsOnDemandCapture(t, capturedAt, NOW)).toBe(want);
+    expect(wantsOnDemandCapture(t, capturedAt)).toBe(want);
   });
 });

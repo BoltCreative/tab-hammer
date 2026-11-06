@@ -50,8 +50,8 @@ const SKIP_TEXT: Record<string, string> = {
   'not-loaded-yet': 'Page had not finished loading yet',
   'not-capturable-url': 'Chrome doesn’t allow previews of this page',
   'changed-during-capture': 'Page changed while it was being captured',
-  discarded: 'Tab is asleep — Refresh stale (in the ⋯ menu) wakes and captures it',
-  'background-tab': 'Background tab — Refresh stale (in the ⋯ menu) captures it',
+  discarded: 'Tab is asleep — Capture missing (in the ⋯ menu) wakes and captures it',
+  'background-tab': 'Background tab — Capture missing (in the ⋯ menu) captures it',
   'swap-pending': "Already refreshing this tab's preview",
   superseded: 'Skipped to keep up with your cursor — hover again',
 };

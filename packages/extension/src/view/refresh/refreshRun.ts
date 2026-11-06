@@ -1,12 +1,17 @@
-// The header's "Refresh previews": captures every tab's preview (or only the missing and stale
-// ones) in the background, one at a time through the service worker's on-demand capture queue,
+// The header's "Capture missing" and "Refresh all": captures every tab's preview (or only the
+// missing ones) in the background, one at a time through the service worker's on-demand capture queue,
 // the same path the preview panel uses. Background tabs are drawn offscreen by the debugger, so no
 // tab visibly switches. It runs in the view, so the preview panel's capture waits behind at most
 // one of its captures, and closing Tab Hammer or pressing Stop ends it.
 import type { CaptureOutcome } from '../../shared/captureOutcomes';
-import { STALE_PREVIEW_MS, isCapturableUrl, previewKey } from '../../shared/previewPolicy';
+import { isCapturableUrl, previewKey } from '../../shared/previewPolicy';
 
-export type RefreshMode = 'stale' | 'all';
+/**
+ * 'missing': tabs with no preview at all. Previews never go stale (an old one is how the page
+ * looked when the user last had it on screen), so this is the everyday run. 'all': retake every
+ * one, on request.
+ */
+export type RefreshMode = 'missing' | 'all';
 
 export interface RefreshTab {
   id: number;
@@ -27,15 +32,14 @@ export function wantsRefresh(
   tab: RefreshTab,
   capturedAt: number | undefined,
   mode: RefreshMode,
-  now: number,
 ): boolean {
   if (tab.incognito || !isCapturableUrl(tab.url)) return false;
-  return mode === 'all' || capturedAt === undefined || now - capturedAt > STALE_PREVIEW_MS;
+  return mode === 'all' || capturedAt === undefined;
 }
 
 /**
  * What the preview panel says about a background tab with no preview that no Refresh run has
- * recorded anything for. It only points at Refresh stale when a run would actually take the tab
+ * recorded anything for. It only points at Capture missing when a run would actually take the tab
  * (the same rule, wantsRefresh), and says why not otherwise. Read from Chrome's live tab.
  */
 export function backgroundTabNote(tab: RefreshTab | undefined): CaptureOutcome {
@@ -53,13 +57,12 @@ export function pickRefreshTargets(
   tabs: readonly RefreshTab[],
   capturedAt: (url: string) => number | undefined,
   mode: RefreshMode,
-  now: number,
   ownWindowId: number | null,
 ): RefreshTab[] {
   const seen = new Set<string>();
   return tabs.filter((t) => {
     if (t.windowId === ownWindowId || !t.url) return false;
-    if (!wantsRefresh(t, capturedAt(t.url), mode, now)) return false;
+    if (!wantsRefresh(t, capturedAt(t.url), mode)) return false;
     const key = previewKey(t.url);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -83,13 +86,11 @@ export interface RefreshDeps {
   capturedAt: (url: string) => Promise<number | undefined>;
   capture: (tabId: number) => Promise<CaptureOutcome>;
   onProgress: (p: RefreshProgress) => void;
-  now?: () => number;
 }
 
 /**
  * Captures each target in turn. Just before each, the tab is looked up again and skipped if it
- * closed, or (in 'stale' mode) got a fresh preview meanwhile, e.g. because the
- * user looked at it. Resolves with the final progress once done or stopped.
+ * closed, or (in 'missing' mode) got a preview meanwhile, e.g. because the user looked at it. Resolves with the final progress once done or stopped.
  */
 export async function runRefresh(
   targets: readonly RefreshTab[],
@@ -97,7 +98,6 @@ export async function runRefresh(
   deps: RefreshDeps,
   signal: AbortSignal,
 ): Promise<RefreshProgress> {
-  const now = deps.now ?? Date.now;
   const progress: RefreshProgress = {
     done: 0,
     total: targets.length,
@@ -113,7 +113,7 @@ export async function runRefresh(
     const due =
       tab !== undefined &&
       url !== undefined &&
-      wantsRefresh(tab, await deps.capturedAt(url).catch(() => undefined), mode, now());
+      wantsRefresh(tab, await deps.capturedAt(url).catch(() => undefined), mode);
     if (due && !signal.aborted) {
       const outcome = await deps
         .capture(target.id)

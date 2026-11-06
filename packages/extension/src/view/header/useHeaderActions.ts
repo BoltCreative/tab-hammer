@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { STALE_PREVIEW_MS } from '../../shared/previewPolicy';
 import { clearAllPreviews } from '../chrome/captureOutcome';
 import type { MenuItem } from '../components/ContextMenu';
 import type { RefreshProgress } from '../refresh/refreshRun';
@@ -39,7 +38,7 @@ export interface HeaderActions {
 }
 
 /**
- * The view's bulk actions (Close duplicates, Refresh stale / all, Clear previews) and their live
+ * The view's bulk actions (Close duplicates, Capture missing, Refresh all, Clear previews) and their live
  * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
@@ -90,14 +89,14 @@ export function useHeaderActions(opts: {
         ),
     },
     {
-      label: 'Refresh stale',
-      title: `Capture tabs with no preview, or one older than ${STALE_PREVIEW_MS / 60_000} minutes. ${REFRESH_NOTE}`,
+      label: 'Capture missing',
+      title: `Capture tabs that have no preview yet. A preview is how the tab looked when you last used it, so existing ones are kept. ${REFRESH_NOTE}`,
       disabled: refreshing,
-      onSelect: () => refresh.start('stale'),
+      onSelect: () => refresh.start('missing'),
     },
     {
       label: 'Refresh all',
-      title: `Capture every tab again. ${REFRESH_NOTE}`,
+      title: `Capture every tab again, replacing the previews from when you last used them. ${REFRESH_NOTE}`,
       disabled: refreshing,
       onSelect: () => refresh.start('all'),
     },

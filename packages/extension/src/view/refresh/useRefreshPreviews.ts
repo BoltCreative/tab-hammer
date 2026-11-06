@@ -20,7 +20,7 @@ export type RefreshState =
   | { phase: 'finished'; progress: RefreshProgress; stopped: boolean };
 
 /**
- * Drives one "Refresh previews" run at a time for the header. `onSaved` fires after each new
+ * Drives one Capture missing / Refresh all run at a time for the header. `onSaved` fires after each new
  * preview lands, so the preview panel can pick it up.
  */
 export function useRefreshPreviews(onSaved: () => void) {
@@ -57,7 +57,7 @@ export function useRefreshPreviews(onSaved: () => void) {
           ),
         ),
       );
-      const targets = pickRefreshTargets(tabs, (u) => shots.get(u), mode, Date.now(), ownWindowId);
+      const targets = pickRefreshTargets(tabs, (u) => shots.get(u), mode, ownWindowId);
       let saved = 0;
       await runRefresh(
         targets,

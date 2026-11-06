@@ -59,8 +59,8 @@ export function TabPreview({ tab, previewEpoch }: Props) {
     // No preview is not an error; show the text-only details with the latest capture outcome. A
     // hibernated tab has no Chrome tab, so no outcome to read and nothing to capture.
     // A background tab is never captured from a hover (see wantsOnDemandCapture): unless a
-    // Refresh run recorded something for it, say how to get its preview, by the same rule Refresh
-    // stale picks tabs with (backgroundTabNote, from Chrome's live tab). (A page Chrome won't
+    // Refresh run recorded something for it, say how to get its preview, by the same rule Capture
+    // missing picks tabs with (backgroundTabNote, from Chrome's live tab). (A page Chrome won't
     // capture at all keeps the usual note.)
     const noPreview = async () => {
       if (tabId === undefined || windowId === undefined) return done(null, null);
@@ -78,10 +78,7 @@ export function TabPreview({ tab, previewEpoch }: Props) {
       const p = await lookup();
       if (cancelled) return;
       const image = p ? toImage(p) : null;
-      if (
-        tabId === undefined ||
-        !wantsOnDemandCapture({ url, discarded, active }, p?.capturedAt, Date.now())
-      ) {
+      if (tabId === undefined || !wantsOnDemandCapture({ url, discarded, active }, p?.capturedAt)) {
         if (image) done(image, null);
         else await noPreview();
         return;
