@@ -22,6 +22,7 @@ import {
 } from '../model/visibleRows';
 import { planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
+import { useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -64,10 +65,14 @@ export function App() {
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
   const [query, setQuery] = useState('');
-  const shown = useMemo(() => filterTree(tree, query), [tree, query]);
+  const filtered = useMemo(() => filterTree(tree, query), [tree, query]);
+  const filtering = filtered !== tree;
+  // A docked panel lists the browser window it sits in first (only in that panel; the outline's
+  // own order is unchanged), and marks it.
+  const hostWindowId = useHostWindowId();
+  const shown = useMemo(() => hostFirst(filtered, hostWindowId), [filtered, hostWindowId]);
   // Duplicates are found across the whole tree, whatever the search shows.
   const duplicates = useMemo(() => findDuplicates(tree), [tree]);
-  const filtering = shown !== tree;
   const shownCollapse = filtering ? EXPAND_ALL : collapse;
   const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
   const visible = useMemo(() => rows.map((r) => r.key), [rows]);
@@ -321,6 +326,7 @@ export function App() {
               hover={hover}
               rowProps={rowProps}
               commands={commands}
+              here={hostWindowId !== undefined && w.windowId === hostWindowId}
               renaming={renaming === w.key}
               onStartRename={setRenaming}
               onEndRename={onEndRename}
@@ -370,6 +376,13 @@ function logActionError(err: unknown) {
 
 function logCommandError(err: unknown) {
   console.error('Tab Hammer: outline command failed', err);
+}
+
+/** The windows with the one whose Chrome ID is `windowId` moved to the front (if it's there). */
+function hostFirst(windows: WindowNode[], windowId: number | undefined): WindowNode[] {
+  const i = windowId === undefined ? -1 : windows.findIndex((w) => w.windowId === windowId);
+  if (i <= 0) return windows;
+  return [windows[i]!, ...windows.slice(0, i), ...windows.slice(i + 1)];
 }
 
 function hasHibernatedRows(w: WindowNode): boolean {

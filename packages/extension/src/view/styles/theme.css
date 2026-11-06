@@ -306,6 +306,10 @@ button.twisty {
 .card.focused .window-header .count {
   color: var(--text);
 }
+/* In a docked panel, the browser window it sits in (listed first): its glyph is filled in. */
+.card.here .window-glyph {
+  background: currentColor;
+}
 /* Recently closed: its windows are plain rows, not coloured, pinned bars. */
 .card.trash {
   border-top: 1px solid var(--card-border);

@@ -119,6 +119,29 @@ export function useSidePanelSide(): 'left' | 'right' | undefined {
   return side;
 }
 
+/**
+ * The browser window a docked panel sits in, which its outline lists first and marks. Undefined in
+ * the standalone window, which sits in a window of its own. (panel.html opened as a tab, as the
+ * e2e tests do, reports that tab's window.)
+ */
+export function useHostWindowId(): number | undefined {
+  const [windowId, setWindowId] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (surface !== 'panel') return;
+    let live = true;
+    chrome.windows
+      .getCurrent()
+      .then((w) => {
+        if (live) setWindowId(w.id);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return windowId;
+}
+
 export function openSidePanelSettings(): void {
   void chrome.tabs.create({ url: SIDE_PANEL_SETTINGS_URL });
 }

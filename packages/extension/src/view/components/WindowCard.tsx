@@ -23,6 +23,7 @@ interface Props {
   hover: HoverHandlers;
   rowProps: RowPropsFor;
   commands: RowCommands;
+  here: boolean; // the browser window this docked panel sits in
   renaming: boolean; // the label is an inline text field
   onStartRename: (key: string) => void;
   onEndRename: (win: WindowNode, name: string | null) => void; // null: cancelled
@@ -42,7 +43,7 @@ export function WindowCard(p: Props) {
     <section
       role="none"
       data-testid="window-card"
-      className={win.focused ? 'card focused' : 'card'}
+      className={['card', win.focused && 'focused', p.here && 'here'].filter(Boolean).join(' ')}
       style={{ '--window-color': `var(--group-${windowColor(win.id)})` } as CSSProperties}
     >
       <div
@@ -51,6 +52,7 @@ export function WindowCard(p: Props) {
         data-key={win.key}
         data-kind="window"
         data-window-id={win.windowId}
+        {...(p.here && { 'aria-current': 'location' as const, title: 'This window' })}
         {...p.rowProps(win.key, 'window')}
         // While renaming, a drag in the field selects text instead of moving the window.
         {...(p.renaming && { draggable: false })}

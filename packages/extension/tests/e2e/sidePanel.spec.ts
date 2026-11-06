@@ -200,3 +200,20 @@ test('a docked panel’s Panel side… opens Chrome’s side panel setting', asy
     )
     .toBe(true);
 });
+
+test('a docked panel lists the window it sits in first, and marks it', async ({ context, sw }) => {
+  await openWindows(sw, 2);
+  // The panel's page in a window of its own, opened last so the outline would list it last.
+  const pagePromise = context.waitForEvent('page', (p) => p.url().includes(PANEL_PATH));
+  const hostId = await sw.evaluate(
+    async (url) => (await chrome.windows.create({ url }))!.id!,
+    `chrome-extension://${new URL(sw.url()).host}/${PANEL_PATH}`,
+  );
+  const panel = await pagePromise;
+
+  const headers = panel.locator('[data-kind="window"]');
+  await expect(headers.first()).toHaveAttribute('data-window-id', String(hostId));
+  await expect(headers.first()).toHaveAttribute('aria-current', 'location');
+  expect(await headers.count()).toBeGreaterThanOrEqual(4);
+  await expect(panel.locator('[data-kind="window"][aria-current]')).toHaveCount(1);
+});
