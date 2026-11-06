@@ -19,6 +19,9 @@ import { attachOpened, planOpen } from '../../model/outline/open';
 import { attachGroup, placeTabs } from '../../model/outline/place';
 import { reconcile, replaceTabId } from '../../model/outline/reconcile';
 import type { ChromeSnapshot, Effects, Outline } from '../../model/outline/types';
+import { copyForOpen } from '../../model/sync/copy';
+import { toSyncWindow, type SyncWindow } from '../../model/sync/export';
+import { restoreWindows, selfRestoreWindows } from '../../model/sync/restore';
 import { SWAP_KEY } from '../../shared/captureSwap';
 import {
   OUTLINE_PORT,
@@ -50,6 +53,24 @@ export interface OutlineOwner {
   ): Promise<chrome.windows.Window | undefined>;
   /** The in-memory outline, Chrome IDs included. */
   outline(): Outline;
+  /** The outline as sync windows (machine-local fields left out), once queued work is done. */
+  exportWindows(): Promise<SyncWindow[]>;
+  /** This install's ID (chrome.storage.local), created at init if it had none. */
+  installId(): Promise<string>;
+  /** The outline database held nothing when this worker started (a new or wiped profile). */
+  wasFresh(): Promise<boolean>;
+  /**
+   * Adds the windows the outline lacks, hibernated (see restoreWindows); returns how many. With
+   * `selfRestore`, keeps the file's trash and re-links open windows (see selfRestoreWindows).
+   */
+  restoreWindows(windows: SyncWindow[], selfRestore: boolean): Promise<number>;
+  /** Opens a copy of another outline's window, group, or tab here, with new IDs. */
+  openCopy(window: SyncWindow, rowId: string): Promise<void>;
+}
+
+export interface OutlineOptions {
+  /** The persisted outline changed (called after each change is saved). */
+  onChange?: () => void;
 }
 
 /** chrome.storage.local key of this install's ID, stamped on every window record it creates. */
@@ -70,13 +91,14 @@ function sameLive(a: LiveDetails | null, b: LiveDetails): boolean {
 }
 
 /** Registers the outline's Chrome listeners. Must run synchronously at service worker top level. */
-export function registerOutline(): OutlineOwner {
+export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
   let outline: Outline = { windows: [] };
   let persisted: Outline = outline; // what IndexedDB holds; saves diff against it
   let live: LiveDetails | null = null;
   let installId = '';
   let sessionId = '';
   let initialized = false;
+  let fresh = false;
 
   // Recorded by listeners, read by jobs.
   const launchUrls = createLaunchUrls(
@@ -137,8 +159,10 @@ export function registerOutline(): OutlineOwner {
     live = nextLive;
     if (initialized && (outlineChanged || liveChanged)) for (const p of ports) post(p);
     if (force || next !== persisted) {
+      const changed = next !== persisted;
       await saveOutline(persisted, next, sessionId);
       persisted = next;
+      if (changed) opts.onChange?.();
     }
   }
 
@@ -191,6 +215,7 @@ export function registerOutline(): OutlineOwner {
     installId = await readInstallId();
     await launchUrls.load();
     const { meta, outline: loaded } = await loadOutline();
+    fresh = meta === undefined;
     outline = persisted = loaded;
     sessionId = await browserSession.current();
     const now = Date.now();
@@ -240,16 +265,9 @@ export function registerOutline(): OutlineOwner {
       case 'deleteForever':
         await commit(deleteWindow(outline, c.windowId), live!);
         return;
-      case 'open': {
-        // A trash entry always reopens as a whole window, whichever of its rows was opened.
-        const row = findRow(outline, c.id);
-        const plan = planOpen(outline, row?.window.state === 'trashed' ? row.window.id : c.id);
-        if (!plan) return;
-        const opened = await openPlanned(plan); // a failed window create leaves the outline as is
-        if (opened.tabs.length === 0) throw new Error('Chrome opened none of the tabs');
-        await step({ before: (o) => attachOpened(o, plan.windowId, opened, Date.now()) });
+      case 'open':
+        await openRow(c.id);
         return;
-      }
       case 'place': {
         const r = placeTabs(outline, c.placement, now, newId);
         await commit(r.outline, live!);
@@ -279,6 +297,17 @@ export function registerOutline(): OutlineOwner {
         throw new Error(`unknown outline command: ${String((unknown as { cmd?: unknown }).cmd)}`);
       }
     }
+  }
+
+  /** Opens a hibernated or trashed row in Chrome; part of a job. */
+  async function openRow(id: string): Promise<void> {
+    // A trash entry always reopens as a whole window, whichever of its rows was opened.
+    const row = findRow(outline, id);
+    const plan = planOpen(outline, row?.window.state === 'trashed' ? row.window.id : id);
+    if (!plan) return;
+    const opened = await openPlanned(plan); // a failed window create leaves the outline as is
+    if (opened.tabs.length === 0) throw new Error('Chrome opened none of the tabs');
+    await step({ before: (o) => attachOpened(o, plan.windowId, opened, Date.now()) });
   }
 
   /** Tab churn in a window still waiting to be matched restarts its quiet period. */
@@ -385,6 +414,29 @@ export function registerOutline(): OutlineOwner {
     idle: () => queue.idle(),
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
+    exportWindows: () => enqueue(async () => outline.windows.map(toSyncWindow)),
+    wasFresh: () => enqueue(async () => fresh),
+    installId: () => enqueue(async () => installId),
+    restoreWindows: (windows, selfRestore) =>
+      enqueue(async () => {
+        await step();
+        const now = Date.now();
+        const r = selfRestore
+          ? selfRestoreWindows(outline, windows, { now, newId })
+          : restoreWindows(outline, windows, { now, newId, keepTrash: false });
+        await commit(r.outline, live!);
+        return r.added.length;
+      }),
+    openCopy: (window, rowId) =>
+      enqueue(async () => {
+        await step();
+        const now = Date.now();
+        const rec = copyForOpen(window, rowId, { now, newId, installId });
+        if (!rec) throw new Error('Nothing to open');
+        // The copy goes in hibernated at the bottom, then opens like any hibernated window.
+        await commit({ windows: [...outline.windows, rec] }, live!);
+        await openRow(rec.id);
+      }),
     async openWindow(create) {
       // The create runs outside the queue, so a failing outline never blocks or fails it.
       const w = await create();

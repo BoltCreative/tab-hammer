@@ -1,4 +1,5 @@
-// Pure rules for the preview store: what key a page is stored under, and what to evict.
+// Pure rules for the preview store: what key a page is stored under, and what to evict (a preview
+// lives exactly as long as this computer's outline uses its address).
 
 /**
  * The store key for a page. Previews are keyed by URL rather than tab ID so they survive a
@@ -10,29 +11,34 @@ export function previewKey(url: string): string {
   return hash === -1 ? url : url.slice(0, hash);
 }
 
-export interface PruneLimits {
-  maxEntries: number;
-  maxAgeMs: number;
+/**
+ * The preview keys this computer's outline uses: every tab of every window record, live,
+ * hibernated, or in the trash (Recently closed), plus the pages Chrome has open right now (a
+ * capture can be saved before the outline has reconciled its tab's new address). Other computers'
+ * synced outlines don't count.
+ */
+export function referencedKeys(
+  windows: readonly { tabs: readonly { url: string }[] }[],
+  openUrls: readonly string[],
+): Set<string> {
+  const keys = new Set<string>();
+  for (const w of windows) for (const t of w.tabs) keys.add(previewKey(t.url));
+  for (const url of openUrls) keys.add(previewKey(url));
+  return keys;
 }
 
-export const PRUNE_LIMITS: PruneLimits = { maxEntries: 1000, maxAgeMs: 30 * 24 * 60 * 60 * 1000 };
-
 /**
- * Keys to delete: everything older than maxAgeMs, then the least recently captured entries
- * until at most maxEntries remain.
+ * Keys to delete: previews no record references. A preview is kept exactly as long as the outline
+ * uses its address, however old it is, so there's no age or size limit. One saved at or after
+ * `since` (when the caller read the outline and Chrome's tabs) is kept too: its tab may have
+ * reached that address after the read.
  */
 export function pickEvictions(
   entries: readonly { key: string; capturedAt: number }[],
-  now: number,
-  limits: PruneLimits = PRUNE_LIMITS,
+  referenced: ReadonlySet<string>,
+  since: number,
 ): string[] {
-  const cutoff = now - limits.maxAgeMs;
-  const expired = entries.filter((e) => e.capturedAt < cutoff).map((e) => e.key);
-  const fresh = entries.filter((e) => e.capturedAt >= cutoff);
-  const overflow = fresh.length - limits.maxEntries;
-  if (overflow <= 0) return expired;
-  const oldestFirst = fresh.slice().sort((a, b) => a.capturedAt - b.capturedAt);
-  return [...expired, ...oldestFirst.slice(0, overflow).map((e) => e.key)];
+  return entries.filter((e) => e.capturedAt < since && !referenced.has(e.key)).map((e) => e.key);
 }
 
 const CAPTURABLE_SCHEMES = new Set(['http:', 'https:', 'file:']);

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isCapturableUrl, pickEvictions, previewKey, wantsOnDemandCapture } from '../previewPolicy';
+import {
+  isCapturableUrl,
+  pickEvictions,
+  previewKey,
+  referencedKeys,
+  wantsOnDemandCapture,
+} from '../previewPolicy';
 
 describe('previewKey', () => {
   it('drops the fragment and keeps the query', () => {
@@ -9,28 +15,53 @@ describe('previewKey', () => {
   });
 });
 
+describe('referencedKeys', () => {
+  const w = (...urls: string[]) => ({ tabs: urls.map((url) => ({ url })) });
+
+  it('takes every tab of every record, ignoring fragments', () => {
+    // A live window, a hibernated one, and a trash entry look the same here: records with tabs.
+    const keys = referencedKeys(
+      [w('https://a.test/p#top', 'https://b.test/'), w('https://c.test/?q=1#x'), w()],
+      [],
+    );
+    expect([...keys].sort()).toEqual([
+      'https://a.test/p',
+      'https://b.test/',
+      'https://c.test/?q=1',
+    ]);
+  });
+
+  it('counts a URL open in several windows once, and adds the pages Chrome has open', () => {
+    const keys = referencedKeys(
+      [w('https://a.test/'), w('https://a.test/#2')],
+      ['https://new.test/#h'],
+    );
+    expect([...keys].sort()).toEqual(['https://a.test/', 'https://new.test/']);
+  });
+});
+
 describe('pickEvictions', () => {
-  const DAY = 24 * 60 * 60 * 1000;
-  const now = 100 * DAY;
-  const limits = { maxEntries: 3, maxAgeMs: 30 * DAY };
-  const e = (key: string, ageDays: number) => ({ key, capturedAt: now - ageDays * DAY });
+  const since = 1000;
+  const e = (key: string, capturedAt = 10) => ({ key, capturedAt });
+  const refs = (...keys: string[]) => new Set(keys);
 
-  it('evicts nothing when under the cap and all fresh', () => {
-    expect(pickEvictions([e('a', 1), e('b', 29)], now, limits)).toEqual([]);
+  it('keeps referenced previews however old they are, and deletes the rest', () => {
+    const entries = [e('used', -1e12), e('gone'), e('also-used')];
+    expect(pickEvictions(entries, refs('used', 'also-used'), since)).toEqual(['gone']);
   });
 
-  it('evicts entries older than the max age', () => {
-    expect(pickEvictions([e('a', 1), e('old', 31), e('b', 2)], now, limits)).toEqual(['old']);
+  it('keeps a preview saved at or after the read, even if nothing references it yet', () => {
+    const entries = [e('just-saved', since), e('later', since + 5), e('before', since - 1)];
+    expect(pickEvictions(entries, refs(), since)).toEqual(['before']);
   });
 
-  it('evicts the least recently captured entries beyond the cap', () => {
-    const entries = [e('c', 3), e('a', 1), e('e', 5), e('b', 2), e('d', 4)];
-    expect(pickEvictions(entries, now, limits).sort()).toEqual(['d', 'e']);
+  it('has no size cap: thousands of referenced previews all stay', () => {
+    const entries = Array.from({ length: 5000 }, (_, i) => e(`k${i}`));
+    expect(pickEvictions(entries, new Set(entries.map((x) => x.key)), since)).toEqual([]);
   });
 
-  it('counts only fresh entries against the cap', () => {
-    const entries = [e('a', 1), e('b', 2), e('c', 3), e('old1', 40), e('old2', 50)];
-    expect(pickEvictions(entries, now, limits).sort()).toEqual(['old1', 'old2']);
+  it('deletes everything unreferenced when the outline uses nothing', () => {
+    expect(pickEvictions([e('a'), e('b')], refs(), since)).toEqual(['a', 'b']);
   });
 });
 

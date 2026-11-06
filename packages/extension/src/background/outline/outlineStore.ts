@@ -1,7 +1,10 @@
 // The persisted outline in IndexedDB: one record per window (keyed by Tab Hammer's window ID) plus
 // one meta record holding the schema version, the browser session it was last saved in, and the
 // window order. Modelled on shared/previewStore.ts.
-import type { GroupRec, Outline, TabRec, WindowRec } from '../../model/outline/types';
+import type { Outline, WindowRec } from '../../model/outline/types';
+import { toSyncWindow, type SyncWindow } from '../../model/sync/export';
+
+export type { SyncWindow };
 
 export const OUTLINE_SCHEMA_VERSION = 1;
 
@@ -10,13 +13,6 @@ export interface OutlineMeta {
   sessionId: string;
   order: string[]; // window IDs
 }
-
-type SyncTab = Omit<TabRec, 'chromeTabId' | 'launchUrl' | 'liveAtClose'>;
-type SyncGroup = Omit<GroupRec, 'chromeGroupId'>;
-export type SyncWindow = Omit<
-  WindowRec,
-  'chromeWindowId' | 'provisional' | 'openAtShutdown' | 'bounds' | 'tabs' | 'groups'
-> & { tabs: SyncTab[]; groups: SyncGroup[] };
 
 const DB_NAME = 'tab-hammer-outline';
 const WINDOWS = 'windows';
@@ -100,32 +96,6 @@ export function saveOutline(prev: Outline, next: Outline, sessionId: string): Pr
     m.put(meta, META_KEY);
     return () => undefined;
   });
-}
-
-function toSyncWindow(rec: WindowRec): SyncWindow {
-  // Rebuilt field by field (not delete-from-copy) so a new machine-local field can't leak by default.
-  const out: SyncWindow = {
-    id: rec.id,
-    state: rec.state,
-    lastLiveAt: rec.lastLiveAt,
-    originInstallId: rec.originInstallId,
-    modifiedAt: rec.modifiedAt,
-    tabs: rec.tabs.map((t) => {
-      const tab: SyncTab = { id: t.id, url: t.url, title: t.title, modifiedAt: t.modifiedAt };
-      if (t.groupId !== undefined) tab.groupId = t.groupId;
-      return tab;
-    }),
-    groups: rec.groups.map((g) => ({
-      id: g.id,
-      title: g.title,
-      color: g.color,
-      collapsed: g.collapsed,
-      modifiedAt: g.modifiedAt,
-    })),
-  };
-  if (rec.name !== undefined) out.name = rec.name;
-  if (rec.closedAt !== undefined) out.closedAt = rec.closedAt;
-  return out;
 }
 
 /** The outline as plain JSON in outline order, minus fields that only mean something on this machine. */

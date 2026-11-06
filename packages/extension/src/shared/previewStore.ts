@@ -76,10 +76,10 @@ export function putPreview(url: string, shot: Omit<Preview, 'key'>): Promise<num
 }
 
 /**
- * Applies the age and size limits (see pickEvictions). Reads only keys, never the images, and
- * reads and deletes in one transaction so a shot written meanwhile can't be evicted by mistake.
+ * Deletes the previews nothing references (see pickEvictions). Reads only keys, never the images,
+ * and reads and deletes in one transaction so a shot written meanwhile can't be evicted by mistake.
  */
-export function prunePreviews(now = Date.now()): Promise<void> {
+export function prunePreviews(referenced: ReadonlySet<string>, since: number): Promise<void> {
   return run('readwrite', (s) => {
     const entries: { key: string; capturedAt: number }[] = [];
     const req = s.index(BY_CAPTURED_AT).openKeyCursor();
@@ -90,7 +90,7 @@ export function prunePreviews(now = Date.now()): Promise<void> {
         cursor.continue();
         return;
       }
-      pickEvictions(entries, now).forEach((k) => s.delete(k));
+      pickEvictions(entries, referenced, since).forEach((k) => s.delete(k));
     };
     return () => undefined;
   });
@@ -100,14 +100,6 @@ export function prunePreviews(now = Date.now()): Promise<void> {
 export function clearPreviews(): Promise<void> {
   return run('readwrite', (s) => {
     s.clear();
-    return () => undefined;
-  });
-}
-
-/** Deletes the previews of these pages (Chrome removed them from its history). */
-export function deletePreviews(urls: readonly string[]): Promise<void> {
-  return run('readwrite', (s) => {
-    for (const key of new Set(urls.map(previewKey))) s.delete(key);
     return () => undefined;
   });
 }

@@ -34,9 +34,23 @@ import { PreviewPanel } from './preview/PreviewPanel';
 import { usePreviewTarget } from './preview/usePreviewTarget';
 import { AppHeader } from './header/AppHeader';
 import { useHeaderActions } from './header/useHeaderActions';
+import type { SyncSource } from '../shared/syncMessages';
+import { DevicesPanel } from './sync/DevicePicker';
+import { useRemoteOutline } from './sync/RemoteOutline';
+import { useSyncState } from './sync/syncClient';
 
 export function App() {
   const [selection, dispatch] = useReducer(selectionReducer, emptySelection);
+  // Another device's outline (or a checkpoint) shown read-only in place of this computer's.
+  const syncState = useSyncState();
+  const [remoteSource, setRemoteSource] = useState<SyncSource | null>(null);
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const closeDevices = useCallback(() => setDevicesOpen(false), []);
+  const remote = useRemoteOutline({
+    source: remoteSource,
+    state: syncState,
+    onBack: useCallback(() => setRemoteSource(null), []),
+  });
   const [collapse, setCollapse] = useState<CollapseState>({
     collapsedWindows: new Set(),
     groupOverrides: new Map(),
@@ -175,6 +189,7 @@ export function App() {
     onPreviewsChanged: bumpPreviewEpoch,
     duplicateCount: duplicates.toClose.length,
     onCloseDuplicates: () => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? [])),
+    onOpenDevices: () => setDevicesOpen(true),
   });
   const menuWindow =
     menu?.windowKey != null ? tree.find((w) => w.key === menu.windowKey) : undefined;
@@ -261,8 +276,27 @@ export function App() {
         onQueryChange={setQuery}
         onSearchArrowDown={enterOutline}
         matchCount={filtering ? countTabs(shown) : null}
+        banner={
+          <>
+            {devicesOpen && (
+              <DevicesPanel
+                state={syncState}
+                current={remoteSource}
+                onPick={setRemoteSource}
+                onClose={closeDevices}
+              />
+            )}
+            {remote.banner}
+          </>
+        }
       />
-      <main ref={listRef} className="outline" onContextMenu={onBackgroundContextMenu}>
+      {remote.list}
+      <main
+        ref={listRef}
+        className="outline"
+        hidden={remote.list !== null}
+        onContextMenu={onBackgroundContextMenu}
+      >
         <div
           className="outline-tree"
           role="tree"

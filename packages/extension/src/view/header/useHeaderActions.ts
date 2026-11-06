@@ -38,15 +38,16 @@ export interface HeaderActions {
 }
 
 /**
- * The view's bulk actions (Close duplicates, Capture missing, Refresh all, Clear previews) and their live
+ * The view's bulk actions (Other devices, Close duplicates, Capture missing, Refresh all, Clear previews) and their live
  * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
   onPreviewsChanged: () => void;
   duplicateCount: number; // tabs "Close duplicates" would close
   onCloseDuplicates: () => Promise<void>;
+  onOpenDevices: () => void; // shows the devices panel (other computers, checkpoints, sync)
 }): HeaderActions {
-  const { onPreviewsChanged, duplicateCount, onCloseDuplicates } = opts;
+  const { onPreviewsChanged, duplicateCount, onCloseDuplicates, onOpenDevices } = opts;
   const [clear, setClear] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -74,6 +75,12 @@ export function useHeaderActions(opts: {
   };
 
   const items: MenuItem[] = [
+    {
+      label: 'Other devices…',
+      title:
+        "See your other computers' and devices' tabs, this computer's checkpoints, and Drive sync",
+      onSelect: onOpenDevices,
+    },
     {
       label:
         duplicateCount === 0
