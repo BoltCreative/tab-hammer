@@ -1,6 +1,6 @@
 import type { BrowserContext, Worker } from '@playwright/test';
 import type { TestHooks } from '../../src/background/index';
-import { expect, liveRow, runMenuAction, test } from './fixtures';
+import { expect, liveRow, outlineCommand, readOutline, runMenuAction, test } from './fixtures';
 
 // Chrome refuses to capture data: pages, so serve real http pages from Playwright instead.
 const ORIGIN = 'http://tabhammer.test';
@@ -382,4 +382,39 @@ test('Stop ends a refresh run after the capture in flight', async ({ context, sw
   expect(await hasPreview(sw, slow)).toBe(true);
   expect(await hasPreview(sw, after)).toBe(false);
   await expect(view.getByRole('button', { name: 'Stop' })).toHaveCount(0);
+});
+
+test('a preview lasts as long as the outline uses its page: closing the tab drops it, hibernating keeps it', async ({
+  context,
+  sw,
+}) => {
+  await servePages(context);
+  const closed = `${ORIGIN}/closed`;
+  const hibernated = `${ORIGIN}/hibernated`;
+  // Each the visible tab of its own window, so the service worker captures it.
+  const closedTab = await sw.evaluate(async (url) => {
+    const win = await chrome.windows.create({ url });
+    // A second tab, so closing the first leaves the window (and its row) open.
+    await chrome.tabs.create({ windowId: win!.id!, url: 'about:blank', active: false });
+    return win!.tabs![0]!.id!;
+  }, closed);
+  await sw.evaluate((url) => chrome.windows.create({ url }), hibernated);
+  await expect.poll(() => hasPreview(sw, closed)).toBe(true);
+  await expect.poll(() => hasPreview(sw, hibernated)).toBe(true);
+
+  // Hibernating keeps the tab's row, so its preview stays.
+  const findTab = async (url: string) =>
+    (await readOutline(sw)).windows.flatMap((w) => w.tabs).find((t) => t.url === url);
+  await expect.poll(async () => (await findTab(hibernated))?.id).toBeDefined();
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [(await findTab(hibernated))!.id] });
+  await expect.poll(async () => (await findTab(hibernated))?.chromeTabId).toBeUndefined();
+  await sw.evaluate(() =>
+    (globalThis as unknown as { tabHammer: TestHooks }).tabHammer.prunePreviews(),
+  );
+  expect(await hasPreview(sw, hibernated)).toBe(true);
+
+  // Closing a tab removes its row; no other row or tab has that page, so its preview goes.
+  await sw.evaluate((id) => chrome.tabs.remove(id), closedTab);
+  await expect.poll(() => hasPreview(sw, closed)).toBe(false);
+  expect(await hasPreview(sw, hibernated)).toBe(true);
 });

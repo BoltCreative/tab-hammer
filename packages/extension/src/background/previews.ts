@@ -15,8 +15,7 @@ import {
   isClearPreviewsRequest,
   type CaptureTabReply,
 } from '../shared/messages';
-import { PRUNE_LIMITS } from '../shared/previewPolicy';
-import { clearPreviews, prunePreviews, putPreview } from '../shared/previewStore';
+import { clearPreviews, putPreview } from '../shared/previewStore';
 import { browserSession } from './session';
 import { createViewWindowFinder } from './viewWindow';
 import { createCaptureQueue } from './captureQueue';
@@ -47,16 +46,10 @@ async function downscale(dataUrl: string): Promise<Shot> {
   };
 }
 
-// The service worker is killed after ~30s idle, so in-memory counters don't survive long.
-// Prune on the first write of each lifetime (applies the age limit regularly) and whenever a
-// write pushes the store over its size cap.
-let prunedThisLifetime = false;
+// A preview is kept exactly as long as this computer's outline has a tab at its address (see
+// previewPrune.ts, run from the outline's change hook); saving never evicts anything.
 async function save(url: string, shot: Shot & { capturedAt: number }): Promise<void> {
-  const count = await putPreview(url, shot);
-  if (!prunedThisLifetime || count > PRUNE_LIMITS.maxEntries) {
-    prunedThisLifetime = true;
-    await prunePreviews();
-  }
+  await putPreview(url, shot);
 }
 
 // Window captures run one at a time (the scheduler serializes them), and so do tab captures (the
@@ -240,15 +233,15 @@ export function registerPreviewCapture(): void {
       }),
     ),
   );
-  // Previews outlive tabs (a page may be open elsewhere or reopened later), so nothing is deleted
-  // when a tab closes; age and size limits keep the store bounded instead.
+  // Previews are deleted once no window record uses their address (previewPrune.ts, wired in
+  // index.ts), never here when a tab closes: the same page may be open in another tab.
   chrome.runtime.onStartup.addListener(() => {
-    quietly(prunePreviews());
     quietly(browserSession.launched());
     quietly(cleanUpOnce());
   });
   // Previews never go stale and never follow Chrome's history: clearing browsing data leaves them.
-  // Only Clear previews, Refresh all, and the age and size limits remove or replace them.
+  // Only Clear previews, Refresh all, and the outline dropping their address remove or replace
+  // them.
   chrome.runtime.onInstalled.addListener(({ reason }) => {
     quietly(browserSession.installed(reason));
     quietly(cleanUpOnce());

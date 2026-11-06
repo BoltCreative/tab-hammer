@@ -6,6 +6,8 @@ import { registerOutline } from './outline/outlineOwner';
 import { OUTLINE_SCHEMA_VERSION } from './outline/outlineStore';
 import { registerPreviewCapture, viewWindows } from './previews';
 import { registerSync } from './sync/registerSync';
+import { createPreviewPruner } from './previewPrune';
+import { prunePreviews } from '../shared/previewStore';
 import type { SyncPickerState } from '../shared/syncMessages';
 import { setWindowCreator } from './tabCommands';
 import { openingBounds, trackViewBounds } from './viewBounds';
@@ -40,8 +42,26 @@ chrome.action.onClicked.addListener(() => {
 registerPreviewCapture();
 // The sync engine hears about every saved outline change, to push it to Drive. (Saves are async,
 // so the first change arrives after syncHandle is set.)
-const outline = registerOutline({ onChange: () => syncHandle.noteChange() });
+const outline = registerOutline({
+  onChange: () => {
+    syncHandle.noteChange();
+    previewPruner.schedule();
+  },
+});
 const syncHandle = registerSync(outline);
+// Previews live exactly as long as a window record (live, hibernated, or trashed) has a tab at
+// their address; the outline's changes, and each worker start, prune the rest.
+const previewPruner = createPreviewPruner({
+  outlineWindows: () => outline.exportWindows(), // after the outline loads and settles its queue
+  openUrls: async () =>
+    (await chrome.tabs.query({})).flatMap(
+      (t) => [t.url, t.pendingUrl].filter((u) => !!u) as string[],
+    ),
+  prune: prunePreviews,
+  now: Date.now,
+  onError: (err) => console.error('[previews] prune', err),
+});
+previewPruner.schedule();
 setWindowCreator((data) => outline.openWindow(() => chrome.windows.create(data)));
 trackViewBounds(viewWindows.viewWindowId);
 // An extension reload (the dev loop's build switch or dev-server restart) orphans the view window
@@ -61,6 +81,7 @@ export interface TestHooks {
   useTestSync: (opts: { apiBase: string; token: string }) => Promise<void>;
   syncNow: () => Promise<void>;
   syncState: () => Promise<SyncPickerState>;
+  prunePreviews: () => Promise<void>;
 }
 (globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
   openOrFocus,
@@ -82,4 +103,6 @@ export interface TestHooks {
     await syncHandle.engine.sync();
   },
   syncState: () => syncHandle.engine.pickerState(),
+  // Runs the preview prune now (after the outline's queued work), for asserting what it kept.
+  prunePreviews: () => previewPruner.run(),
 };
