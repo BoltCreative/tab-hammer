@@ -6,9 +6,12 @@ scratchpad/
 node_modules/
 dist/
 dist-e2e/
+dist-store/
+/packages/extension/release/
 test-results/
 playwright-report/
 .env
+CLAUDE.local.md
 .claude/worktrees/
 .claude/settings.local.json
 /.claude/scheduled_tasks.lock
