@@ -1,7 +1,7 @@
 // Talks to the service worker about preview captures: reads its record of the latest attempt for
-// a tab and its window (see ../../shared/captureOutcomes.ts), so the hover card can say why a tab
-// has no preview, and asks it to capture a tab on demand (one tab for a hover card, or each in
-// turn for the header's "Refresh previews").
+// a tab and its window (see ../../shared/captureOutcomes.ts), so the preview panel can say why a
+// tab has no preview, and asks it to capture a tab on demand (one tab for the preview panel, or
+// each in turn for the header's "Refresh previews").
 import {
   OUTCOMES_KEY,
   TAB_OUTCOMES_KEY,

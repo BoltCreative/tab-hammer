@@ -10,6 +10,7 @@ function setup(capture?: (windowId: number) => Promise<unknown>) {
   const scheduler = createCaptureScheduler({
     debounceMs: 500,
     minIntervalMs: 550,
+    captureTimeoutMs: 10_000,
     capture: (windowId) => {
       starts.push([windowId, Date.now()]);
       return capture ? capture(windowId) : Promise.resolve();
@@ -101,5 +102,21 @@ describe('createCaptureScheduler', () => {
     await vi.advanceTimersByTimeAsync(5000);
     await expect(one).resolves.toBe('shot of 1');
     await expect(two).resolves.toBeUndefined();
+  });
+
+  it('gives up on a capture that never settles, so later captures (and waiters) still run', async () => {
+    const { scheduler, starts } = setup((w) =>
+      w === 1 ? new Promise(() => {}) : Promise.resolve('ok'),
+    );
+    const one = scheduler.nextCapture(1);
+    const two = scheduler.nextCapture(2);
+    scheduler.trigger(1);
+    scheduler.trigger(2);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(starts.map(([w]) => w)).toEqual([1]); // still waiting on the hung one
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(one).resolves.toBeUndefined();
+    await expect(two).resolves.toBe('ok');
+    expect(starts.map(([w]) => w)).toEqual([1, 2]);
   });
 });

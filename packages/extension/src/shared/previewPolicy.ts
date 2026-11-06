@@ -55,12 +55,11 @@ export function isCapturableUrl(url: string | undefined): boolean {
   return !(parsed.hostname === 'chrome.google.com' && parsed.pathname.startsWith('/webstore'));
 }
 
-/** A preview older than this is refreshed on demand when its hover card opens. */
-export const STALE_PREVIEW_MS = 10 * 60 * 1000;
-
 /**
- * Whether opening the hover card should ask the service worker for a fresh shot of the tab: it
- * has no preview, or only an old one, and its page is one Chrome lets an extension capture.
+ * Whether showing the tab in the preview panel should ask the service worker for a shot of it: it
+ * has no preview, and its page is one Chrome lets an extension capture. A preview never goes
+ * stale: it is how the page looked the last time the user had it on screen (Tab Hammer captures a
+ * window's visible tab as they browse), so an old one is kept, not retaken.
  * Only a window's active (on-screen) tab qualifies: a hover never attaches the debugger, since
  * its infobar shifts the outline under the pointer, so background tabs wait for a Refresh run.
  * The preview is looked up by the tab's current URL, so one of another page never counts.
@@ -68,8 +67,7 @@ export const STALE_PREVIEW_MS = 10 * 60 * 1000;
 export function wantsOnDemandCapture(
   tab: { url: string; discarded: boolean; active: boolean },
   capturedAt: number | undefined,
-  now: number,
 ): boolean {
   if (!tab.active || tab.discarded || !isCapturableUrl(tab.url)) return false;
-  return capturedAt === undefined || now - capturedAt > STALE_PREVIEW_MS;
+  return capturedAt === undefined;
 }

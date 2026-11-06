@@ -1,6 +1,6 @@
 import type { CSSProperties, MouseEvent } from 'react';
 import type { GroupNode, TabNode } from '../../model/types';
-import type { HoverHandlers } from '../hover/useHoverCard';
+import type { HoverHandlers } from '../preview/usePreviewTarget';
 import { TabRow } from './TabRow';
 import type { RowCommands, RowPropsFor } from './rowProps';
 

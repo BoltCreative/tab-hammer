@@ -230,7 +230,7 @@ describe('swap recovery across an extension reload vs a browser restart', () => 
     if (restart) b.restartBrowser();
     else b.reloadExtension();
     const reloaded = b.worker();
-    // The hover card's capture request (which runs recovery) reaches the new worker first; the
+    // The preview panel's capture request (which runs recovery) reaches the new worker first; the
     // lifecycle event for the restart or reload follows.
     const calls: string[] = [];
     const recovered = createTabCapturer(depsFor(reloaded, calls, record)).recover();

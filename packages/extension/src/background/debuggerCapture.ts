@@ -1,4 +1,4 @@
-// On-demand screenshots of background tabs, for the hover card. captureVisibleTab can only see a
+// On-demand screenshots of background tabs, for the preview panel. captureVisibleTab can only see a
 // window's visible tab, but the DevTools protocol's Page.captureScreenshot draws a background tab
 // offscreen. Attaching the debugger shows Chrome's "started debugging this browser" infobar in
 // every window, Tab Hammer's included, which pushes the whole outline down under the pointer. So
@@ -44,7 +44,7 @@ export interface OffscreenDeps {
   save: (url: string, shot: Shot & { capturedAt: number }) => Promise<void>;
   /** The tab's latest recorded on-demand outcome, for the failure cooldown. */
   previousOutcome: (tabId: number) => Promise<OutcomeEntry | undefined>;
-  /** Records the attempt's outcome (and the URL it was for) for the tab's hover card. */
+  /** Records the attempt's outcome (and the URL it was for) for the tab's preview panel. */
   record: (tabId: number, outcome: CaptureOutcome, url: string | undefined) => Promise<void>;
   /** An ID for this browser session (it changes when the browser restarts). */
   sessionId: () => Promise<string>;
@@ -53,7 +53,7 @@ export interface OffscreenDeps {
    * false after `ms`.
    */
   waitForComplete: (tabId: number, ms: number) => Promise<boolean>;
-  /** Loads an 'unloaded' tab (chrome.tabs.reload), without the debugger or activating it. */
+  /** Wakes a sleeping tab (chrome.tabs.reload), without the debugger or activating it. */
   reload: (tabId: number) => Promise<void>;
   timeoutMs?: number;
   loadTimeoutMs?: number;
@@ -111,7 +111,7 @@ export function pickStandIn(
 export interface TabCapturer {
   /**
    * `allowDebugger`: may attach the debugger (and show its infobar) to capture a tab that isn't on
-   * screen. Only the header's Refresh runs pass true; a hover card passes false.
+   * screen. Only the header's Refresh runs pass true; a hover (the preview panel) passes false.
    */
   capture: (tabId: number, allowDebugger: boolean, signal?: AbortSignal) => Promise<CaptureOutcome>;
   /** Finishes undoing a swap a previous service worker left behind (it died mid-capture). */
@@ -206,25 +206,33 @@ export function createTabCapturer(deps: OffscreenDeps): TabCapturer {
     seen.url = tab.url;
     if (tab.id === undefined) return 'skipped:no-tab';
     if (tab.incognito) return 'skipped:incognito';
-    // Attaching the debugger to a discarded (sleeping) tab would reload it.
-    if (tab.discarded) return 'skipped:discarded';
-    // Unlike captureVisibleTab, tabs still loading, or never loaded (after a browser restart most
-    // tabs are restored lazily, as 'unloaded'), are captured too. They are loaded first, without
-    // the debugger, so its infobar isn't up during the load; they then stay loaded.
+    // Tabs still loading, and sleeping ones (discarded by Chrome's memory saver, or never loaded
+    // since a browser restart, which restores tabs lazily as 'unloaded'), are captured too. A
+    // Refresh run wakes a sleeping tab first (it then stays loaded), and every tab is loaded before
+    // the debugger attaches, so its infobar isn't up during the load.
     if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
     const win = await deps.getWindow(tab.windowId);
     if (win.incognito) return 'skipped:incognito';
     if (win.type !== 'normal') return 'skipped:not-normal-window';
     if (tab.windowId === (await deps.viewWindowId())) return 'skipped:own-window';
     const minimized = win.state === 'minimized';
-    // A visible tab can be captured without the debugger (and its infobar).
-    if (tab.active && !minimized) return deps.captureVisible(tab.windowId);
-    // Everything below needs the debugger. Checked before loading an unloaded tab, too: a hover
+    const asleep = tab.discarded || tab.status === 'unloaded';
+    // A visible tab can be captured without the debugger (and its infobar). One still loading
+    // (e.g. just woken by switching to it) is waited for: captureVisibleTab skips unfinished pages.
+    if (tab.active && !minimized && !asleep) {
+      if (tab.status !== 'complete') {
+        await deps.waitForComplete(tabId, loadTimeoutMs);
+        if (signal?.aborted) return 'error:capture: gave up waiting';
+      }
+      return deps.captureVisible(tab.windowId);
+    }
+    // Everything below needs the debugger. Checked before waking a sleeping tab, too: a hover
     // neither loads pages nor shows the infobar.
-    if (!allowDebugger) return 'skipped:background-tab';
+    if (!allowDebugger) return tab.discarded ? 'skipped:discarded' : 'skipped:background-tab';
 
-    if (tab.status !== 'complete') {
-      if (tab.status === 'unloaded') await deps.reload(tabId);
+    if (tab.status !== 'complete' || asleep) {
+      // Reloading wakes a sleeping tab in the background, without activating it.
+      if (asleep) await deps.reload(tabId);
       // On a load timeout, still try one screenshot: a slow page may have painted enough.
       await deps.waitForComplete(tabId, loadTimeoutMs);
       if (signal?.aborted) return 'error:capture: gave up waiting';

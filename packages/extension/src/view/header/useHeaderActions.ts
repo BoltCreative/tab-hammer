@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { STALE_PREVIEW_MS } from '../../shared/previewPolicy';
 import { clearAllPreviews } from '../chrome/captureOutcome';
 import type { MenuItem } from '../components/ContextMenu';
 import type { RefreshProgress } from '../refresh/refreshRun';
@@ -11,18 +10,21 @@ const CONFIRM_MS = 1500;
 // this browser" banner (and shifts this window's content) unless Chrome was launched with
 // --silent-debugger-extension-api.
 const REFRESH_NOTE =
-  'Captures in the background, one tab at a time. Sleeping tabs are skipped. Chrome shows its debugging banner while it runs.';
+  'Captures in the background, one tab at a time. Sleeping tabs are woken to capture them and stay loaded. Chrome shows its debugging banner while it runs.';
 
 function refreshStatus(state: RefreshState): string {
   if (state.phase === 'idle') return '';
   const p: RefreshProgress = state.progress;
   if (state.phase === 'running') {
     if (state.stopping) return 'Stopping…';
-    return p.total === 0 ? 'Finding tabs…' : `Refreshing ${p.done}/${p.total}`;
+    return p.total === 0 ? 'Finding tabs…' : `Refreshing ${p.done}/${p.total} pages`;
   }
   if (p.total === 0) return 'Nothing to refresh';
+  // Counted in pages, not tabs: tabs on the same page share one preview. Every page is accounted
+  // for, so saved + failed + skipped adds up to the total (less any a Stop left undone).
   const failed = p.failed > 0 ? `, ${p.failed} failed` : '';
-  return `${state.stopped ? 'Stopped: ' : ''}refreshed ${p.saved}/${p.total}${failed}`;
+  const skipped = p.skipped > 0 ? `, ${p.skipped} skipped` : '';
+  return `${state.stopped ? 'Stopped: ' : ''}refreshed ${p.saved}/${p.total} pages${failed}${skipped}`;
 }
 
 export interface HeaderActions {
@@ -36,7 +38,7 @@ export interface HeaderActions {
 }
 
 /**
- * The view's bulk actions (Close duplicates, Refresh stale / all, Clear previews) and their live
+ * The view's bulk actions (Close duplicates, Capture missing, Refresh all, Clear previews) and their live
  * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
@@ -87,14 +89,14 @@ export function useHeaderActions(opts: {
         ),
     },
     {
-      label: 'Refresh stale',
-      title: `Capture tabs with no preview, or one older than ${STALE_PREVIEW_MS / 60_000} minutes. ${REFRESH_NOTE}`,
+      label: 'Capture missing',
+      title: `Capture tabs that have no preview yet. A preview is how the tab looked when you last used it, so existing ones are kept. ${REFRESH_NOTE}`,
       disabled: refreshing,
-      onSelect: () => refresh.start('stale'),
+      onSelect: () => refresh.start('missing'),
     },
     {
       label: 'Refresh all',
-      title: `Capture every tab again. ${REFRESH_NOTE}`,
+      title: `Capture every tab again, replacing the previews from when you last used them. ${REFRESH_NOTE}`,
       disabled: refreshing,
       onSelect: () => refresh.start('all'),
     },

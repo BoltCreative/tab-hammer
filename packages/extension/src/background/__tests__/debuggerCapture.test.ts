@@ -132,7 +132,7 @@ function setup(
     },
     // A Refresh run's capture, which may attach the debugger.
     capture: (id = TARGET.id, signal?: AbortSignal) => capturer.capture(id, true, signal),
-    // A hover card's capture, which never may.
+    // A hover's capture, which never may.
     hoverCapture: (id = TARGET.id) => capturer.capture(id, false),
     recover: capturer.recover,
   };
@@ -207,15 +207,20 @@ describe('createTabCapturer', () => {
 
   it.each([
     [
-      'an unloaded tab (lazily restored after a browser restart), reloading it',
-      'unloaded',
+      'an unloaded tab (lazily restored after a browser restart), waking it',
+      { status: 'unloaded' },
       ['reload(70)'],
     ],
-    ['a loading tab', 'loading', []],
+    [
+      'a discarded tab (put to sleep by memory saver), waking it',
+      { status: 'unloaded', discarded: true },
+      ['reload(70)'],
+    ],
+    ['a loading tab', { status: 'loading' }, []],
   ] as const)(
     'loads %s before attaching, so the infobar is up only for the screenshot',
-    async (_name, status, loadStart) => {
-      const { capture, calls, outcome } = setup({ target: { status } });
+    async (_name, target, loadStart) => {
+      const { capture, calls, outcome } = setup({ target });
       await expect(capture()).resolves.toBe('saved');
       expect(outcome()).toBe('saved');
       expect(calls).toEqual([
@@ -280,11 +285,6 @@ describe('createTabCapturer', () => {
       { over: { hasPermission: async () => false } },
       'skipped:no-permission',
     ],
-    [
-      'a discarded (sleeping) tab, which attaching would reload',
-      { target: { discarded: true } },
-      'skipped:discarded',
-    ],
     ['an incognito tab', { target: { incognito: true } }, 'skipped:incognito'],
     ['a tab in an incognito window', { win: { incognito: true } }, 'skipped:incognito'],
     ['a chrome:// page', { target: { url: 'chrome://settings' } }, 'skipped:not-capturable-url'],
@@ -313,6 +313,12 @@ describe('createTabCapturer', () => {
     expect(calls).toEqual([`captureVisible(${WINDOW})`]);
   });
 
+  it('waits for a visible tab that is still loading (e.g. just woken) before capturing it', async () => {
+    const { hoverCapture, calls } = setup({ target: { active: true, status: 'loading' } });
+    await expect(hoverCapture()).resolves.toBe('saved');
+    expect(calls).toEqual([`waitForComplete(70,${LOAD_TIMEOUT_MS})`, `captureVisible(${WINDOW})`]);
+  });
+
   describe('from a hover (no debugger)', () => {
     it('captures the visible tab of a normal window', async () => {
       const { hoverCapture, calls } = setup({ target: { active: true } });
@@ -331,6 +337,12 @@ describe('createTabCapturer', () => {
       const { hoverCapture, calls, outcome } = setup(opts as Parameters<typeof setup>[0]);
       await expect(hoverCapture()).resolves.toBe('skipped:background-tab');
       expect(outcome()).toBe('skipped:background-tab');
+      expect(calls).toEqual([]);
+    });
+
+    it('never wakes a discarded tab', async () => {
+      const { hoverCapture, calls } = setup({ target: { discarded: true, status: 'unloaded' } });
+      await expect(hoverCapture()).resolves.toBe('skipped:discarded');
       expect(calls).toEqual([]);
     });
   });

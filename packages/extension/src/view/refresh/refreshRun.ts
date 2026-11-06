@@ -1,12 +1,17 @@
-// The header's "Refresh previews": captures every tab's preview (or only the missing and stale
-// ones) in the background, one at a time through the service worker's on-demand capture queue,
-// the same path a hover card uses. Background tabs are drawn offscreen by the debugger, so no tab
-// visibly switches. It runs in the view, so a hover card's capture waits behind at most one of its
-// captures, and closing Tab Hammer or pressing Stop ends it.
+// The header's "Capture missing" and "Refresh all": captures every tab's preview (or only the
+// missing ones) in the background, one at a time through the service worker's on-demand capture queue,
+// the same path the preview panel uses. Background tabs are drawn offscreen by the debugger, so no
+// tab visibly switches. It runs in the view, so the preview panel's capture waits behind at most
+// one of its captures, and closing Tab Hammer or pressing Stop ends it.
 import type { CaptureOutcome } from '../../shared/captureOutcomes';
-import { STALE_PREVIEW_MS, isCapturableUrl, previewKey } from '../../shared/previewPolicy';
+import { isCapturableUrl, previewKey } from '../../shared/previewPolicy';
 
-export type RefreshMode = 'stale' | 'all';
+/**
+ * 'missing': tabs with no preview at all. Previews never go stale (an old one is how the page
+ * looked when the user last had it on screen), so this is the everyday run. 'all': retake every
+ * one, on request.
+ */
+export type RefreshMode = 'missing' | 'all';
 
 export interface RefreshTab {
   id: number;
@@ -18,23 +23,30 @@ export interface RefreshTab {
 }
 
 /**
- * Sleeping tabs are left alone: a discarded one would reload when the debugger attached, and an
- * unloaded one (lazily restored after a browser restart) the capture would load first. Loading
- * every sleeping tab is what Chrome's memory saving avoids.
+ * Whether the tab is worth capturing for this run, given when its page was last captured.
+ * Sleeping tabs (discarded by Chrome's memory saver, or not loaded since a browser restart) are
+ * included: the capture wakes them in the background first, and they stay loaded until Chrome
+ * puts them to sleep again.
  */
-export function isAsleep(tab: Pick<RefreshTab, 'discarded' | 'status'>): boolean {
-  return tab.discarded || tab.status === 'unloaded';
-}
-
-/** Whether the tab is worth capturing for this run, given when its page was last captured. */
 export function wantsRefresh(
   tab: RefreshTab,
   capturedAt: number | undefined,
   mode: RefreshMode,
-  now: number,
 ): boolean {
-  if (tab.incognito || isAsleep(tab) || !isCapturableUrl(tab.url)) return false;
-  return mode === 'all' || capturedAt === undefined || now - capturedAt > STALE_PREVIEW_MS;
+  if (tab.incognito || !isCapturableUrl(tab.url)) return false;
+  return mode === 'all' || capturedAt === undefined;
+}
+
+/**
+ * What the preview panel says about a background tab with no preview that no Refresh run has
+ * recorded anything for. It only points at Capture missing when a run would actually take the tab
+ * (the same rule, wantsRefresh), and says why not otherwise. Read from Chrome's live tab.
+ */
+export function backgroundTabNote(tab: RefreshTab | undefined): CaptureOutcome {
+  if (!tab) return 'skipped:no-tab';
+  if (tab.incognito) return 'skipped:incognito';
+  if (!isCapturableUrl(tab.url)) return 'skipped:not-capturable-url';
+  return 'skipped:background-tab';
 }
 
 /**
@@ -45,13 +57,12 @@ export function pickRefreshTargets(
   tabs: readonly RefreshTab[],
   capturedAt: (url: string) => number | undefined,
   mode: RefreshMode,
-  now: number,
   ownWindowId: number | null,
 ): RefreshTab[] {
   const seen = new Set<string>();
   return tabs.filter((t) => {
     if (t.windowId === ownWindowId || !t.url) return false;
-    if (!wantsRefresh(t, capturedAt(t.url), mode, now)) return false;
+    if (!wantsRefresh(t, capturedAt(t.url), mode)) return false;
     const key = previewKey(t.url);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -61,9 +72,11 @@ export function pickRefreshTargets(
 
 export interface RefreshProgress {
   done: number;
-  total: number;
+  total: number; // pages to capture: tabs on the same page share one preview
   saved: number;
   failed: number;
+  /** Left alone after all: closed, already fresh, or the capture skipped it. */
+  skipped: number;
 }
 
 export interface RefreshDeps {
@@ -73,13 +86,11 @@ export interface RefreshDeps {
   capturedAt: (url: string) => Promise<number | undefined>;
   capture: (tabId: number) => Promise<CaptureOutcome>;
   onProgress: (p: RefreshProgress) => void;
-  now?: () => number;
 }
 
 /**
  * Captures each target in turn. Just before each, the tab is looked up again and skipped if it
- * closed, went to sleep, or (in 'stale' mode) got a fresh preview meanwhile, e.g. because the
- * user looked at it. Resolves with the final progress once done or stopped.
+ * closed, or (in 'missing' mode) got a preview meanwhile, e.g. because the user looked at it. Resolves with the final progress once done or stopped.
  */
 export async function runRefresh(
   targets: readonly RefreshTab[],
@@ -87,8 +98,13 @@ export async function runRefresh(
   deps: RefreshDeps,
   signal: AbortSignal,
 ): Promise<RefreshProgress> {
-  const now = deps.now ?? Date.now;
-  const progress: RefreshProgress = { done: 0, total: targets.length, saved: 0, failed: 0 };
+  const progress: RefreshProgress = {
+    done: 0,
+    total: targets.length,
+    saved: 0,
+    failed: 0,
+    skipped: 0,
+  };
   deps.onProgress({ ...progress });
   for (const target of targets) {
     if (signal.aborted) break;
@@ -97,14 +113,15 @@ export async function runRefresh(
     const due =
       tab !== undefined &&
       url !== undefined &&
-      wantsRefresh(tab, await deps.capturedAt(url).catch(() => undefined), mode, now());
+      wantsRefresh(tab, await deps.capturedAt(url).catch(() => undefined), mode);
     if (due && !signal.aborted) {
       const outcome = await deps
         .capture(target.id)
         .catch((err: unknown): CaptureOutcome => `error:${String(err)}`);
       if (outcome === 'saved') progress.saved++;
       else if (outcome.startsWith('error:')) progress.failed++;
-    }
+      else progress.skipped++;
+    } else progress.skipped++;
     progress.done++;
     deps.onProgress({ ...progress });
   }

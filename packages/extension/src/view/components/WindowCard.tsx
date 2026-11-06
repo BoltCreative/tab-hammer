@@ -2,7 +2,7 @@ import type { CSSProperties, MouseEvent } from 'react';
 import { windowColor } from '../../model/windowColor';
 import type { TabNode, WindowNode } from '../../model/types';
 import { isGroupCollapsed, type CollapseState } from '../../model/visibleRows';
-import type { HoverHandlers } from '../hover/useHoverCard';
+import type { HoverHandlers } from '../preview/usePreviewTarget';
 import { GroupRow } from './GroupRow';
 import { TabRow } from './TabRow';
 import { RenameField } from './RenameField';

@@ -34,7 +34,7 @@ describe('friendlyCaptureOutcome', () => {
     ['skipped:not-loaded-yet', 'Page had not finished loading yet'],
     ['skipped:not-capturable-url', 'Chrome doesn’t allow previews of this page'],
     ['skipped:changed-during-capture', 'Page changed while it was being captured'],
-    ['skipped:discarded', 'Tab is asleep — open it once to get a preview'],
+    ['skipped:discarded', 'Tab is asleep — Capture missing (in the ⋯ menu) wakes and captures it'],
     ['skipped:swap-pending', "Already refreshing this tab's preview"],
     ['skipped:superseded', 'Skipped to keep up with your cursor — hover again'],
 

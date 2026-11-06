@@ -4,11 +4,11 @@
 // swap gets interrupted during development), and is renewed from runtime.onStartup, which fires
 // when the browser launches but not when the extension reloads.
 //
-// On a browser launch, other events (a hover card's capture request) can reach the service worker
-// before onStartup does, and would read the previous session's ID. So the ID is only handed out
-// once this session is confirmed: by a marker in chrome.storage.session (in memory, so gone after a
-// browser restart, and also after an extension reload or disable), or by onStartup or onInstalled
-// firing (onInstalled for a Chrome update or an install starts a new session too, see
+// On a browser launch, other events (the preview panel's capture request) can reach the service
+// worker before onStartup does, and would read the previous session's ID. So the ID is only handed
+// out once this session is confirmed: by a marker in chrome.storage.session (in memory, so gone
+// after a browser restart, and also after an extension reload or disable), or by onStartup or
+// onInstalled firing (onInstalled for a Chrome update or an install starts a new session too, see
 // installed()). Without the marker, current() waits for one of those. If neither comes (the
 // extension was re-enabled, which fires nothing), it starts a new session after a few seconds:
 // dropping an old swap record is safe, acting on a stale one is not.

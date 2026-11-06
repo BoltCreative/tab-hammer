@@ -106,10 +106,12 @@ const scheduler = createCaptureScheduler<CaptureOutcome>({
   debounceMs: 500,
   // Chrome allows 2 captureVisibleTab calls per second; leave a little headroom.
   minIntervalMs: 550,
+  // Well past a normal capture (a screenshot, a downscale, a save).
+  captureTimeoutMs: 10_000,
   capture: captureWindow,
 });
 
-// On-demand captures for the hover card (see debuggerCapture.ts).
+// On-demand captures for the preview panel (see debuggerCapture.ts).
 const captureTab = createTabCapturer({
   hasPermission: () =>
     chrome.permissions.contains({ permissions: ['debugger'], origins: ['<all_urls>'] }),
@@ -156,8 +158,8 @@ const captureTab = createTabCapturer({
   record: (tabId, outcome, url) => recordUnder(TAB_OUTCOMES_KEY, tabId, outcome, url),
   sessionId: () => browserSession.current(),
   waitForComplete,
-  // To be confirmed in real Chrome: reloading a lazily restored ('unloaded') background tab
-  // loads it without activating it.
+  // To be confirmed in real Chrome: reloading a sleeping background tab (lazily restored, or
+  // discarded) loads it without activating it, and keeps its tab ID.
   reload: (tabId) => chrome.tabs.reload(tabId),
 });
 
@@ -258,7 +260,7 @@ export function registerPreviewCapture(): void {
     quietly(cleanUpOnce());
   });
 
-  // The hover card asks for a tab it has no fresh preview of; reply once the capture is done.
+  // The preview panel asks for a tab it has no fresh preview of; reply once the capture is done.
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {
     if (isClearPreviewsRequest(msg)) {
       void clearAll().then(

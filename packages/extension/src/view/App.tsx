@@ -30,9 +30,8 @@ import type { RowCommands, RowPropsFor } from './components/rowProps';
 import { useRowDrag } from './components/useRowDrag';
 import { RecentlyClosed } from './components/RecentlyClosed';
 import { WindowCard } from './components/WindowCard';
-import { HoverCard } from './hover/HoverCard';
-import { hoverSignature } from './hover/hoverSignature';
-import { useHoverCard } from './hover/useHoverCard';
+import { PreviewPanel } from './preview/PreviewPanel';
+import { usePreviewTarget } from './preview/usePreviewTarget';
 import { AppHeader } from './header/AppHeader';
 import { useHeaderActions } from './header/useHeaderActions';
 
@@ -59,24 +58,8 @@ export function App() {
   const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
   const visible = useMemo(() => rows.map((r) => r.key), [rows]);
   const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
-  const signatureOf = useCallback(
-    (key: string) => hoverSignature(shown, visible, key),
-    [shown, visible],
-  );
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
-  const [hovered, hover] = useHoverCard(signatureOf, listRef);
-  const [previewEpoch, setPreviewEpoch] = useState(0);
-  // Previews were cleared or refreshed: an open hover card looks its preview up again.
-  const bumpPreviewEpoch = useCallback(() => setPreviewEpoch((n) => n + 1), []);
-  const hoveredTab = useMemo(
-    () =>
-      hovered &&
-      shown
-        .flatMap((w) => w.children.flatMap((c) => (c.kind === 'group' ? c.tabs : [c])))
-        .find((t) => t.key === hovered.key),
-    [shown, hovered],
-  );
 
   // Rows a search hides leave the selection, so a drag never carries rows the user can't see.
   useEffect(() => {
@@ -87,11 +70,25 @@ export function App() {
   const [cursor, setCursor] = useState<string | null>(null);
   // The one row in the Tab order (roving tabindex): the cursor, or the first row.
   const tabStop = cursor !== null && rowByKey.has(cursor) ? cursor : (visible[0] ?? null);
+
+  // The preview panel shows the tab hovered or moved to last, kept while nothing is hovered.
+  const { key: previewKey, hover, show: showPreview } = usePreviewTarget();
+  const moveCursor = (key: string) => {
+    setCursor(key);
+    if (key.startsWith('t:')) showPreview(key);
+  };
+  const previewTab = useMemo(() => {
+    const node = previewKey === null ? undefined : findNode(tree, previewKey);
+    return node?.kind === 'tab' ? node : undefined;
+  }, [tree, previewKey]);
+  const [previewEpoch, setPreviewEpoch] = useState(0);
+  // Previews were cleared or refreshed: the panel looks its tab's preview up again.
+  const bumpPreviewEpoch = useCallback(() => setPreviewEpoch((n) => n + 1), []);
   const focusRow = (key: string) =>
     listRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus();
 
   const onSelect = (e: MouseEvent, key: string) => {
-    setCursor(key);
+    moveCursor(key);
     dispatch(selectionActionFor(e, key, visible));
   };
   const drag = useRowDrag(
@@ -217,7 +214,7 @@ export function App() {
     e.preventDefault();
     switch (intent.type) {
       case 'move':
-        setCursor(intent.key);
+        moveCursor(intent.key);
         dispatch(
           intent.extend
             ? { type: 'range', key: intent.key, visible }
@@ -252,7 +249,7 @@ export function App() {
   // Down arrow in the search box moves into the outline.
   const enterOutline = () => {
     if (tabStop === null) return;
-    setCursor(tabStop);
+    moveCursor(tabStop);
     focusRow(tabStop);
   };
 
@@ -306,9 +303,7 @@ export function App() {
           />
         )}
       </main>
-      {hovered && hoveredTab && (
-        <HoverCard tab={hoveredTab} row={hovered.row} list={listRef} previewEpoch={previewEpoch} />
-      )}
+      <PreviewPanel tab={previewTab} previewEpoch={previewEpoch} />
       {menu && menu.windowKey === null && (
         <ContextMenu
           x={menu.x}
