@@ -9,7 +9,7 @@ How to publish a new version of Tab Hammer to the Chrome Web Store.
    ```
 
    This sets the version in `packages/extension/src/manifest.ts` (what Chrome and the store read),
-   every `package.json`, and `package-lock.json`. It refuses a version that isn't above the current
+   every `package.json`, `package-lock.json`, and the MCP registry listing (`packages/mcp/server.json`). It refuses a version that isn't above the current
    one, and commits and tags nothing.
 
 2. **Run the gate:** `npm run gate`. It must pass.
@@ -37,9 +37,31 @@ How to publish a new version of Tab Hammer to the Chrome Web Store.
 
 ## First release only
 
-- Create the item by uploading the first zip; the store then shows the item's extension ID.
+- Create the item by uploading the first zip; the store then shows the item's extension ID. Put
+  it in `STORE_EXTENSION_ID` (`packages/protocol/src/index.ts`) so the MCP installer allows the
+  store build to reach the native host, and publish the MCP package (below).
 - Create a Google Cloud OAuth client of type "Chrome extension" for that ID (same project as the
   dev client, Drive API enabled), put its client ID in `STORE_GOOGLE_OAUTH_CLIENT_ID`, and release
   again to turn on Drive sync in the store build.
 - Publish `docs/store/privacy-policy.md` with GitHub Pages and paste its address into the
   dashboard's privacy tab, then fill in the rest from `docs/store/listing.md`.
+
+## Publishing the MCP package
+
+The `tab-hammer-mcp` npm package (`packages/mcp`) shares the release version. After the gate
+passes on the release commit:
+
+1. `cd packages/mcp && npm publish --access public`. `prepublishOnly` builds `dist/` and runs the
+   package's tests first.
+2. List it in the MCP registry, from `packages/mcp` (install the publisher once with
+   `brew install mcp-publisher`):
+
+   ```
+   mcp-publisher login github
+   mcp-publisher publish
+   ```
+
+   The registry checks that `server.json`'s `name` matches `mcpName` in `package.json` and that
+   the npm version exists, so publish to npm first. Check the listing with
+   `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.BoltCreative/tab-hammer"`.
+

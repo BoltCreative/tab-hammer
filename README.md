@@ -69,9 +69,43 @@ Then in Chrome: `chrome://extensions` → enable Developer mode → **Load unpac
 
 ## Connect an AI agent (MCP)
 
-Tab Hammer includes an MCP server, so an AI agent like Claude Code can list your windows, groups,
-and tabs and rearrange them: "group my research tabs", "close the duplicates", "move everything
-about the trip into its own window". Setup instructions are coming soon.
+Tab Hammer includes an MCP server, so an AI agent (Claude Code, Claude Desktop, Codex, Cursor, VS
+Code, Windsurf, or any other MCP client) can see every open window, group, and tab and rearrange
+them: "group my research tabs", "close the duplicates", "move everything about the trip into its
+own window". With the extension installed, set it up with one command (Node 20 or newer):
+
+```
+npx tab-hammer-mcp install
+```
+
+It registers Tab Hammer's native host with every Chromium browser it finds (Chrome, Chrome
+Beta/Dev/Canary, Chromium, Brave, Edge, Arc) and the MCP server with every agent it finds, on
+macOS, Linux, and Windows. Then reload Tab Hammer (or click its toolbar icon) so it connects, and
+restart your agent. Agents get these tools: `list_tabs`, `focus_tab`, `open_tabs`, `move_tabs`,
+`group_tabs`, `ungroup_tabs`, `update_group`, and `close_tabs`; most agents ask before running
+each one unless you allow it.
+
+| Command                         | What it does                                                    |
+| ------------------------------- | --------------------------------------------------------------- |
+| `npx tab-hammer-mcp install`    | Set up everything found. Safe to re-run.                        |
+| `npx tab-hammer-mcp doctor`     | Check each browser, the extension's connection, and each agent. |
+| `npx tab-hammer-mcp uninstall`  | Undo exactly what install did.                                  |
+| `--only <ids>` / `--skip <ids>` | Limit to some browsers or agents, e.g. `--only chrome,cursor`.  |
+| `--extension-id <id>`           | Also allow another build of the extension (its 32-letter ID).   |
+
+For an agent it doesn't know, install prints the config to paste (a `node` command and the
+server's path). `npx tab-hammer-mcp` with no command runs the MCP server itself over stdio, which
+is how MCP registries launch it.
+
+How it fits together: the agent starts the MCP server; the browser starts a small native
+messaging host for Tab Hammer; the two meet on a local socket (`~/.tab-hammer/bridge.sock`,
+readable only by you; a per-user named pipe on Windows). Nothing runs unless the browser and the
+agent are. The installer copies the host and server to `~/.tab-hammer/mcp`
+(`%LOCALAPPDATA%\TabHammer\mcp` on Windows), because macOS won't let a browser run programs from
+inside `~/Documents` without a permission prompt and `npx` clears its cache; both run with the
+`node` you installed with, so re-run install if you move or remove that Node.
+
+From a checkout, `npm run install-mcp` builds the package and runs the same installer.
 
 ## Permissions
 
@@ -157,7 +191,8 @@ architecture.
 npm workspaces, one package per process:
 
 - `packages/extension` — the Chrome extension (service worker, outline view, tests).
-- `packages/mcp` — the MCP server an AI agent starts, and the native messaging host Chrome starts.
+- `packages/mcp` — the `tab-hammer-mcp` npm package: the MCP server agents start, the native
+  host the browser starts, and the installer.
 - `packages/protocol` — the message types both sides compile against.
 - `docs/superpowers` — design specs and implementation plans written while building Tab Hammer
   (historical records, not necessarily current).

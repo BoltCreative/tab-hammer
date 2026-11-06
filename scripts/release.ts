@@ -1,5 +1,6 @@
 // Bumps Tab Hammer's version everywhere it's written: the extension manifest (what Chrome and the
-// Chrome Web Store read), every workspace's package.json, and package-lock.json. Commits and tags
+// Chrome Web Store read), every workspace's package.json, package-lock.json, and the MCP registry
+// listing (packages/mcp/server.json). Commits and tags
 // nothing; it prints the next steps (docs/store/release.md).
 //
 //   npm run release -- patch|minor|major|<x.y.z>
@@ -80,8 +81,18 @@ for (const key of ['', ...WORKSPACES]) {
 }
 await write('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
 
+// The MCP registry listing names the npm package at the same version, twice.
+const SERVER_JSON = 'packages/mcp/server.json';
+const listing = JSON.parse(await read(SERVER_JSON)) as {
+  version: string;
+  packages: { version?: string }[];
+};
+listing.version = version;
+for (const pkg of listing.packages) pkg.version = version;
+await write(SERVER_JSON, JSON.stringify(listing, null, 2) + '\n');
+
 console.log(`Tab Hammer ${current} -> ${version}
-Changed: ${[MANIFEST, ...PACKAGE_JSONS, 'package-lock.json'].join(', ')}
+Changed: ${[MANIFEST, ...PACKAGE_JSONS, 'package-lock.json', SERVER_JSON].join(', ')}
 
 Next (docs/store/release.md):
   npm run gate

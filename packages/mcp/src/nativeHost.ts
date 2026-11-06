@@ -1,6 +1,6 @@
 // The native messaging host: Chrome starts it when Tab Hammer's service worker calls
 // chrome.runtime.connectNative, and it lives as long as that connection. It listens on a Unix
-// socket for MCP servers (one per Claude session) and relays each request to the extension,
+// socket (a named pipe on Windows) for MCP servers (one per Claude session) and relays each request to the extension,
 // routing responses back to whichever server asked. It never interprets a request itself.
 import fs from 'node:fs';
 import net from 'node:net';
@@ -9,6 +9,7 @@ import type { Readable, Writable } from 'node:stream';
 import type { BridgeRequest, BridgeResponse } from '@tab-hammer/protocol';
 import { encodeFrame, FrameDecoder } from './framing.ts';
 import { onLines } from './lines.ts';
+import { isPipePath } from './paths.ts';
 
 interface Pending {
   socket: net.Socket;
@@ -69,14 +70,21 @@ export function runNativeHost(opts: {
     }
   });
 
-  // A stale socket file (from a host that crashed) would make listen() fail; the newest host wins.
-  fs.mkdirSync(path.dirname(socketPath), { recursive: true });
-  fs.rmSync(socketPath, { force: true });
+  // A Windows named pipe has no file: Windows removes it when the last handle closes, and a second
+  // host can't take it over while the first runs, so that one fails to listen and exits.
+  const pipe = isPipePath(socketPath);
+  if (!pipe) {
+    // A stale socket file (from a host that crashed) would make listen() fail; the newest host wins.
+    fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+    fs.rmSync(socketPath, { force: true });
+  }
   const ready = new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(socketPath, () => {
-      fs.chmodSync(socketPath, 0o600);
-      listeningInode = fs.statSync(socketPath).ino;
+      if (!pipe) {
+        fs.chmodSync(socketPath, 0o600);
+        listeningInode = fs.statSync(socketPath).ino;
+      }
       resolve();
     });
   });
@@ -90,6 +98,7 @@ export function runNativeHost(opts: {
       server.close(() => resolve());
       for (const s of sockets) s.end();
       // Only remove the socket file if it is still ours (a newer host may have replaced it).
+      if (pipe) return;
       try {
         if (fs.statSync(socketPath).ino === listeningInode) fs.rmSync(socketPath);
       } catch {
