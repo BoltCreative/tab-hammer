@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - run: npm ci
+
+      # The e2e fixture launches Playwright's full Chromium (channel 'chromium', new headless),
+      # which loads extensions; the headless shell doesn't.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/extension
+
+      - run: npm run gate
+
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            packages/extension/test-results/
+            packages/extension/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
