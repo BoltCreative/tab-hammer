@@ -201,19 +201,32 @@ test('a docked panel’s Panel side… opens Chrome’s side panel setting', asy
     .toBe(true);
 });
 
-test('a docked panel lists the window it sits in first, and marks it', async ({ context, sw }) => {
-  await openWindows(sw, 2);
-  // The panel's page in a window of its own, opened last so the outline would list it last.
+test('a docked panel opens scrolled to the window it sits in, and marks it', async ({
+  context,
+  sw,
+}) => {
+  // Enough windows that the list scrolls; the panel's page then opens in an early one (not the
+  // first), with plenty after it so it can scroll to the top.
+  await openWindows(sw, 20);
+  const hostId = (await normalWindowIds(sw))[3]!;
   const pagePromise = context.waitForEvent('page', (p) => p.url().includes(PANEL_PATH));
-  const hostId = await sw.evaluate(
-    async (url) => (await chrome.windows.create({ url }))!.id!,
-    `chrome-extension://${new URL(sw.url()).host}/${PANEL_PATH}`,
+  await sw.evaluate(
+    async ({ windowId, url }) => void (await chrome.tabs.create({ windowId, url })),
+    { windowId: hostId, url: `chrome-extension://${new URL(sw.url()).host}/${PANEL_PATH}` },
   );
   const panel = await pagePromise;
 
-  const headers = panel.locator('[data-kind="window"]');
-  await expect(headers.first()).toHaveAttribute('data-window-id', String(hostId));
-  await expect(headers.first()).toHaveAttribute('aria-current', 'location');
-  expect(await headers.count()).toBeGreaterThanOrEqual(4);
+  const host = panel.locator(`[data-kind="window"][data-window-id="${hostId}"]`);
+  await expect(host).toHaveAttribute('aria-current', 'location');
   await expect(panel.locator('[data-kind="window"][aria-current]')).toHaveCount(1);
+  // The outline's order is unchanged: the host isn't moved to the front.
+  await expect(panel.locator('[data-kind="window"]').first()).not.toHaveAttribute(
+    'data-window-id',
+    String(hostId),
+  );
+  // It's scrolled to the top of the list.
+  const list = panel.locator('main.outline');
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const listTop = (await list.boundingBox())!.y;
+  await expect.poll(async () => Math.abs((await host.boundingBox())!.y - listTop)).toBeLessThan(2);
 });

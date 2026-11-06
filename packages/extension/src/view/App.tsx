@@ -65,12 +65,10 @@ export function App() {
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
   const [query, setQuery] = useState('');
-  const filtered = useMemo(() => filterTree(tree, query), [tree, query]);
-  const filtering = filtered !== tree;
-  // A docked panel lists the browser window it sits in first (only in that panel; the outline's
-  // own order is unchanged), and marks it.
+  const shown = useMemo(() => filterTree(tree, query), [tree, query]);
+  const filtering = shown !== tree;
+  // A docked panel marks the browser window it sits in, and opens scrolled to it.
   const hostWindowId = useHostWindowId();
-  const shown = useMemo(() => hostFirst(filtered, hostWindowId), [filtered, hostWindowId]);
   // Duplicates are found across the whole tree, whatever the search shows.
   const duplicates = useMemo(() => findDuplicates(tree), [tree]);
   const shownCollapse = filtering ? EXPAND_ALL : collapse;
@@ -79,6 +77,22 @@ export function App() {
   const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
+
+  // Once, when a docked panel opens: scroll its own window's card to the top of the list.
+  const scrolledToHost = useRef(false);
+  useEffect(() => {
+    if (scrolledToHost.current || hostWindowId === undefined) return;
+    const list = listRef.current;
+    const card = list
+      ?.querySelector(`[data-kind="window"][data-window-id="${hostWindowId}"]`)
+      ?.closest('section');
+    if (!list || !card) return; // not in the outline yet; try again on the next broadcast
+    scrolledToHost.current = true;
+    // Set directly: scrollIntoView would honor the list's scroll-padding (room for keyboard focus
+    // under a pinned bar) and stop short. The list's bottom padding lets even the last window
+    // reach the top.
+    list.scrollTop += card.getBoundingClientRect().top - list.getBoundingClientRect().top;
+  }, [hostWindowId, tree]);
 
   // Rows a search hides leave the selection, so a drag never carries rows the user can't see.
   useEffect(() => {
@@ -376,13 +390,6 @@ function logActionError(err: unknown) {
 
 function logCommandError(err: unknown) {
   console.error('Tab Hammer: outline command failed', err);
-}
-
-/** The windows with the one whose Chrome ID is `windowId` moved to the front (if it's there). */
-function hostFirst(windows: WindowNode[], windowId: number | undefined): WindowNode[] {
-  const i = windowId === undefined ? -1 : windows.findIndex((w) => w.windowId === windowId);
-  if (i <= 0) return windows;
-  return [windows[i]!, ...windows.slice(0, i), ...windows.slice(i + 1)];
 }
 
 function hasHibernatedRows(w: WindowNode): boolean {
