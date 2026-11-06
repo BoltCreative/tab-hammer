@@ -5,8 +5,8 @@ Copy for the Chrome Web Store developer dashboard. The permission list here must
 
 ## Single purpose
 
-Tab Hammer shows all of your Chrome windows, tab groups, and tabs as one outline in its own window,
-so you can find, preview, rearrange, hibernate, and restore them.
+Tab Hammer shows all of your Chrome windows, tab groups, and tabs as one outline, in its own window
+or docked in the side panel, so you can find, preview, rearrange, hibernate, and restore them.
 
 ## Short description (132 characters max)
 
@@ -18,6 +18,7 @@ and restore your tabs.
 Tab Hammer turns every Chrome window, tab group, and tab into one live outline, in a window of its
 own. It's a spiritual successor to Tabs Outliner, built to fix its annoyances.
 
+- **Float or dock.** Use it as its own window, or dock it in Chrome's side panel in every window.
 - **See everything at once.** Every window and group as a section, every tab as a row, updated live
   as you browse. Search filters the outline as you type.
 - **Preview before you switch.** Hover a tab to see a screenshot of how it looked the last time it
@@ -70,6 +71,10 @@ Workflow & Planning (alternative: Tools).
   sync, through the Google account already signed in to Chrome. Nothing is requested until the
   user turns sync on.
 - **alarms:** Checks the user's Drive every 5 minutes for their other computers' outlines.
+- **sidePanel:** Shows the outline docked in Chrome's side panel, when the user chooses docked mode
+  instead of the floating window.
+- **contextMenus:** Adds "Side panel: left or right…" to the toolbar icon's right-click menu, which
+  opens Chrome's own side-panel setting.
 
 ### Optional permissions
 

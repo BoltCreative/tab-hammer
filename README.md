@@ -1,7 +1,7 @@
 # Tab Hammer
 
 Tab Hammer is a Chrome extension that shows every open Chrome window, tab group, and tab as a live
-outline in its own window. You can rename, rearrange, hibernate, and restore windows and tabs from
+outline, in its own window or docked in Chrome's side panel. You can rename, rearrange, hibernate, and restore windows and tabs from
 the outline, see a screenshot preview of any tab before switching to it, carry your outline across
 computers through your own Google Drive, and let an AI agent like Claude Code organize your tabs
 through its MCP server.
@@ -30,7 +30,9 @@ Tab Hammer takes the same idea and builds on modern Chrome:
 
 ## Features
 
-- **Its own window** — a dedicated outline window, not a side panel.
+- **Float or dock** — use the outline as its own floating window, or dock it in Chrome's side
+  panel, where it opens in every window and marks the one it sits in. One button in the header
+  switches between the two.
 - **A live outline** of every window, tab group, and tab, kept in sync as you browse, with
   Tab Hammer's own IDs so a window keeps its name and place across a browser restart.
 - **Search** tabs by title or URL.
@@ -87,9 +89,10 @@ Tab Hammer asks for these when you install it:
   permission to be optional.
 - **Communicate with cooperating native applications** (`nativeMessaging`): the bridge to an AI
   agent such as Claude Code. It does nothing unless you've installed the MCP server.
-- `storage`, `favicon`, `system.display`, `alarms`, and `identity`, which add no install warning:
-  settings, tab icons from Chrome's cache, keeping the window on a connected screen, checking for
-  your other computers' outlines every 5 minutes, and signing in to your own Google Drive for sync.
+- `storage`, `favicon`, `system.display`, `alarms`, `identity`, `sidePanel`, and `contextMenus`,
+  which add no install warning: settings, tab icons from Chrome's cache, keeping the window on a
+  connected screen, checking for your other computers' outlines every 5 minutes, signing in to your
+  own Google Drive for sync, the docked side-panel mode, and the toolbar icon's right-click menu.
 
 Asked for only when you use the feature:
 
