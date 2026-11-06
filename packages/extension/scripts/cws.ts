@@ -1,7 +1,8 @@
-// Chrome Web Store from CI (.github/workflows/store.yml and release.yml):
+// Chrome Web Store from CI (.github/workflows/release.yml):
 //
-//   node scripts/cws.ts upload <zip>   replace the item's draft with the zip
-//   node scripts/cws.ts publish        submit the draft for review
+//   node scripts/cws.ts upload <zip>        replace the item's draft with the zip
+//   node scripts/cws.ts publish [version]   submit the draft for review (already done if that
+//                                           version is submitted or published)
 //
 // Reads CWS_PUBLISHER_ID, CWS_ITEM_ID, and either CWS_SERVICE_ACCOUNT_KEY (the service account's
 // JSON key) or CWS_CLIENT_ID, CWS_CLIENT_SECRET, and CWS_REFRESH_TOKEN. docs/store/release.md has
@@ -56,15 +57,20 @@ try {
     if (!file) fail('usage: cws.ts upload <zip>');
     const outcome = await new Cws(config()).upload(await readFile(file));
     say(outcome.done ? 'notice' : 'warning', outcome.message);
-    // The workflow tags the commit only when its build reached the store.
+    // The workflow tags the commit, and submits it, only when its build reached the store.
     if (process.env.GITHUB_OUTPUT)
-      await appendFile(process.env.GITHUB_OUTPUT, `uploaded=${outcome.done}\n`);
+      await appendFile(
+        process.env.GITHUB_OUTPUT,
+        `uploaded=${outcome.done}\nmessage=${outcome.message}\n`,
+      );
   } else if (action === 'publish') {
-    const outcome = await new Cws(config()).publish();
+    const outcome = await new Cws(config()).publish(file);
     if (!outcome.done) fail(outcome.message);
     say('notice', outcome.message);
+    if (process.env.GITHUB_OUTPUT)
+      await appendFile(process.env.GITHUB_OUTPUT, `message=${outcome.message}\n`);
   } else {
-    fail('usage: cws.ts upload <zip> | publish');
+    fail('usage: cws.ts upload <zip> | publish [version]');
   }
 } catch (e) {
   if (e instanceof CwsError) fail(e.message);
