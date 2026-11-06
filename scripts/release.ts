@@ -1,7 +1,7 @@
 // Bumps Tab Hammer's version everywhere it's written: the extension manifest (what Chrome and the
 // Chrome Web Store read), every workspace's package.json, package-lock.json, and the MCP registry
-// listing (packages/mcp/server.json). Commits and tags
-// nothing; it prints the next steps (docs/store/release.md).
+// listing (packages/mcp/server.json). Commits nothing; it prints the next steps
+// (docs/store/release.md).
 //
 //   npm run release -- patch|minor|major|<x.y.z>
 import { readFile, writeFile } from 'node:fs/promises';
@@ -11,8 +11,8 @@ const root = path.resolve(import.meta.dirname, '..');
 const MANIFEST = 'packages/extension/src/manifest.ts';
 const WORKSPACES = ['packages/protocol', 'packages/extension', 'packages/mcp'];
 const PACKAGE_JSONS = ['package.json', ...WORKSPACES.map((w) => `${w}/package.json`)];
-// The manifest's own line, `  version: '1.2.3',`, matched exactly once.
-const MANIFEST_VERSION = /^(\s*version: ')(\d+\.\d+\.\d+)(',)$/m;
+// The manifest's own line, `const RELEASE = '1.2.3';`, matched exactly once.
+const MANIFEST_VERSION = /^(const RELEASE = ')(\d+\.\d+\.\d+)(';)$/m;
 
 function fail(message: string): never {
   console.error(`release: ${message}`);
@@ -96,6 +96,6 @@ Changed: ${[MANIFEST, ...PACKAGE_JSONS, 'package-lock.json', SERVER_JSON].join('
 
 Next (docs/store/release.md):
   npm run gate
-  git commit -am "chore: release ${version}" && git tag v${version}
-  npm run build:store   # packages/extension/release/tab-hammer-${version}.zip
-  Upload the zip in the Chrome Web Store developer dashboard.`);
+  git commit -am "chore: release ${version}"
+  Land it through a PR. Merging uploads ${version}.<build> to the store as a draft, and the
+  Release workflow (Actions -> Release) submits it for review.`);

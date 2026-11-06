@@ -18,12 +18,20 @@ const ICONS = {
 const STORE = Boolean(process.env.TAB_HAMMER_STORE);
 const OAUTH_CLIENT_ID = STORE ? STORE_GOOGLE_OAUTH_CLIENT_ID : GOOGLE_OAUTH_CLIENT_ID;
 
+// The release version, bumped by `npm run release` (scripts/release.ts at the repo root), together
+// with every package.json.
+const RELEASE = '0.1.0';
+// CI's store uploads (.github/workflows/store.yml) add a fourth part, TAB_HAMMER_BUILD: main's
+// commit count, so every upload is above the last one (the store refuses a reused version) without
+// a commit to bump it. Chrome allows each part 0 to 65535.
+const BUILD = process.env.TAB_HAMMER_BUILD;
+if (BUILD !== undefined && !(/^(0|[1-9]\d{0,4})$/.test(BUILD) && Number(BUILD) <= 65535))
+  throw new Error(`TAB_HAMMER_BUILD must be a whole number from 0 to 65535, not "${BUILD}"`);
+
 export default defineManifest({
   manifest_version: 3,
   name: 'Tab Hammer',
-  // Bumped by `npm run release` (scripts/release.ts at the repo root), together with every
-  // package.json.
-  version: '0.1.0',
+  version: BUILD === undefined ? RELEASE : `${RELEASE}.${BUILD}`,
   description:
     'Every window, group, and tab as a live outline, in its own window or docked in the side panel.',
   // Pins the extension ID (lpnkidobhhpmokecbinbliomjehmndia) no matter which folder Chrome loads it
