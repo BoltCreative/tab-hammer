@@ -115,8 +115,10 @@ Certify all three:
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose.
 - I do not use or transfer user data to determine creditworthiness or for lending purposes.
 
-Privacy policy URL: the GitHub Pages address of `docs/store/privacy-policy.md` (published at
-`/privacy-policy/` by its front matter).
+Privacy policy URL: `https://boltcreative.com/tab-hammer/privacy` (the published copy of
+`docs/store/privacy-policy.md`).
+
+Homepage URL: `https://boltcreative.com/tab-hammer`. Support email: `support@boltcreative.com`.
 
 ## Screenshots
 
