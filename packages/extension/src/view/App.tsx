@@ -419,7 +419,8 @@ export function App() {
           />
         )}
       </main>
-      {/* Its own strip between the list and the preview panel, so it never covers a row. */}
+      {/* Over the preview panel, at the bottom of the window: appearing mid-drag, it must not move
+          the rows under the pointer, and the preview panel is no drop target. */}
       {drag.newWindow && (
         <div className="new-window-drop" data-testid="new-window-drop" {...drag.newWindow}>
           Drop here for a new window

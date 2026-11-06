@@ -53,6 +53,7 @@ body,
 /* A fixed header over the outline and a fixed preview panel under it: only the list scrolls.
    Toolbar buttons go in the header. */
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -696,11 +697,20 @@ button.twisty {
   color: var(--text);
   font-weight: 700;
 }
-/* While tabs are dragged: a strip of its own under the list (above the preview panel), always in
-   reach and never over a row. */
+/* While tabs are dragged: laid over the bottom of the window (the preview panel), so it is always
+   in reach and appearing doesn't shift the list. With the panel collapsed it covers the list's
+   last few pixels. */
 .new-window-drop {
-  flex: none;
-  margin: 6px 8px;
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 5;
+  box-sizing: border-box;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 10px;
   border: 2px dashed var(--drop-indicator);
   border-radius: 6px;
