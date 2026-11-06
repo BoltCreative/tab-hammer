@@ -34,6 +34,15 @@ describe('outline store', () => {
     });
   });
 
+  it('persists a reorder that changes no window record', async () => {
+    await reset();
+    const [a, b, c] = [win('a'), win('b'), win('c')];
+    const first: Outline = { windows: [a, b, c] };
+    await saveOutline({ windows: [] }, first, 's');
+    await saveOutline(first, { windows: [c, a, b] }, 's');
+    expect((await loadOutline()).outline.windows.map((w) => w.id)).toEqual(['c', 'a', 'b']);
+  });
+
   it('persists changes and deletions', async () => {
     await reset();
     const a = win('a');

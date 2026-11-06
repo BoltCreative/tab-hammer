@@ -32,6 +32,32 @@ export function dropPositionFor(kind: 'window' | 'group' | 'tab', fraction: numb
   return fraction < 0.5 ? 'before' : 'after';
 }
 
+/** How far into a window header (from either edge) a window drag reorders instead of merging. */
+export const REORDER_EDGE = 0.3;
+
+/**
+ * What dropping dragged windows on a window header means: its top edge puts them before this
+ * window, its bottom edge after it, and its middle merges them into it (their tabs move there).
+ */
+export function windowDropFor(fraction: number): 'before' | 'after' | 'merge' {
+  if (fraction < REORDER_EDGE) return 'before';
+  if (fraction > 1 - REORDER_EDGE) return 'after';
+  return 'merge';
+}
+
+/** True when a drag carries only window rows (so it can reorder windows). */
+export function isWindowDrag(keys: readonly string[]): boolean {
+  return keys.length > 0 && keys.every((k) => k.startsWith('w:'));
+}
+
+/**
+ * The tab records a drag carries, in outline order (a window or group row stands for its tabs):
+ * what "drop for a new window" moves.
+ */
+export function draggedTabIds(tree: WindowNode[], keys: readonly string[]): string[] {
+  return unitsFor(tree, withWindowRows(tree, keys)).flatMap((u) => unitTabs(u).map((t) => t.id));
+}
+
 /**
  * The rows a drag carries: the whole selection when the drag starts on a selected row, otherwise
  * just the row it starts on. A window header carries all of its window's rows.

@@ -26,6 +26,12 @@ describe('validateSyncFile', () => {
     expect(r).toEqual({ ok: true, file: good() });
   });
 
+  it('keeps window order: a file lists its windows in outline order, with no order field', () => {
+    const f = sfile([swin('c'), swin('a'), swin('b')]);
+    const v = validateSyncFile(JSON.parse(JSON.stringify(f)));
+    expect(v.ok && v.file.windows.map((w) => w.id)).toEqual(['c', 'a', 'b']);
+  });
+
   it('keeps checkpointAt and drops fields it does not know', () => {
     const r = validateSyncFile({ ...good(), checkpointAt: 7, extra: 1 });
     expect(r.ok && r.file.checkpointAt).toBe(7);

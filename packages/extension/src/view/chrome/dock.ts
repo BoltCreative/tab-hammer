@@ -29,6 +29,19 @@ function openPanels(windowIds: number[]): Promise<unknown> {
   return Promise.allSettled(windowIds.map((windowId) => chrome.sidePanel.open({ windowId })));
 }
 
+/**
+ * Docked, a window Tab Hammer just opened from a click in this panel (New window, or tabs dropped
+ * for a new window) gets the panel too, while Chrome still counts that click. In the standalone
+ * window it does nothing.
+ */
+export function dockInto(windowId: number | undefined): void {
+  if (surface !== 'panel' || windowId === undefined) return;
+  chrome.sidePanel
+    .open({ windowId })
+    // Too late for the click: the next click in any panel opens it (registerPanel).
+    .catch((err: unknown) => console.warn('Tab Hammer: docking into the new window failed', err));
+}
+
 async function setMode(mode: ViewMode): Promise<void> {
   const request: SetViewModeRequest = { type: SET_VIEW_MODE, mode };
   await chrome.runtime.sendMessage(request);

@@ -53,6 +53,7 @@ body,
 /* A fixed header over the outline and a fixed preview panel under it: only the list scrolls.
    Toolbar buttons go in the header. */
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -154,6 +155,7 @@ main.outline {
 }
 /* A window: a section under its header bar (no box), its tabs indented a little from the edges. */
 .card {
+  position: relative;
   padding: 0 4px 6px;
 }
 .row {
@@ -649,6 +651,77 @@ button.twisty {
 }
 .row[data-drop='inside'] {
   box-shadow: inset 0 0 0 2px var(--drop-indicator);
+}
+/* Dragging windows: the two drops look nothing alike. Reordering draws a thick bar with a knob in
+   the gap between two windows; merging floods the target header and labels it. */
+.card[data-reorder]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  z-index: 3;
+  border-radius: 2px;
+  background: var(--drop-indicator);
+  pointer-events: none;
+}
+.card[data-reorder='before']::before {
+  top: -3px;
+}
+.card[data-reorder='after']::before {
+  bottom: 1px;
+}
+.card[data-reorder]::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  width: 10px;
+  height: 10px;
+  z-index: 3;
+  border-radius: 50%;
+  background: var(--drop-indicator);
+  pointer-events: none;
+}
+.card[data-reorder='before']::after {
+  top: -6px;
+}
+.card[data-reorder='after']::after {
+  bottom: -2px;
+}
+.window-header[data-drop='merge'] {
+  background: color-mix(in srgb, var(--drop-indicator) 30%, var(--window-bar));
+  box-shadow: inset 0 0 0 2px var(--drop-indicator);
+}
+.window-header[data-drop='merge'] .count::before {
+  content: 'Merge into this window · ';
+  color: var(--text);
+  font-weight: 700;
+}
+/* While tabs are dragged: laid over the bottom of the window (the preview panel), so it is always
+   in reach and appearing doesn't shift the list. With the panel collapsed it covers the list's
+   last few pixels. */
+.new-window-drop {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 5;
+  box-sizing: border-box;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 2px dashed var(--drop-indicator);
+  border-radius: 6px;
+  background: var(--window-bar);
+  color: var(--text);
+  text-align: center;
+  font-weight: 600;
+}
+.new-window-drop[data-over='true'] {
+  border-style: solid;
+  background: color-mix(in srgb, var(--drop-indicator) 25%, var(--window-bar));
 }
 /* Marks a tab whose URL is open in another tab too (see "Close duplicates" in the header). */
 .dup-badge {

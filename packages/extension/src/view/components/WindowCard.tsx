@@ -8,6 +8,7 @@ import { TabRow } from './TabRow';
 import { RenameField } from './RenameField';
 import { EditIcon, HibernateIcon, RowToolbar, TrashIcon, type RowAction } from './RowToolbar';
 import type { RowCommands, RowPropsFor } from './rowProps';
+import type { CardDragProps } from './useRowDrag';
 
 interface Props {
   win: WindowNode;
@@ -22,6 +23,7 @@ interface Props {
   onWindowContextMenu: (e: MouseEvent, win: WindowNode) => void;
   hover: HoverHandlers;
   rowProps: RowPropsFor;
+  cardProps: CardDragProps; // the gap below the window reorders windows dropped there
   commands: RowCommands;
   here: boolean; // the browser window this docked panel sits in
   renaming: boolean; // the label is an inline text field
@@ -45,6 +47,7 @@ export function WindowCard(p: Props) {
       data-testid="window-card"
       className={['card', win.focused && 'focused', p.here && 'here'].filter(Boolean).join(' ')}
       style={{ '--window-color': `var(--group-${windowColor(win.id)})` } as CSSProperties}
+      {...p.cardProps}
     >
       <div
         className={win.hibernated ? 'row window-header hibernated' : 'row window-header'}

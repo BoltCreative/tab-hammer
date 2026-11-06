@@ -20,9 +20,9 @@ import {
   toggleGroup,
   type CollapseState,
 } from '../model/visibleRows';
-import { planDrop } from '../model/moveSelection';
+import { draggedTabIds, planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
-import { useHostWindowId } from './chrome/dock';
+import { dockInto, useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -124,10 +124,10 @@ export function App() {
     moveCursor(key);
     dispatch(selectionActionFor(e, key, visible));
   };
-  const drag = useRowDrag(
-    selection.selected,
-    (key) => dispatch({ type: 'click', key }),
-    (keys, target) => {
+  const recordId = (key: string) => findNode(tree, key)?.id;
+  const drag = useRowDrag(selection.selected, {
+    onSelectOnly: (key) => dispatch({ type: 'click', key }),
+    onMove: (keys, target) => {
       const { chrome, place } = planDrop(tree, keys, target);
       // Chrome first: the worker reconciles with Chrome before placing, so the live tabs are
       // already where the placement expects them.
@@ -136,11 +136,22 @@ export function App() {
         if (place) await sendOutlineCommand({ cmd: 'place', placement: place });
       })().catch((err: unknown) => console.error('Tab Hammer: moving tabs failed', err));
     },
-  );
+    onReorder: (windowKeys, anchorKey, side) => {
+      const anchorId = recordId(anchorKey);
+      const ids = windowKeys.flatMap((k) => recordId(k) ?? []);
+      if (anchorId !== undefined && ids.length > 0) {
+        send({ cmd: 'moveWindows', ids, anchorId, side });
+      }
+    },
+    onNewWindow: (keys) => {
+      const tabIds = draggedTabIds(tree, keys);
+      if (tabIds.length > 0) sendOpening({ cmd: 'moveToNewWindow', tabIds, afterWindowId: null });
+    },
+  });
   const rowProps: RowPropsFor = (key, kind) => {
     const r = rowByKey.get(key);
     return {
-      ...drag(key, kind),
+      ...drag.row(key, kind),
       tabIndex: key === tabStop ? 0 : -1,
       'aria-level': r?.level,
       'aria-setsize': r?.setSize,
@@ -148,7 +159,14 @@ export function App() {
       'aria-expanded': r?.expanded,
     };
   };
+  // The window being used: docked, the one this panel sits in; else Chrome's focused window.
+  const currentWindow = () =>
+    (hostWindowId === undefined ? undefined : tree.find((w) => w.windowId === hostWindowId)) ??
+    tree.find((w) => w.focused);
   const send = (c: OutlineCommand) => sendOutlineCommand(c).catch(logCommandError);
+  // A command that opens a Chrome window: docked, the panel follows into it.
+  const sendOpening = (c: OutlineCommand) =>
+    sendOutlineCommand(c).then(dockInto).catch(logCommandError);
   const commands: RowCommands = {
     hibernate: (id) => send({ cmd: 'hibernate', ids: [id] }),
     trash: (id) => send({ cmd: 'trash', ids: [id] }),
@@ -190,6 +208,10 @@ export function App() {
   // acts on the window's current tabs even if they change while it is open. A null key is the
   // outline background's menu: the header's Actions.
   const [menu, setMenu] = useState<{ x: number; y: number; windowKey: string | null } | null>(null);
+  // Right-click menu on tab and group rows: the rows it acts on (the selection, if the click was
+  // on a selected row).
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; keys: string[] } | null>(null);
+  const closeRowMenu = useCallback(() => setRowMenu(null), []);
   const closeMenu = useCallback(() => setMenu(null), []);
   const onWindowContextMenu = (e: MouseEvent, win: WindowNode) => {
     e.preventDefault();
@@ -200,7 +222,20 @@ export function App() {
   const onBackgroundContextMenu = (e: MouseEvent) => {
     if (e.defaultPrevented) return;
     const target = e.target as Element;
-    if (target.closest('.row, input, textarea, button')) return;
+    if (target.closest('input, textarea, button')) return;
+    const row = target.closest<HTMLElement>('.row[data-kind="tab"], .row[data-kind="group"]');
+    if (row?.dataset.key) {
+      const key = row.dataset.key;
+      e.preventDefault();
+      if (!selection.selected.has(key)) {
+        dispatch({ type: 'click', key });
+        moveCursor(key);
+      }
+      const keys = selection.selected.has(key) ? [...selection.selected] : [key];
+      setRowMenu({ x: e.clientX, y: e.clientY, keys });
+      return;
+    }
+    if (target.closest('.row')) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, windowKey: null });
   };
@@ -209,6 +244,8 @@ export function App() {
     duplicateCount: duplicates.toClose.length,
     onCloseDuplicates: () => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? [])),
     onOpenDevices: () => setDevicesOpen(true),
+    onNewWindow: () =>
+      sendOpening({ cmd: 'newWindow', afterWindowId: currentWindow()?.id ?? null }),
   });
   const menuWindow =
     menu?.windowKey != null ? tree.find((w) => w.key === menu.windowKey) : undefined;
@@ -241,7 +278,31 @@ export function App() {
     [tree],
   );
 
+  // Alt+Up / Alt+Down: moves the window holding the cursor (or the selected windows) one place.
+  const stepWindows = (key: string, delta: -1 | 1) => {
+    const selectedWindows = shown.filter((w) => selection.selected.has(w.key));
+    const cursorWindow = shown.find((w) => w.key === key || findNode([w], key) !== undefined);
+    const moving =
+      selectedWindows.length > 0 ? selectedWindows : cursorWindow ? [cursorWindow] : [];
+    if (moving.length === 0) return;
+    // The neighbour past the block, among the windows shown.
+    const at = delta < 0 ? shown.indexOf(moving[0]!) : shown.indexOf(moving[moving.length - 1]!);
+    const neighbour = shown[at + delta];
+    if (!neighbour || moving.includes(neighbour)) return;
+    send({
+      cmd: 'moveWindows',
+      ids: moving.map((w) => w.id),
+      anchorId: neighbour.id,
+      side: delta < 0 ? 'before' : 'after',
+    });
+  };
+
   const onTreeKeyDown = (e: KeyboardEvent) => {
+    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      if (tabStop !== null) stepWindows(tabStop, e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const intent = navIntent(rows, tabStop, e.key, e.shiftKey);
     if (!intent) return;
@@ -339,6 +400,7 @@ export function App() {
               onWindowContextMenu={onWindowContextMenu}
               hover={hover}
               rowProps={rowProps}
+              cardProps={drag.card(w.key)}
               commands={commands}
               here={hostWindowId !== undefined && w.windowId === hostWindowId}
               renaming={renaming === w.key}
@@ -357,6 +419,13 @@ export function App() {
           />
         )}
       </main>
+      {/* Over the preview panel, at the bottom of the window: appearing mid-drag, it must not move
+          the rows under the pointer, and the preview panel is no drop target. */}
+      {drag.newWindow && (
+        <div className="new-window-drop" data-testid="new-window-drop" {...drag.newWindow}>
+          Drop here for a new window
+        </div>
+      )}
       <PreviewPanel tab={previewTab} previewEpoch={previewEpoch} />
       {menu && menu.windowKey === null && (
         <ContextMenu
@@ -365,6 +434,31 @@ export function App() {
           onClose={closeMenu}
           label="Actions"
           items={actions.items}
+        />
+      )}
+      {rowMenu && (
+        <ContextMenu
+          x={rowMenu.x}
+          y={rowMenu.y}
+          onClose={closeRowMenu}
+          items={[
+            {
+              label: (() => {
+                const n = draggedTabIds(tree, rowMenu.keys).length;
+                return `Open in new window (${n} ${n === 1 ? 'tab' : 'tabs'})`;
+              })(),
+              title: 'Move these tabs into a new window, listed right after the one they came from',
+              onSelect: () => {
+                const tabIds = draggedTabIds(tree, rowMenu.keys);
+                const from = tree.find((w) =>
+                  w.children.some((c) => tabsIn(c).some((t) => t.id === tabIds[0])),
+                );
+                if (tabIds.length > 0) {
+                  sendOpening({ cmd: 'moveToNewWindow', tabIds, afterWindowId: from?.id ?? null });
+                }
+              },
+            },
+          ]}
         />
       )}
       {menu && menuWindow && (
@@ -390,6 +484,10 @@ function logActionError(err: unknown) {
 
 function logCommandError(err: unknown) {
   console.error('Tab Hammer: outline command failed', err);
+}
+
+function tabsIn(c: GroupNode | TabNode): TabNode[] {
+  return c.kind === 'group' ? c.tabs : [c];
 }
 
 function hasHibernatedRows(w: WindowNode): boolean {

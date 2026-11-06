@@ -24,6 +24,11 @@ describe('restoreWindows', () => {
     expect(r.outline.windows[1]!.chromeWindowId).toBeUndefined();
   });
 
+  it("keeps the file's window order among the windows it adds", () => {
+    const r = restoreWindows({ windows: [] }, [swin('c'), swin('a'), swin('b')], opts());
+    expect(r.outline.windows.map((w) => w.id)).toEqual(['c', 'a', 'b']);
+  });
+
   it('skips windows already present (by ID) and leaves them untouched', () => {
     const a = win('a', { name: 'mine', tabs: [tab('a1')] });
     const local: Outline = { windows: [a] };
@@ -120,6 +125,28 @@ describe('selfRestoreWindows', () => {
     });
   const run = (o: Outline, ws: Parameters<typeof selfRestoreWindows>[1]) =>
     selfRestoreWindows(o, ws, { now: 99, newId: ids() });
+
+  it("brings windows back in the file's order, whatever order Chrome reopened them in", () => {
+    const live = (id: string, n: number, page: string) =>
+      win(id, {
+        chromeWindowId: n,
+        tabs: [tab(`${id}-t`, { chromeTabId: n * 10, url: url(page) })],
+      });
+    const saved = (id: string, page: string) =>
+      swin(id, { state: 'live', tabs: [stab(`${id}-s`, { url: url(page) })] });
+    const r = run({ windows: [live('f1', 1, 'x'), live('f2', 2, 'y'), live('f3', 3, 'z')] }, [
+      saved('Z', 'z'),
+      saved('H', 'h'),
+      saved('X', 'x'),
+      saved('Y', 'y'),
+    ]);
+    expect(r.outline.windows.map((w) => [w.id, w.chromeWindowId])).toEqual([
+      ['Z', 3],
+      ['H', undefined],
+      ['X', 1],
+      ['Y', 2],
+    ]);
+  });
 
   it('re-links a live window to its saved record instead of showing it twice', () => {
     const r = run({ windows: [openNow()] }, [fileLive()]);
