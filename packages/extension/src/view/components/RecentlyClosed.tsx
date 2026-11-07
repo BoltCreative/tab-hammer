@@ -7,7 +7,7 @@ import { RowToolbar, TrashIcon, RestoreIcon, type RowAction } from './RowToolbar
 interface Props {
   entries: WindowNode[]; // newest first
   restore: (id: string) => void; // opens the window in Chrome, its tabs as they were at close
-  restoreAll: (ids: string[]) => void; // brings every entry back to the outline, hibernated
+  restoreAll: (ids: string[]) => void; // reopens every entry in Chrome, as restore does
   deleteForever: (id: string) => void;
   hover: HoverHandlers; // a tab row hovered: the preview panel shows it
   showPreview: (key: string) => void; // a tab row focused with the keyboard: shown at once
@@ -33,7 +33,7 @@ function moveFocus(e: KeyboardEvent<HTMLElement>, from: HTMLElement | null) {
  * The trash: closed windows, newest first, at the bottom of the outline. Plain rows, not outline
  * rows: no selection or drag, and only whole windows come back. A closed window's tabs preview in
  * the panel like the outline's, on hover or as the arrow keys move through them. Restore all, on
- * the section's own header, brings every window back hibernated, so nothing loads in Chrome.
+ * the section's own header, reopens every window, each with the tabs that were live at close.
  */
 export function RecentlyClosed({
   entries,
@@ -62,7 +62,7 @@ export function RecentlyClosed({
         <button
           type="button"
           className="trash-restore-all"
-          title="Bring every closed window back to the outline, hibernated"
+          title="Reopen every closed window, with the tabs that were open when it closed"
           onClick={() => restoreAll(entries.map((w) => w.id))}
         >
           Restore all

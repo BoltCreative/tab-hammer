@@ -695,22 +695,35 @@ test("a trash entry's hover actions stay inside it, in place of its tab count", 
   }
 });
 
-test('Restore all on Recently closed brings every closed window back, hibernated, opening nothing', async ({
+test('Restore all on Recently closed reopens every closed window, each tab as it was at close', async ({
   sw,
   view,
 }) => {
   const before = (await chromeWindows(sw)).map((w) => w.id);
-  const ids: string[] = [];
-  for (let i = 0; i < 3; i++) ids.push(await closedEchoWindow(sw));
+  // One window deleted with a hibernated tab (Bravo) in it, then two closed by hand.
+  const { rec } = await windowARecord(sw);
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.tabs[1]!.id] });
+  await outlineCommand(sw, { cmd: 'trash', ids: [rec.id] });
+  const ids = [rec.id];
+  for (let i = 0; i < 2; i++) ids.push(await closedEchoWindow(sw));
   const trash = view.getByRole('group', { name: 'Recently closed' });
 
   await trash.getByRole('button', { name: 'Restore all', exact: true }).click();
 
   await expect
     .poll(async () => Promise.all(ids.map(async (id) => (await recordById(sw, id))?.state)))
-    .toEqual(['hibernated', 'hibernated', 'hibernated']);
+    .toEqual(['live', 'live', 'live']);
   await expect(trash).toHaveCount(0);
-  for (const id of ids)
-    await expect(view.locator(`.window-header.hibernated[data-key="w:${id}"]`)).toBeVisible();
-  expect((await chromeWindows(sw)).map((w) => w.id)).toEqual(before);
+  expect((await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title)).sort()).toEqual([
+    ['Alpha', 'Charlie'],
+    ['Echo', 'Foxtrot'],
+    ['Echo', 'Foxtrot'],
+  ]);
+  expect(
+    (await recordById(sw, rec.id))?.tabs.map((t) => [t.title, t.chromeTabId !== undefined]),
+  ).toEqual([
+    ['Alpha', true],
+    ['Bravo', false],
+    ['Charlie', true],
+  ]);
 });

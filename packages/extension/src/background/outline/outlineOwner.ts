@@ -14,7 +14,6 @@ import {
   renameWindow,
   startFresh,
   trash,
-  untrash,
 } from '../../model/outline/lifecycle';
 import { attachOpened, planOpen } from '../../model/outline/open';
 import { moveWindows, placeWindowAfter } from '../../model/outline/order';
@@ -279,9 +278,19 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
       case 'deleteForever':
         await commit(deleteWindow(outline, c.windowId), live!);
         return;
-      case 'untrash':
-        await commit(untrash(outline, c.ids, now), live!);
+      case 'openAll': {
+        // One after another, like that many ↺ clicks; one that fails doesn't stop the rest.
+        let failed: unknown;
+        for (const id of c.ids) {
+          try {
+            await openRow(id);
+          } catch (err) {
+            failed ??= err;
+          }
+        }
+        if (failed !== undefined) throw failed;
         return;
+      }
       case 'open':
         await openRow(c.id);
         return;
