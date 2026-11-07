@@ -28,6 +28,8 @@ export type OutlineCommand =
   | { cmd: 'open'; id: string }
   | { cmd: 'rename'; windowId: string; name: string }
   | { cmd: 'deleteForever'; windowId: string }
+  // Takes these trashed windows out of the trash, hibernated, opening nothing (Restore all).
+  | { cmd: 'untrash'; ids: string[] }
   | { cmd: 'place'; placement: Placement }
   // Reorders window records (Tab Hammer's own order; Chrome has none).
   | { cmd: 'moveWindows'; ids: string[]; anchorId: string; side: WindowSide }

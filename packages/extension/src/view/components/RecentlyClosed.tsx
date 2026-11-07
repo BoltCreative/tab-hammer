@@ -5,30 +5,42 @@ import { RowToolbar, TrashIcon, RestoreIcon, type RowAction } from './RowToolbar
 
 interface Props {
   entries: WindowNode[]; // newest first
-  restore: (id: string) => void;
+  restore: (id: string) => void; // opens the window in Chrome, its tabs as they were at close
+  restoreAll: (ids: string[]) => void; // brings every entry back to the outline, hibernated
   deleteForever: (id: string) => void;
 }
 
 /**
  * The trash: closed windows, newest first, at the bottom of the outline. Plain rows, not outline
- * rows: no selection, keyboard navigation, drag, or preview. Only whole windows come back.
+ * rows: no selection, keyboard navigation, or drag. Only whole windows come back. Restore all, on
+ * the section's own header, brings every one back hibernated, so nothing loads in Chrome.
  */
-export function RecentlyClosed({ entries, restore, deleteForever }: Props) {
+export function RecentlyClosed({ entries, restore, restoreAll, deleteForever }: Props) {
   const [open, setOpen] = useState(false);
   if (entries.length === 0) return null;
   return (
     <section className="card trash" role="group" aria-label="Recently closed">
-      <button
-        type="button"
-        className="row trash-header"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="twisty" aria-hidden="true">
-          {open ? '▾' : '▸'}
-        </span>
-        <span className="title">Recently closed ({entries.length})</span>
-      </button>
+      <div className="trash-bar">
+        <button
+          type="button"
+          className="row trash-header"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span className="twisty" aria-hidden="true">
+            {open ? '▾' : '▸'}
+          </span>
+          <span className="title">Recently closed ({entries.length})</span>
+        </button>
+        <button
+          type="button"
+          className="trash-restore-all"
+          title="Bring every closed window back to the outline, hibernated"
+          onClick={() => restoreAll(entries.map((w) => w.id))}
+        >
+          Restore all
+        </button>
+      </div>
       {open && (
         <div role="list">
           {entries.map((w) => (

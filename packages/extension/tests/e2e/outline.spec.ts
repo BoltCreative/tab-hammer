@@ -660,3 +660,57 @@ test('keys on the Recently closed header do not act on the outline selection', a
     'Charlie',
   ]);
 });
+
+test("a trash entry's hover actions stay inside it, in place of its tab count", async ({
+  sw,
+  view,
+}) => {
+  for (let i = 0; i < 3; i++) await closedEchoWindow(sw);
+  await view.getByRole('button', { name: /^Recently closed \(3\)/ }).click();
+  const entries = view.getByTestId('trash-entry');
+  await expect(entries).toHaveCount(3);
+
+  const first = entries.nth(0);
+  await first.hover();
+  const restore = first.getByRole('button', { name: 'Restore', exact: true });
+  await expect(restore).toBeVisible();
+  // The actions sit inside the hovered row, and its tab count gives way to them.
+  const rowBox = (await first.boundingBox())!;
+  const barBox = (await first.locator('.row-toolbar').boundingBox())!;
+  expect(barBox.y).toBeGreaterThanOrEqual(rowBox.y);
+  expect(barBox.y + barBox.height).toBeLessThanOrEqual(rowBox.y + rowBox.height);
+  await expect(first.getByText('2 tabs')).toBeHidden();
+
+  // Every other row keeps its count in view, with nothing drawn over it.
+  for (const i of [1, 2]) {
+    const count = entries.nth(i).getByText('2 tabs');
+    await expect(count).toBeVisible();
+    const box = (await count.boundingBox())!;
+    const onTop = await view.evaluate(
+      ([x, y]) => document.elementFromPoint(x!, y!)?.textContent?.trim(),
+      [box.x + box.width / 2, box.y + box.height / 2],
+    );
+    expect(onTop).toBe('2 tabs');
+    await expect(entries.nth(i).getByRole('button', { name: 'Restore', exact: true })).toBeHidden();
+  }
+});
+
+test('Restore all on Recently closed brings every closed window back, hibernated, opening nothing', async ({
+  sw,
+  view,
+}) => {
+  const before = (await chromeWindows(sw)).map((w) => w.id);
+  const ids: string[] = [];
+  for (let i = 0; i < 3; i++) ids.push(await closedEchoWindow(sw));
+  const trash = view.getByRole('group', { name: 'Recently closed' });
+
+  await trash.getByRole('button', { name: 'Restore all', exact: true }).click();
+
+  await expect
+    .poll(async () => Promise.all(ids.map(async (id) => (await recordById(sw, id))?.state)))
+    .toEqual(['hibernated', 'hibernated', 'hibernated']);
+  await expect(trash).toHaveCount(0);
+  for (const id of ids)
+    await expect(view.locator(`.window-header.hibernated[data-key="w:${id}"]`)).toBeVisible();
+  expect((await chromeWindows(sw)).map((w) => w.id)).toEqual(before);
+});

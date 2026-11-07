@@ -415,6 +415,7 @@ export function App() {
           <RecentlyClosed
             entries={trash}
             restore={commands.open}
+            restoreAll={(ids) => send({ cmd: 'untrash', ids })}
             deleteForever={commands.deleteForever}
           />
         )}

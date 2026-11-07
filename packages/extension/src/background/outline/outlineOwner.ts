@@ -14,6 +14,7 @@ import {
   renameWindow,
   startFresh,
   trash,
+  untrash,
 } from '../../model/outline/lifecycle';
 import { attachOpened, planOpen } from '../../model/outline/open';
 import { moveWindows, placeWindowAfter } from '../../model/outline/order';
@@ -277,6 +278,9 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
         return;
       case 'deleteForever':
         await commit(deleteWindow(outline, c.windowId), live!);
+        return;
+      case 'untrash':
+        await commit(untrash(outline, c.ids, now), live!);
         return;
       case 'open':
         await openRow(c.id);
