@@ -49,4 +49,5 @@ export async function buildPackage(outDir = OUT): Promise<void> {
   }
 }
 
-if (import.meta.main) await buildPackage();
+// `node build.ts [outDir]`: the dev server's MCP autodeploy builds into a temp folder.
+if (import.meta.main) await buildPackage(process.argv[2] ? path.resolve(process.argv[2]) : OUT);

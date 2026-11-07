@@ -6,6 +6,8 @@ import { runCommand } from './tabCommands';
 
 const RETRY_MIN_MS = 1_000;
 const RETRY_MAX_MS = 60_000;
+/** A connection that lasted this long counts as healthy: its next reconnect starts from the minimum. */
+const HEALTHY_MS = 10_000;
 
 let port: chrome.runtime.Port | null = null;
 let retryMs = RETRY_MIN_MS;
@@ -17,6 +19,7 @@ export function connectBridge(): void {
   clearTimeout(retryTimer);
   const p = chrome.runtime.connectNative(NATIVE_HOST_NAME);
   port = p;
+  const connectedAt = Date.now();
 
   p.onMessage.addListener((req: BridgeRequest) => {
     retryMs = RETRY_MIN_MS; // the host is healthy
@@ -40,7 +43,9 @@ export function connectBridge(): void {
     // Not installed (or not allowed for this extension): the normal state without the MCP setup.
     // Don't retry; installing it and then reloading the extension or clicking the icon connects.
     if (/not found|forbidden/i.test(reason)) return;
-    // The host exited (crash, or a newer host took over its socket): reconnect with backoff.
+    // The host exited (crash, a newer host took over its socket, or the dev server redeployed it):
+    // reconnect with backoff, starting over if this connection had been up a while.
+    if (Date.now() - connectedAt >= HEALTHY_MS) retryMs = RETRY_MIN_MS;
     retryTimer = setTimeout(connectBridge, retryMs);
     retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
   });
