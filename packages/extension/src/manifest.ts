@@ -102,6 +102,15 @@ export default defineManifest({
   // Rendered from icons/icon.svg by scripts/render-icons.ts.
   icons: ICONS,
   action: { default_title: 'Open Tab Hammer', default_icon: ICONS },
+  // A keyboard shortcut for the toolbar click: it opens or focuses the standalone window, or,
+  // docked, opens the side panel in the current window (openPanelOnActionClick covers it too).
+  // Rebindable at chrome://extensions/shortcuts.
+  commands: {
+    _execute_action: {
+      suggested_key: { default: 'Alt+Shift+T' },
+      description: 'Open Tab Hammer, or bring it to the front',
+    },
+  },
   // The same view, docked (src/view/panel.html marks it as the panel surface).
   side_panel: { default_path: 'src/view/panel.html' },
 });

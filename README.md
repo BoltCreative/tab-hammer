@@ -36,6 +36,8 @@ Tab Hammer takes the same idea and builds on modern Chrome:
 - **A live outline** of every window, tab group, and tab, kept in sync as you browse, with
   Tab Hammer's own IDs so a window keeps its name and place across a browser restart.
 - **Search** tabs by title or URL.
+- **Shortcut** — Alt+Shift+T (Option+Shift+T on a Mac) opens Tab Hammer or brings it to the
+  front, like its toolbar button; change it at `chrome://extensions/shortcuts`.
 - **Keyboard and mouse** — the search box works like a command palette: type anywhere to search,
   ↑/↓ to move the highlight (Shift to extend the selection), Cmd/Ctrl-↓ to open a tab or expand a
   window or group, Cmd/Ctrl-↑ to collapse or go up a level, Option/Alt-↑/↓ to move a window,
