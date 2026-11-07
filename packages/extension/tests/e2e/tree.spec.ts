@@ -48,11 +48,11 @@ test('opening twice focuses the existing Tab Hammer window instead of making ano
   expect(await popupIds(sw)).toEqual([viewWindowId]);
 });
 
-test('Alt+Shift+T is registered as the toolbar button’s shortcut', async ({ sw }) => {
+test('Alt+Shift+H is registered as the toolbar button’s shortcut', async ({ sw }) => {
   const commands = await sw.evaluate(() => chrome.commands.getAll());
   // On a Mac Chrome reports Alt as ⌥ and Shift as ⇧.
   expect(commands.find((c) => c.name === '_execute_action')?.shortcut).toMatch(
-    /^(Alt\+Shift\+T|⌥⇧T)$/,
+    /^(Alt\+Shift\+H|⌥⇧H)$/,
   );
 });
 

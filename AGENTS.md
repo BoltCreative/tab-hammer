@@ -43,7 +43,7 @@ Extension paths below are relative to `packages/extension/`. Chrome window and t
 
 ### Service worker and the outline
 
-- The service worker opens or focuses the Tab Hammer popup window, on a toolbar click or its shortcut (the manifest's `_execute_action` command, Alt+Shift+T by default, which Chrome treats as the click, side panel included).
+- The service worker opens or focuses the Tab Hammer popup window, on a toolbar click or its shortcut (the manifest's `_execute_action` command, Alt+Shift+H by default, which Chrome treats as the click, side panel included).
 - It owns the outline (`src/background/outline/`): a record per window, group, and tab, keyed by Tab Hammer's own random IDs and kept in IndexedDB `tab-hammer-outline`. Chrome's IDs are attached only while a record is live. Chrome events are reconciled into it through a serial queue.
 - Window order is Tab Hammer's own (Chrome has none): the order of the outline's window list. The store's meta persists it, a re-linked window keeps it (the matcher replaces the saved record in place), and a sync file carries it as its window order, so the sync schema has no order field. `src/model/outline/order.ts` moves windows (drag, Alt+Up/Down, a new window's row after the current window).
 - A fresh browser launch is told apart from a worker restart by `browserSession` (the single instance in `src/background/session.ts`). After a launch, every window that was open at shutdown is kept hibernated, marked open-at-shutdown (never trashed: a quit, crash, or kill isn't the user closing it, and Chrome may restore nothing), and restored windows are re-linked to their saved records once their tabs stop changing (a quiet period), by the pure matcher in `src/model/outline/`.
