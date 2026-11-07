@@ -1,18 +1,25 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useReducer,
   useRef,
   useState,
-  type KeyboardEvent,
   type MouseEvent,
 } from 'react';
 import { emptySelection, selectionReducer } from '../model/selection';
 import type { GroupNode, OutlineView, TabNode, WindowNode } from '../model/types';
 import { findDuplicates } from '../model/duplicates';
 import { countTabs, filterTree } from '../model/filterTree';
-import { navIntent, outlineRows } from '../model/keyboardNav';
+import {
+  TRASH_SECTION_KEY,
+  keyPressOf,
+  navIntent,
+  outlineRows,
+  trashRows,
+  typesIntoSearch,
+} from '../model/keyboardNav';
 import {
   EXPAND_ALL,
   allRowKeys,
@@ -27,13 +34,19 @@ import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
 import { selectionActionFor } from './components/rowClick';
-import type { RowCommands, RowPropsFor } from './components/rowProps';
+import {
+  OUTLINE_TREE_ID,
+  rowDomId,
+  type RowCommands,
+  type RowPropsFor,
+} from './components/rowProps';
 import { useRowDrag } from './components/useRowDrag';
 import { RecentlyClosed } from './components/RecentlyClosed';
 import { WindowCard } from './components/WindowCard';
 import { PreviewPanel } from './preview/PreviewPanel';
 import { usePreviewTarget } from './preview/usePreviewTarget';
 import { AppHeader } from './header/AppHeader';
+import { IS_MAC } from './platform';
 import { useHeaderActions } from './header/useHeaderActions';
 import type { SyncSource } from '../shared/syncMessages';
 import { DevicesPanel } from './sync/DevicePicker';
@@ -73,8 +86,25 @@ export function App() {
   const duplicates = useMemo(() => findDuplicates(tree), [tree]);
   const shownCollapse = filtering ? EXPAND_ALL : collapse;
   const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
+  // What can be selected: the outline's rows.
   const visible = useMemo(() => rows.map((r) => r.key), [rows]);
-  const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
+  // Recently closed: whether the section is open and which of its windows show their tabs.
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashExpanded, setTrashExpanded] = useState<ReadonlySet<string>>(new Set());
+  const toggleTrashEntry = (key: string) =>
+    setTrashExpanded((s) => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  // What the cursor moves through: the outline's rows, then Recently closed's (hidden while
+  // searching, since search doesn't cover the trash).
+  const navRows = useMemo(
+    () => (filtering ? rows : [...rows, ...trashRows(trash, trashOpen, trashExpanded)]),
+    [filtering, rows, trash, trashOpen, trashExpanded],
+  );
+  const rowByKey = useMemo(() => new Map(navRows.map((r) => [r.key, r])), [navRows]);
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
 
@@ -99,10 +129,25 @@ export function App() {
     dispatch({ type: 'prune', existing: allRowKeys(shown) });
   }, [shown]);
 
-  // The keyboard cursor: the row arrow keys move from. A click puts it on the clicked row.
+  // The keyboard cursor: the highlighted row ↑/↓ move from, while focus stays in the search box
+  // (which names it with aria-activedescendant). A click puts it on the clicked row. While
+  // searching with no cursor, it's the first match, as in a command palette.
   const [cursor, setCursor] = useState<string | null>(null);
-  // The one row in the Tab order (roving tabindex): the cursor, or the first row.
-  const tabStop = cursor !== null && rowByKey.has(cursor) ? cursor : (visible[0] ?? null);
+  const activeKey =
+    cursor !== null && rowByKey.has(cursor) ? cursor : filtering ? (navRows[0]?.key ?? null) : null;
+  const searchRef = useRef<HTMLInputElement>(null);
+  const focusSearch = () => {
+    const search = searchRef.current;
+    if (!search || document.activeElement === search) return;
+    search.focus({ preventScroll: true });
+    // Typing that lands here goes after what's already there.
+    search.setSelectionRange(search.value.length, search.value.length);
+  };
+  // Keep the cursor row in view as it moves (and when a search starts or ends around it).
+  useEffect(() => {
+    if (activeKey === null) return;
+    document.getElementById(rowDomId(activeKey))?.scrollIntoView({ block: 'nearest' });
+  }, [activeKey, filtering]);
 
   // The preview panel shows the tab hovered or moved to last, kept while nothing is hovered.
   const { key: previewKey, hover, show: showPreview } = usePreviewTarget();
@@ -119,12 +164,12 @@ export function App() {
   const [previewEpoch, setPreviewEpoch] = useState(0);
   // Previews were cleared or refreshed: the panel looks its tab's preview up again.
   const bumpPreviewEpoch = useCallback(() => setPreviewEpoch((n) => n + 1), []);
-  const focusRow = (key: string) =>
-    listRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus();
 
   const onSelect = (e: MouseEvent, key: string) => {
     moveCursor(key);
     dispatch(selectionActionFor(e, key, visible));
+    // Focus lives in the search box, so the next key typed or pressed goes there.
+    focusSearch();
   };
   const recordId = (key: string) => findNode(tree, key)?.id;
   const drag = useRowDrag(selection.selected, {
@@ -154,7 +199,8 @@ export function App() {
     const r = rowByKey.get(key);
     return {
       ...drag.row(key, kind),
-      tabIndex: key === tabStop ? 0 : -1,
+      id: rowDomId(key),
+      'data-cursor': key === activeKey || undefined,
       'aria-level': r?.level,
       'aria-setsize': r?.setSize,
       'aria-posinset': r?.posInSet,
@@ -187,8 +233,8 @@ export function App() {
     if (w.hibernated || hasHibernatedRows(w)) commands.open(w.id);
     else if (w.windowId !== undefined) focusWindow(w.windowId).catch(logActionError);
   };
-  // Delete/Backspace: the selected rows, or the cursor row when nothing is selected.
-  const trashRows = (cursorKey: string) => {
+  // ⌘⌫ (Ctrl+Backspace off a Mac): the selected rows, or the cursor row when nothing is selected.
+  const trashSelection = (cursorKey: string) => {
     const keys = selection.selected.size > 0 ? [...selection.selected] : [cursorKey];
     const ids = keys.flatMap((k) => findNode(tree, k)?.id ?? []);
     if (ids.length > 0) send({ cmd: 'trash', ids });
@@ -201,9 +247,13 @@ export function App() {
     if (name !== null && name.trim() !== (w.name ?? '')) {
       send({ cmd: 'rename', windowId: w.id, name });
     }
-    // Enter or Escape: keyboard focus goes back to the row. Leaving the field by clicking elsewhere
-    // has already moved focus, so it stays where the click put it.
-    if (document.activeElement?.classList.contains('rename-field')) focusRow(w.key);
+    // Enter or Escape: keyboard focus goes back to the search box, the cursor on the window.
+    // Leaving the field by clicking elsewhere has already moved focus, so it stays where the click
+    // put it.
+    if (document.activeElement?.classList.contains('rename-field')) {
+      setCursor(w.key);
+      focusSearch();
+    }
   };
 
   // Right-click menu on a window header. Holds the window's key, not the node, so the menu always
@@ -280,7 +330,7 @@ export function App() {
     [tree],
   );
 
-  // Alt+Up / Alt+Down: moves the window holding the cursor (or the selected windows) one place.
+  // ⌥↑ / ⌥↓: moves the window holding the cursor (or the selected windows) one place.
   const stepWindows = (key: string, delta: -1 | 1) => {
     const selectedWindows = shown.filter((w) => selection.selected.has(w.key));
     const cursorWindow = shown.find((w) => w.key === key || findNode([w], key) !== undefined);
@@ -299,34 +349,92 @@ export function App() {
     });
   };
 
-  const onTreeKeyDown = (e: KeyboardEvent) => {
-    if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-      e.preventDefault();
-      if (tabStop !== null) stepWindows(tabStop, e.key === 'ArrowUp' ? -1 : 1);
+  // Enter on a Recently closed row: the section toggles, a closed window reopens.
+  const activateTrashRow = (key: string) => {
+    if (key === TRASH_SECTION_KEY) setTrashOpen((o) => !o);
+    else {
+      const w = trash.find((x) => x.key === key);
+      if (w) commands.open(w.id);
+    }
+  };
+  const toggleExpand = (key: string) => {
+    if (key === TRASH_SECTION_KEY) setTrashOpen((o) => !o);
+    else if (rowByKey.get(key)?.trash) toggleTrashEntry(key);
+    else if (key.startsWith('w:')) onToggleWindow(key);
+    else onToggleGroup(key);
+  };
+
+  // The view's keys, command-palette style (`navIntent`): focus lives in the search box, typing
+  // anywhere goes there, and only ↑/↓-based keys, modifier combos, Enter and Escape drive the
+  // outline. One listener on the document, so they work wherever focus is in this page (each
+  // docked panel is its own page with its own). Text fields other than search (rename), open
+  // menus and the devices panel keep their own keys; React handlers that consume a key (the
+  // preview panel's resize edge) prevent its default, which this skips.
+  const onDocumentKeyDown = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || remote.list !== null) return;
+    if (document.querySelector('[role="menu"]')) return;
+    const target = e.target instanceof Element ? e.target : document.body;
+    const search = searchRef.current;
+    const inSearch = target === search;
+    if (!inSearch && target.closest('input, textarea, select, [contenteditable]')) return;
+    if (target.closest('[data-own-keys]')) return;
+    // Away from the search box, a focused button keeps Enter and Space.
+    const onControl = !inSearch && target !== document.body && target.closest('button, a[href]');
+    if (onControl && (e.key === 'Enter' || e.key === ' ')) return;
+
+    const press = keyPressOf(e, IS_MAC);
+    if (e.key === 'Escape' && !press.mod && !press.alt && !press.shift) {
+      // First clears the search (the cursor stays on its row, now among the whole outline), then
+      // the selection.
+      if (query !== '') {
+        e.preventDefault();
+        if (activeKey !== null) setCursor(activeKey);
+        setQuery('');
+      } else if (selection.selected.size > 0) {
+        e.preventDefault();
+        dispatch({ type: 'clear' });
+      }
       return;
     }
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const intent = navIntent(rows, tabStop, e.key, e.shiftKey);
-    if (!intent) return;
+    const intent = navIntent(navRows, activeKey, press);
+    if (!intent) {
+      const typing = typesIntoSearch({
+        key: e.key,
+        metaKey: e.metaKey,
+        ctrlKey: e.ctrlKey,
+        altGraph: e.getModifierState('AltGraph'),
+        isComposing: e.isComposing,
+      });
+      // Focused during keydown, the search box gets this key's character (or composition).
+      if (typing && !inSearch) focusSearch();
+      return;
+    }
     e.preventDefault();
+    focusSearch();
+    const trashRow = rowByKey.get(intent.key)?.trash === true;
     switch (intent.type) {
       case 'move':
         moveCursor(intent.key);
-        dispatch(
-          intent.extend
-            ? { type: 'range', key: intent.key, visible }
-            : { type: 'click', key: intent.key },
-        );
-        focusRow(intent.key);
-        break;
-      case 'toggleSelect':
-        dispatch({ type: 'toggle', key: intent.key });
+        if (trashRow) dispatch({ type: 'clear' });
+        else {
+          dispatch(
+            intent.extend
+              ? { type: 'range', key: intent.key, visible }
+              : { type: 'click', key: intent.key },
+          );
+        }
         break;
       case 'toggleExpand':
-        if (intent.key.startsWith('w:')) onToggleWindow(intent.key);
-        else onToggleGroup(intent.key);
+        toggleExpand(intent.key);
+        break;
+      case 'moveWindow':
+        stepWindows(intent.key, intent.delta);
         break;
       case 'activate': {
+        if (trashRow) {
+          activateTrashRow(intent.key);
+          break;
+        }
         // Same as double-click: a tab is activated, a window focused, a hibernated row opened; a
         // live group expands or collapses.
         const node = findNode(shown, intent.key);
@@ -339,15 +447,20 @@ export function App() {
         break;
       }
       case 'trash':
-        trashRows(intent.key);
+        trashSelection(intent.key);
         break;
     }
   };
-  // Down arrow in the search box moves into the outline.
-  const enterOutline = () => {
-    if (tabStop === null) return;
-    moveCursor(tabStop);
-    focusRow(tabStop);
+  const onKey = useEffectEvent(onDocumentKeyDown);
+  useEffect(() => {
+    const listener = (e: globalThis.KeyboardEvent) => onKey(e);
+    document.addEventListener('keydown', listener);
+    return () => document.removeEventListener('keydown', listener);
+  }, []);
+  // Typing a new search starts the cursor over, on the first match.
+  const onQueryChange = (q: string) => {
+    setQuery(q);
+    setCursor(null);
   };
 
   return (
@@ -355,8 +468,9 @@ export function App() {
       <AppHeader
         actions={actions}
         query={query}
-        onQueryChange={setQuery}
-        onSearchArrowDown={enterOutline}
+        onQueryChange={onQueryChange}
+        searchRef={searchRef}
+        activeDescendant={activeKey === null ? undefined : rowDomId(activeKey)}
         matchCount={filtering ? countTabs(shown) : null}
         banner={
           <>
@@ -382,9 +496,9 @@ export function App() {
         <div
           className="outline-tree"
           role="tree"
+          id={OUTLINE_TREE_ID}
           aria-label="Windows and tabs"
           aria-multiselectable="true"
-          onKeyDown={onTreeKeyDown}
         >
           {filtering && shown.length === 0 && <p className="outline-empty">No matching tabs</p>}
           {shown.map((w) => (
@@ -411,15 +525,20 @@ export function App() {
             />
           ))}
         </div>
-        {/* Beside the tree, not in it: its keys and ARIA roles are not the outline's. Search
-            doesn't cover the trash, so it hides while a query is active. */}
+        {/* Beside the tree, not in it: its rows are never selected and its ARIA roles are not the
+            outline's, though the cursor runs on into it. Search doesn't cover the trash, so it
+            hides while a query is active. */}
         {!filtering && (
           <RecentlyClosed
             entries={trash}
+            open={trashOpen}
+            onToggleOpen={() => setTrashOpen((o) => !o)}
+            expanded={trashExpanded}
+            onToggleEntry={toggleTrashEntry}
+            cursor={activeKey}
             restore={commands.open}
             restoreAll={(ids) => send({ cmd: 'openAll', ids })}
             hover={hover}
-            showPreview={showPreview}
             deleteForever={commands.deleteForever}
           />
         )}

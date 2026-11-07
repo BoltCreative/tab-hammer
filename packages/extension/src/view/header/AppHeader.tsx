@@ -1,6 +1,8 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ContextMenu } from '../components/ContextMenu';
+import { OUTLINE_TREE_ID, RECENTLY_CLOSED_ID } from '../components/rowProps';
 import { dockEverywhere, popOut, surface, useSidePanelSide } from '../chrome/dock';
+import { SEARCH_KEYS_HELP } from '../platform';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
 import type { HeaderActions } from './useHeaderActions';
 
@@ -8,7 +10,8 @@ interface Props {
   actions: HeaderActions;
   query: string;
   onQueryChange: (query: string) => void;
-  onSearchArrowDown: () => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  activeDescendant: string | undefined; // the cursor row's DOM id
   matchCount: number | null; // tabs matching the search, or null when not searching
   banner?: ReactNode; // under the permission banner (another device's outline, say)
 }
@@ -22,7 +25,8 @@ export function AppHeader({
   actions,
   query,
   onQueryChange,
-  onSearchArrowDown,
+  searchRef,
+  activeDescendant,
   matchCount,
   banner,
 }: Props) {
@@ -42,20 +46,23 @@ export function AppHeader({
       <PreviewPermissionBanner />
       {banner}
       <div className="toolbar" role="toolbar" aria-label="Tab Hammer tools">
+        {/* Where focus lives: a combobox whose highlighted option is the outline's cursor row.
+            App's document key handler drives the outline from here (↑/↓, Enter, Escape…). */}
         <input
+          ref={searchRef}
           type="search"
+          role="combobox"
           className="search"
           placeholder="Search tabs"
+          title={SEARCH_KEYS_HELP}
           aria-label="Search tabs by title or URL"
+          aria-expanded="true"
+          aria-autocomplete="list"
+          aria-controls={`${OUTLINE_TREE_ID} ${RECENTLY_CLOSED_ID}`}
+          aria-activedescendant={activeDescendant}
+          autoFocus
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onQueryChange('');
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              onSearchArrowDown();
-            }
-          }}
         />
         {matchCount !== null && (
           <span className="toolbar-status" data-testid="match-count">
