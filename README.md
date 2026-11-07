@@ -36,9 +36,12 @@ Tab Hammer takes the same idea and builds on modern Chrome:
 - **A live outline** of every window, tab group, and tab, kept in sync as you browse, with
   Tab Hammer's own IDs so a window keeps its name and place across a browser restart.
 - **Search** tabs by title or URL.
-- **Keyboard and mouse** — click, Cmd/Ctrl-click, and Shift-click to select; arrow keys to move;
-  Enter or double-click to switch to a tab (or reopen a hibernated one); Delete to move the
-  selection to the trash.
+- **Keyboard and mouse** — the search box works like a command palette: type anywhere to search,
+  ↑/↓ to move the highlight (Shift to extend the selection), Cmd/Ctrl-↓ to open a tab or expand a
+  window or group, Cmd/Ctrl-↑ to collapse or go up a level, Option/Alt-↑/↓ to move a window,
+  Enter or double-click to switch to a tab (or reopen a hibernated one), Cmd/Ctrl-Backspace to move
+  the selection to the trash, and Esc to clear the search, then the selection. Click,
+  Cmd/Ctrl-click, and Shift-click select too.
 - **Drag and drop** to move tabs, groups, and whole windows.
 - **Rename windows**, and give each computer a name for your other computers to see.
 - **Hibernate** a window or tab, and **Move to trash**, with a **Recently closed** section to

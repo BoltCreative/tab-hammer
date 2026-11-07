@@ -226,7 +226,7 @@ test('the header search filters the outline, keeping window and group context', 
     const { groupId } = await chrome.tabs.get(tabId);
     await chrome.tabGroups.update(groupId, { collapsed: true });
   }, s.groupedTabIds[0]);
-  const search = view.getByRole('searchbox', { name: 'Search tabs by title or URL' });
+  const search = searchBox(view);
   await search.fill('bravo');
   const rows = view.locator('main.outline [role="treeitem"]');
   await expect(rows).toHaveCount(3);
@@ -245,7 +245,10 @@ test('the header search filters the outline, keeping window and group context', 
   await expect(view.getByTestId('match-count')).toHaveCount(0);
 });
 
-test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter activates', async ({
+const searchBox = (view: import('@playwright/test').Page) =>
+  view.getByRole('combobox', { name: 'Search tabs by title or URL' });
+
+test('keyboard: focus stays in search while ↑/↓ move the cursor, ⇧ extends, ⌘↑/↓ collapse and open, Enter activates', async ({
   sw,
   view,
 }) => {
@@ -253,14 +256,23 @@ test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter
   const [alpha, bravo] = s.groupedTabIds;
   const row = (tabId: number) => liveRow(view, 'tab', tabId);
   const winA = liveRow(view, 'window', s.winA);
+  const search = searchBox(view);
   const selectedTabIds = () =>
     view
       .locator('[aria-selected="true"]')
       .evaluateAll((els) => els.map((e) => Number((e as HTMLElement).dataset.tabId)));
+  // The cursor row: the one the search box names as active, and marked for the highlight.
+  const expectCursor = async (r: ReturnType<typeof row>) => {
+    await expect(search).toBeFocused();
+    await expect(search).toHaveAttribute('aria-activedescendant', (await r.getAttribute('id'))!);
+    await expect(r).toHaveAttribute('data-cursor', 'true');
+    await expect(view.locator('[data-cursor]')).toHaveCount(1);
+  };
 
   await row(alpha).click();
+  await expectCursor(row(alpha));
   await view.keyboard.press('ArrowDown');
-  await expect(row(bravo)).toBeFocused();
+  await expectCursor(row(bravo));
   expect(await selectedTabIds()).toEqual([bravo]);
   await view.keyboard.press('Shift+ArrowDown'); // onto Charlie, the window's loose tab
   const charlie = Number(
@@ -269,27 +281,76 @@ test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter
   expect(await selectedTabIds()).toEqual([bravo, charlie]);
   await expect(row(charlie)).toHaveAttribute('aria-level', '2');
   await expect(row(bravo)).toHaveAttribute('aria-level', '3');
-  await expect(row(charlie)).toHaveAttribute('tabindex', '0');
+  await expectCursor(row(charlie));
 
-  await view.keyboard.press('ArrowLeft'); // to the window
-  await expect(winA).toBeFocused();
+  // Left, Right, Home and End are the search box's text keys now: the cursor stays put.
+  for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) await view.keyboard.press(key);
+  await expectCursor(row(charlie));
+
+  await view.keyboard.press('ControlOrMeta+ArrowUp'); // to the window
+  await expectCursor(winA);
   await expect(winA).toHaveAttribute('aria-expanded', 'true');
-  await view.keyboard.press('ArrowLeft'); // collapse it
+  await view.keyboard.press('ControlOrMeta+ArrowUp'); // collapse it
   await expect(winA).toHaveAttribute('aria-expanded', 'false');
   await expect(row(alpha)).toHaveCount(0);
-  await view.keyboard.press('ArrowRight'); // expand
-  await view.keyboard.press('ArrowRight'); // into the group
-  await expect(liveRow(view, 'group', await groupIdOf(sw, alpha))).toBeFocused();
+  await view.keyboard.press('ControlOrMeta+ArrowDown'); // expand
+  await view.keyboard.press('ControlOrMeta+ArrowDown'); // into the group
+  await expectCursor(liveRow(view, 'group', await groupIdOf(sw, alpha)));
   await view.keyboard.press('ArrowDown');
   await view.keyboard.press('Enter');
   await expect
     .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, alpha))
     .toBe(true);
+  await expect(search).toHaveValue('');
+});
 
-  // Down arrow from the search box lands in the outline.
-  await view.getByRole('searchbox').focus();
-  await view.keyboard.press('ArrowDown');
-  await expect(row(alpha)).toBeFocused();
+test('typing anywhere goes to the search box, first character included', async ({ sw, view }) => {
+  const s = await buildLayout(sw);
+  const search = searchBox(view);
+  await expect(liveRow(view, 'tab', s.lonelyTabId)).toBeVisible();
+  // Nothing focused.
+  await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(search).not.toBeFocused();
+  await view.keyboard.type('delt');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('delt');
+  await expect(view.getByTestId('match-count')).toHaveText('1 tab');
+
+  // A focused button too: the key types after what's already there.
+  await view.getByRole('button', { name: 'Actions' }).focus();
+  await view.keyboard.press('a');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('delta');
+});
+
+test('searching: the first match is the cursor, Enter opens the highlighted row, Esc clears the search and then the selection', async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw);
+  const [, bravo] = s.groupedTabIds;
+  const search = searchBox(view);
+  await search.focus();
+  await view.keyboard.type('bravo');
+  const winA = liveRow(view, 'window', s.winA);
+  await expect(winA).toHaveAttribute('data-cursor', 'true');
+  await view.keyboard.press('ArrowDown'); // the group
+  await view.keyboard.press('ArrowDown'); // Bravo
+  await expect(liveRow(view, 'tab', bravo)).toHaveAttribute('data-cursor', 'true');
+  await view.keyboard.press('Enter');
+  await expect
+    .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, bravo))
+    .toBe(true);
+
+  // Esc clears the search; the cursor stays on Bravo, now among the whole outline, still selected.
+  await view.keyboard.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(liveRow(view, 'tab', s.lonelyTabId)).toBeVisible();
+  await expect(liveRow(view, 'tab', bravo)).toHaveAttribute('data-cursor', 'true');
+  await expect(liveRow(view, 'tab', bravo)).toHaveAttribute('aria-selected', 'true');
+  // Again: the selection goes.
+  await view.keyboard.press('Escape');
+  await expect(view.locator('[aria-selected="true"]')).toHaveCount(0);
 });
 
 async function groupIdOf(sw: import('@playwright/test').Worker, tabId: number) {

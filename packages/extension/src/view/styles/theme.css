@@ -279,7 +279,9 @@ button.twisty {
 .row:focus {
   outline: none;
 }
-.row:focus-visible {
+.row:focus-visible,
+/* The keyboard cursor: focus stays in the search box, which names this row as its active one. */
+.row[data-cursor] {
   outline: 1px solid var(--drop-indicator);
   outline-offset: -1px;
 }

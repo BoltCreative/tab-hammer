@@ -342,6 +342,8 @@ test('rename and delete forever', async ({ sw }) => {
 });
 
 /** An outline row by its Tab Hammer record ID (works for hibernated rows, which have no Chrome ID). */
+const search = (view: Page) => view.getByRole('combobox', { name: 'Search tabs by title or URL' });
+
 function recordRow(view: Page, kind: 't' | 'w', id: string) {
   return view.locator(`[data-key="${kind}:${id}"]`);
 }
@@ -554,11 +556,24 @@ test('rename field keystrokes stay in the field', async ({ sw, view }) => {
   await recordRow(view, 't', rec.tabs[2]!.id).click();
 
   await toolbar(header, 'Rename window');
-  await expect(header.getByRole('textbox')).toBeFocused();
+  const field = header.getByRole('textbox');
+  await expect(field).toBeFocused();
+  await view.keyboard.type('xy');
+  // The outline's keys stay in the field: ⌘⌫ (Ctrl+Backspace) is the field's own delete there.
+  await view.keyboard.press('ArrowDown');
+  await view.keyboard.press('ControlOrMeta+Backspace');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('');
   await view.keyboard.type('ab');
-  for (const key of ['Backspace', 'Delete', 'Enter']) await view.keyboard.press(key);
+  for (const key of ['Backspace', 'Delete']) await view.keyboard.press(key);
+  await expect(field).toHaveValue('a');
+  await expect(search(view)).toHaveValue('');
+  await view.keyboard.press('Enter');
 
   await expect(header.locator('.title')).toHaveText('a');
+  // Back to the search box, the cursor on the renamed window.
+  await expect(search(view)).toBeFocused();
+  await expect(header).toHaveAttribute('data-cursor', 'true');
   await expect.poll(async () => (await recordById(sw, rec.id))?.name).toBe('a');
   expect(titlesOf((await chromeWindows(sw)).find((w) => w.id === a))).toEqual([
     'Alpha',
@@ -567,19 +582,34 @@ test('rename field keystrokes stay in the field', async ({ sw, view }) => {
   ]);
 });
 
-test('Delete trashes the selected tabs', async ({ sw, view }) => {
+test('⌘⌫ trashes the selected tabs; plain Backspace and Delete only edit the search', async ({
+  sw,
+  view,
+}) => {
   const { a, rec } = await windowARecord(sw);
-  const [alpha, , charlie] = rec.tabs;
+  const [alpha, bravo, charlie] = rec.tabs;
   await recordRow(view, 't', alpha!.id).click();
   await recordRow(view, 't', charlie!.id).click({ modifiers: ['ControlOrMeta'] });
-
+  await expect(search(view)).toBeFocused();
+  // Text keys: these would have trashed Alpha and Charlie before.
+  await view.keyboard.press('Backspace');
   await view.keyboard.press('Delete');
 
+  await recordRow(view, 't', bravo!.id).click();
+  await view.keyboard.press('ControlOrMeta+Backspace');
   await expect
     .poll(async () => titlesOf((await chromeWindows(sw)).find((w) => w.id === a)))
-    .toEqual(['Bravo']);
-  await expect.poll(async () => titlesOf(await recordById(sw, rec.id))).toEqual(['Bravo']);
-  await expect(recordRow(view, 't', alpha!.id)).toHaveCount(0);
+    .toEqual(['Alpha', 'Charlie']);
+  await expect
+    .poll(async () => titlesOf(await recordById(sw, rec.id)))
+    .toEqual(['Alpha', 'Charlie']);
+  await expect(recordRow(view, 't', bravo!.id)).toHaveCount(0);
+
+  // In the search box, Backspace deletes a character, as in any text field.
+  await view.keyboard.type('Charlie');
+  await view.keyboard.press('Backspace');
+  await expect(search(view)).toHaveValue('Charli');
+  await expect(recordRow(view, 't', charlie!.id)).toBeVisible();
 });
 
 /** Closes a two-tab window [Echo, Foxtrot] and returns its record ID, once it is in the trash. */
@@ -645,6 +675,40 @@ test('a trash entry expands to its tabs, which are plain rows', async ({ sw, vie
   await expect(view.locator('.trash-tab .title')).toHaveText(['Echo', 'Foxtrot']);
   await expect(view.locator('.trash-tab').first()).not.toHaveAttribute('role', 'treeitem');
   await expect(view.locator('.trash-tab .row-toolbar')).toHaveCount(0);
+});
+
+test('the cursor runs on into Recently closed: ⌘↓/⌘↑ open and close, Enter reopens a window', async ({
+  sw,
+  view,
+}) => {
+  const id = await closedEchoWindow(sw);
+  const others = (await chromeWindows(sw)).map((w) => w.id);
+  await search(view).focus();
+  const section = view.getByRole('button', { name: /^Recently closed \(1\)/ });
+  await view.keyboard.press('ArrowUp'); // no cursor yet: the last row, the section's header
+  await expect(section).toHaveAttribute('data-cursor', 'true');
+  await expect(search(view)).toHaveAttribute(
+    'aria-activedescendant',
+    (await section.getAttribute('id'))!,
+  );
+  await view.keyboard.press('ControlOrMeta+ArrowDown');
+  await expect(section).toHaveAttribute('aria-expanded', 'true');
+  await view.keyboard.press('Shift+ArrowDown'); // the selection never takes in the trash
+  const entry = view.getByTestId('trash-entry');
+  await expect(entry).toHaveAttribute('data-cursor', 'true');
+  await expect(view.locator('[aria-selected="true"]')).toHaveCount(0);
+  await view.keyboard.press('ControlOrMeta+ArrowDown');
+  await expect(view.locator('.trash-tab .title')).toHaveText(['Echo', 'Foxtrot']);
+  await view.keyboard.press('ControlOrMeta+ArrowUp');
+  await expect(view.locator('.trash-tab')).toHaveCount(0);
+  await view.keyboard.press('ControlOrMeta+Backspace'); // nothing: the trash's rows aren't trashed
+  await expect(entry).toHaveCount(1);
+
+  await view.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await chromeWindows(sw, others)).map(titlesOf))
+    .toEqual([['Echo', 'Foxtrot']]);
+  await expect.poll(async () => (await recordById(sw, id))?.state).not.toBe('trashed');
 });
 
 test('keys on the Recently closed header do not act on the outline selection', async ({

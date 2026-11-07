@@ -118,7 +118,7 @@ test('hovering a tab shows its captured preview in the panel; an uncapturable pa
   await expect(panel.locator('.preview-image-favicon')).toBeVisible();
 
   // Moving off the outline keeps the last hovered tab rather than going blank.
-  await view.getByRole('searchbox').hover();
+  await view.getByRole('combobox').hover();
   await expect(panel).toContainText('about:blank');
   await expect(panel).not.toContainText('Hover over a tab');
 
@@ -478,11 +478,11 @@ test("a closed window's tabs in Recently closed show their stored previews, by h
   await expect(shot).toHaveJSProperty('complete', true);
   expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
 
-  // The keyboard moves through the closed window's tabs, and the panel follows.
-  await view.getByRole('searchbox').hover();
-  await tabs.nth(0).focus();
-  await view.keyboard.press('ArrowDown');
-  await expect(tabs.nth(1)).toBeFocused();
+  // The keyboard cursor moves through the closed window's tabs, and the panel follows.
+  await view.getByRole('combobox').hover();
+  await view.getByRole('combobox').focus();
+  await view.keyboard.press('ArrowUp'); // no cursor yet: the last row, the closed window's last tab
+  await expect(tabs.nth(1)).toHaveAttribute('data-cursor', 'true');
   await expect(panel).toContainText(second);
   await expect(shot).toHaveJSProperty('complete', true);
 });

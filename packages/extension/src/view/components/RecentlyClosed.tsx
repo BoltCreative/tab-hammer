@@ -1,58 +1,64 @@
-import { useState, type KeyboardEvent } from 'react';
 import type { TabNode, WindowNode } from '../../model/types';
+import { TRASH_SECTION_KEY } from '../../model/keyboardNav';
 import { faviconUrl } from '../chrome/favicon';
 import type { HoverHandlers } from '../preview/usePreviewTarget';
 import { RowToolbar, TrashIcon, RestoreIcon, type RowAction } from './RowToolbar';
+import { RECENTLY_CLOSED_ID, rowDomId } from './rowProps';
 
 interface Props {
   entries: WindowNode[]; // newest first
+  open: boolean; // the section shows its closed windows
+  onToggleOpen: () => void;
+  expanded: ReadonlySet<string>; // closed windows showing their tabs
+  onToggleEntry: (key: string) => void;
+  cursor: string | null; // the outline's cursor, which runs on into these rows
   restore: (id: string) => void; // opens the window in Chrome, its tabs as they were at close
   restoreAll: (ids: string[]) => void; // reopens every entry in Chrome, as restore does
   deleteForever: (id: string) => void;
   hover: HoverHandlers; // a tab row hovered: the preview panel shows it
-  showPreview: (key: string) => void; // a tab row focused with the keyboard: shown at once
 }
 
-type TabProps = Pick<Props, 'hover' | 'showPreview'>;
-
-/** Arrow keys move focus between a closed window's tab rows (they're not in the outline's Tab order). */
-function moveFocus(e: KeyboardEvent<HTMLElement>, from: HTMLElement | null) {
-  const next =
-    e.key === 'ArrowDown'
-      ? from?.nextElementSibling
-      : e.key === 'ArrowUp'
-        ? from?.previousElementSibling
-        : undefined;
-  if (next === undefined) return;
-  e.preventDefault();
-  e.stopPropagation();
-  if (next instanceof HTMLElement && next.classList.contains('trash-tab')) next.focus();
-}
+/** A row's id and cursor mark, as the outline's rows have them (see App's rowProps). */
+const cursorProps = (key: string, cursor: string | null) => ({
+  id: rowDomId(key),
+  'data-cursor': key === cursor || undefined,
+});
 
 /**
  * The trash: closed windows, newest first, at the bottom of the outline. Plain rows, not outline
- * rows: no selection or drag, and only whole windows come back. A closed window's tabs preview in
- * the panel like the outline's, on hover or as the arrow keys move through them. Restore all, on
- * the section's own header, reopens every window, each with the tabs that were live at close.
+ * rows: no selection or drag, and only whole windows come back. The outline's cursor runs on
+ * into them from its last row (App's `trashRows`), so ↑/↓ move through the section, ⌘↓/⌘↑ open and
+ * close it and its windows, and Enter reopens a window. A closed window's tabs preview in the panel
+ * like the outline's, on hover or under the cursor. Restore all, on the section's own header,
+ * reopens every window, each with the tabs that were live at close.
  */
 export function RecentlyClosed({
   entries,
+  open,
+  onToggleOpen,
+  expanded,
+  onToggleEntry,
+  cursor,
   restore,
   restoreAll,
   deleteForever,
   hover,
-  showPreview,
 }: Props) {
-  const [open, setOpen] = useState(false);
   if (entries.length === 0) return null;
   return (
-    <section className="card trash" role="group" aria-label="Recently closed">
+    <section
+      className="card trash"
+      id={RECENTLY_CLOSED_ID}
+      role="group"
+      aria-label="Recently closed"
+    >
       <div className="trash-bar">
         <button
           type="button"
           className="row trash-header"
           aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
+          onClick={onToggleOpen}
+          {...cursorProps(TRASH_SECTION_KEY, cursor)}
         >
           <span className="twisty" aria-hidden="true">
             {open ? '▾' : '▸'}
@@ -74,10 +80,12 @@ export function RecentlyClosed({
             <TrashEntry
               key={w.key}
               win={w}
+              expanded={expanded.has(w.key)}
+              onToggle={() => onToggleEntry(w.key)}
+              cursor={cursor}
               restore={restore}
               deleteForever={deleteForever}
               hover={hover}
-              showPreview={showPreview}
             />
           ))}
         </div>
@@ -88,12 +96,17 @@ export function RecentlyClosed({
 
 function TrashEntry({
   win,
+  expanded,
+  onToggle,
+  cursor,
   restore,
   deleteForever,
   hover,
-  showPreview,
-}: { win: WindowNode } & Pick<Props, 'restore' | 'deleteForever'> & TabProps) {
-  const [expanded, setExpanded] = useState(false);
+}: {
+  win: WindowNode;
+  expanded: boolean;
+  onToggle: () => void;
+} & Pick<Props, 'cursor' | 'restore' | 'deleteForever' | 'hover'>) {
   const actions: RowAction[] = [
     { label: 'Restore', icon: RestoreIcon, onClick: () => restore(win.id) },
     { label: 'Delete forever', icon: TrashIcon, onClick: () => deleteForever(win.id) },
@@ -105,6 +118,7 @@ function TrashEntry({
         className="row window-header trash-entry"
         data-testid="trash-entry"
         onDoubleClick={() => restore(win.id)}
+        {...cursorProps(win.key, cursor)}
       >
         <button
           type="button"
@@ -113,14 +127,9 @@ function TrashEntry({
           aria-expanded={expanded}
           onClick={(e) => {
             e.stopPropagation();
-            setExpanded((x) => !x);
+            onToggle();
           }}
           onDoubleClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            // Down from an expanded window's twisty goes into its tabs.
-            if (e.key !== 'ArrowDown' || !expanded) return;
-            moveFocus(e, e.currentTarget.closest<HTMLElement>('.trash-entry'));
-          }}
         >
           {expanded ? '▾' : '▸'}
         </button>
@@ -130,22 +139,19 @@ function TrashEntry({
         </span>
         <RowToolbar actions={actions} />
       </div>
-      {expanded &&
-        tabs.map((t) => <TrashTab key={t.key} tab={t} hover={hover} showPreview={showPreview} />)}
+      {expanded && tabs.map((t) => <TrashTab key={t.key} tab={t} cursor={cursor} hover={hover} />)}
     </div>
   );
 }
 
-function TrashTab({ tab, hover, showPreview }: { tab: TabNode } & TabProps) {
+function TrashTab({ tab, cursor, hover }: { tab: TabNode } & Pick<Props, 'cursor' | 'hover'>) {
   return (
     <div
       className="row tab trash-tab"
       role="listitem"
-      tabIndex={-1}
       onMouseEnter={() => hover.onRowEnter(tab.key)}
       onMouseLeave={hover.onRowLeave}
-      onFocus={() => showPreview(tab.key)}
-      onKeyDown={(e) => moveFocus(e, e.currentTarget)}
+      {...cursorProps(tab.key, cursor)}
     >
       {tab.url ? (
         <img className="favicon" src={faviconUrl(tab.url)} alt="" />

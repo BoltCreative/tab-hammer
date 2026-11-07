@@ -7,7 +7,8 @@ export type SelectionAction =
   | { type: 'click'; key: string }
   | { type: 'toggle'; key: string }
   | { type: 'range'; key: string; visible: readonly string[] }
-  | { type: 'prune'; existing: ReadonlySet<string> };
+  | { type: 'prune'; existing: ReadonlySet<string> }
+  | { type: 'clear' };
 
 export const emptySelection: SelectionState = { selected: new Set(), anchor: null };
 
@@ -28,6 +29,8 @@ export function selectionReducer(s: SelectionState, a: SelectionAction): Selecti
       const [lo, hi] = from < to ? [from, to] : [to, from];
       return { selected: new Set(a.visible.slice(lo, hi + 1)), anchor: s.anchor };
     }
+    case 'clear':
+      return s.selected.size === 0 && s.anchor === null ? s : emptySelection;
     case 'prune': {
       const selected = new Set([...s.selected].filter((k) => a.existing.has(k)));
       const anchor = s.anchor !== null && a.existing.has(s.anchor) ? s.anchor : null;
