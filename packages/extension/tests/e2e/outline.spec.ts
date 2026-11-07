@@ -1,6 +1,6 @@
 import type { Page, Worker } from '@playwright/test';
 import type { WindowRec } from '../../src/model/outline/types';
-import { expect, outlineCommand, readOutline, settle, test } from './fixtures';
+import { expect, outlineCommand, readOutline, settle, synced, test } from './fixtures';
 
 const page = (title: string) => `data:text/html,<title>${title}</title>`;
 
@@ -131,8 +131,8 @@ async function recordCounts(sw: Worker): Promise<{ records: number; trashed: num
   return { records: windows.length, trashed: windows.filter((w) => w.state === 'trashed').length };
 }
 
-/** Opens window A and waits for its record. Returns the Chrome window ID and the record. */
-async function windowARecord(sw: Worker): Promise<{ a: number; rec: WindowRec }> {
+/** Opens window A and waits for its record (and, given a view, for the view to show it). */
+async function windowARecord(sw: Worker, view?: Page): Promise<{ a: number; rec: WindowRec }> {
   const a = await buildWindowA(sw);
   await expect
     .poll(async () => {
@@ -140,6 +140,7 @@ async function windowARecord(sw: Worker): Promise<{ a: number; rec: WindowRec }>
       return rec?.tabs.map((t) => t.title).join(',') + `|${rec?.groups[0]?.title}`;
     })
     .toBe('Alpha,Bravo,Charlie|Research');
+  await synced(sw, view);
   return { a, rec: (await liveRecord(sw, a))! };
 }
 
@@ -352,7 +353,7 @@ test('hover toolbar hibernates a window; it stays dimmed; double-click reopens i
   view,
 }) => {
   const others = (await chromeWindows(sw)).map((w) => w.id);
-  const { a, rec } = await windowARecord(sw);
+  const { a, rec } = await windowARecord(sw, view);
   const header = recordRow(view, 'w', rec.id);
   const rows = [header, ...rec.tabs.map((t) => recordRow(view, 't', t.id))];
   const counts = await recordCounts(sw);
@@ -382,6 +383,7 @@ test('hibernate one tab, open just it, then open the rest of its window', async 
   );
   await expect.poll(async () => titlesOf(await liveRecord(sw, a))).toEqual(['A', 'B', 'C']);
   const rec = (await liveRecord(sw, a))!;
+  await synced(sw, view);
   const header = recordRow(view, 'w', rec.id);
   const [rowA, rowB, rowC] = rec.tabs.map((t) => recordRow(view, 't', t.id)) as [
     ReturnType<typeof recordRow>,
@@ -434,6 +436,7 @@ test('a renamed window, driven like the user does: hibernate, open one tab, hibe
   );
   await expect.poll(async () => titlesOf(await liveRecord(sw, a))).toEqual(names);
   const rec = (await liveRecord(sw, a))!;
+  await synced(sw, view);
   const header = recordRow(view, 'w', rec.id);
   const tabRows = rec.tabs.map((t) => recordRow(view, 't', t.id));
   const rows = [header, ...tabRows];
@@ -513,7 +516,7 @@ test('rename field: Enter saves, Escape cancels, empty clears to Window N', asyn
   sw,
   view,
 }) => {
-  const { rec } = await windowARecord(sw);
+  const { rec } = await windowARecord(sw, view);
   const header = recordRow(view, 'w', rec.id);
   const label = header.locator('.title');
   const field = header.getByRole('textbox');
@@ -542,7 +545,7 @@ test('rename field: Enter saves, Escape cancels, empty clears to Window N', asyn
 });
 
 test('rename field keystrokes stay in the field', async ({ sw, view }) => {
-  const { a, rec } = await windowARecord(sw);
+  const { a, rec } = await windowARecord(sw, view);
   const header = recordRow(view, 'w', rec.id);
   await recordRow(view, 't', rec.tabs[2]!.id).click();
 
@@ -577,7 +580,7 @@ test('⌘⌫ trashes the selected tabs; plain Backspace and Delete only edit the
   sw,
   view,
 }) => {
-  const { a, rec } = await windowARecord(sw);
+  const { a, rec } = await windowARecord(sw, view);
   const [alpha, bravo, charlie] = rec.tabs;
   await recordRow(view, 't', alpha!.id).click();
   await recordRow(view, 't', charlie!.id).click({ modifiers: ['ControlOrMeta'] });
@@ -706,7 +709,7 @@ test('keys on the Recently closed header do not act on the outline selection', a
   sw,
   view,
 }) => {
-  const { a, rec } = await windowARecord(sw);
+  const { a, rec } = await windowARecord(sw, view);
   await closedEchoWindow(sw);
   await recordRow(view, 't', rec.tabs[2]!.id).click();
   const header = view.getByRole('button', { name: /^Recently closed \(1\)/ });
@@ -764,7 +767,7 @@ test('Restore all on Recently closed reopens every closed window, each tab as it
 }) => {
   const before = (await chromeWindows(sw)).map((w) => w.id);
   // One window deleted with a hibernated tab (Bravo) in it, then two closed by hand.
-  const { rec } = await windowARecord(sw);
+  const { rec } = await windowARecord(sw, view);
   await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.tabs[1]!.id] });
   await outlineCommand(sw, { cmd: 'trash', ids: [rec.id] });
   const ids = [rec.id];

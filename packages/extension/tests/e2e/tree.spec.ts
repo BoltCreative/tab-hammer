@@ -189,12 +189,14 @@ test('double-click a tab activates it and focuses its window', async ({ sw, view
 });
 
 test('the header stays put while only the outline list scrolls', async ({ sw, view }) => {
+  // A short view, so a few tabs overflow the list (each tab is a renderer: keep them few).
+  await view.setViewportSize({ width: 420, height: 300 });
   await sw.evaluate(async () => {
-    const urls = Array.from({ length: 40 }, (_, i) => `data:text/html,<title>T${i}</title>`);
+    const urls = Array.from({ length: 10 }, (_, i) => `data:text/html,<title>T${i}</title>`);
     await chrome.windows.create({ url: urls });
   });
   const list = view.locator('main.outline');
-  await expect(view.locator('[role="treeitem"], .row').nth(40)).toBeAttached();
+  await expect(view.locator('[role="treeitem"], .row').nth(10)).toBeAttached();
   const header = view.locator('header.app-header');
   const headerTop = async () => (await header.boundingBox())!.y;
   expect(await headerTop()).toBe(0);

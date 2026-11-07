@@ -208,6 +208,7 @@ test('dropping tabs on "new window" moves them into a brand-new window', async (
   await outlineCommand(sw, { cmd: 'hibernate', ids: [foxtrot!.id] });
   const row = (id: string) => view.locator(`[data-key="t:${id}"]`);
   await expect(row(foxtrot!.id)).toHaveClass(/hibernated/);
+  await synced(sw, view);
 
   await expect(view.getByTestId('new-window-drop')).toHaveCount(0);
   await row(foxtrot!.id).click();
@@ -294,6 +295,7 @@ test('a window emptied of its open tabs by Open in new window stays a hibernated
   const [echo, foxtrot] = rec!.tabs;
   await outlineCommand(sw, { cmd: 'hibernate', ids: [foxtrot!.id] });
   await expect(view.locator(`[data-key="t:${foxtrot!.id}"]`)).toHaveClass(/hibernated/);
+  await synced(sw, view);
 
   // Echo, the window's only open tab, moves out: Chrome closes the window.
   const echoRow = view.locator(`[data-key="t:${echo!.id}"]`);

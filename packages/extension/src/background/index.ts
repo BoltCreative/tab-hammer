@@ -93,7 +93,8 @@ connectBridge();
 // Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and
 // waits on hasPreview for a background capture to land in the store (and on capturesPending for
 // none to be due). readOutline returns the
-// worker's full in-memory records (Chrome IDs included) once its queued work is done. useTestSync,
+// worker's full in-memory records (Chrome IDs included) once its queued work is done; settle
+// matches the windows waiting to be re-linked (the e2e build has no quiet period). useTestSync,
 // syncNow, and syncState drive the sync engine against a test-served fake Drive. focusWindow is
 // Chrome's window focus event, which headless Chromium doesn't send on macOS; it resolves once the
 // outline has taken it in.
