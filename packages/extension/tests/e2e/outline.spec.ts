@@ -200,38 +200,44 @@ test('hibernating a window closes it and keeps its rows; opening it restores ord
   expect(await recordCounts(sw)).toEqual({ records: counts.records, trashed: 0 });
 });
 
-test('a hibernated window reopens at its last position and size', async ({ sw }) => {
-  const { a, rec } = await windowARecord(sw);
-  const target = { left: 70, top: 40, width: 640, height: 520 };
-  await sw.evaluate(async ([id, b]) => void (await chrome.windows.update(id, b)), [
-    a,
-    target,
-  ] as const);
-  await expect
-    .poll(async () => (await liveRecord(sw, a))?.bounds)
-    .toEqual({ ...target, state: 'normal' });
+for (const how of ['hibernated', 'closed by hand (Recently closed)'] as const) {
+  test(`a ${how} window reopens at its last position and size`, async ({ sw }) => {
+    const { a, rec } = await windowARecord(sw);
+    const target = { left: 70, top: 40, width: 640, height: 520 };
+    await sw.evaluate(async ([id, b]) => void (await chrome.windows.update(id, b)), [
+      a,
+      target,
+    ] as const);
+    await expect
+      .poll(async () => (await liveRecord(sw, a))?.bounds)
+      .toEqual({ ...target, state: 'normal' });
 
-  await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.id] });
-  await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
-  // Playwright resizes every page it attaches to to its default viewport, so the reopened
-  // window's size is read from what Chrome created, before Playwright gets to it.
-  await sw.evaluate(() => {
-    const g = globalThis as unknown as { created?: chrome.windows.Window };
-    const original = chrome.windows.create.bind(chrome.windows);
-    chrome.windows.create = (async (d: chrome.windows.CreateData) => {
-      chrome.windows.create = original;
-      return (g.created = await original(d));
-    }) as typeof chrome.windows.create;
-  });
-  await outlineCommand(sw, { cmd: 'open', id: rec.id });
+    if (how === 'hibernated') await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.id] });
+    else await sw.evaluate((id) => chrome.windows.remove(id), a);
+    await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+    await expect
+      .poll(async () => (await recordById(sw, rec.id))?.state)
+      .toBe(how === 'hibernated' ? 'hibernated' : 'trashed');
+    // Playwright resizes every page it attaches to to its default viewport, so the reopened
+    // window's size is read from what Chrome created, before Playwright gets to it.
+    await sw.evaluate(() => {
+      const g = globalThis as unknown as { created?: chrome.windows.Window };
+      const original = chrome.windows.create.bind(chrome.windows);
+      chrome.windows.create = (async (d: chrome.windows.CreateData) => {
+        chrome.windows.create = original;
+        return (g.created = await original(d));
+      }) as typeof chrome.windows.create;
+    });
+    await outlineCommand(sw, { cmd: 'open', id: rec.id });
 
-  const created = await sw.evaluate(() => {
-    const w = (globalThis as unknown as { created?: chrome.windows.Window }).created;
-    return w && { left: w.left, top: w.top, width: w.width, height: w.height };
+    const created = await sw.evaluate(() => {
+      const w = (globalThis as unknown as { created?: chrome.windows.Window }).created;
+      return w && { left: w.left, top: w.top, width: w.width, height: w.height };
+    });
+    expect(created).toEqual(target);
+    expect((await recordById(sw, rec.id))?.state).toBe('live');
   });
-  expect(created).toEqual(target);
-  expect((await recordById(sw, rec.id))?.state).toBe('live');
-});
+}
 
 for (const [how, closeCmd] of [
   ['deleted (Recently closed)', 'trash'],
@@ -716,11 +722,15 @@ test('Restore all on Recently closed reopens every closed window, each tab as it
     .poll(async () => Promise.all(ids.map(async (id) => (await recordById(sw, id))?.state)))
     .toEqual(['live', 'live', 'live']);
   await expect(trash).toHaveCount(0);
-  expect((await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title)).sort()).toEqual([
-    ['Alpha', 'Charlie'],
-    ['Echo', 'Foxtrot'],
-    ['Echo', 'Foxtrot'],
-  ]);
+  await expect
+    .poll(async () =>
+      (await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title)).sort(),
+    )
+    .toEqual([
+      ['Alpha', 'Charlie'],
+      ['Echo', 'Foxtrot'],
+      ['Echo', 'Foxtrot'],
+    ]);
   expect(
     (await recordById(sw, rec.id))?.tabs.map((t) => [t.title, t.chromeTabId !== undefined]),
   ).toEqual([
@@ -747,9 +757,9 @@ test('a window deleted while hibernated comes back hibernated, by Restore all or
   await expect
     .poll(async () => [(await recordById(sw, rec.id))?.state, (await recordById(sw, echo))?.state])
     .toEqual(['hibernated', 'live']);
-  expect((await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title))).toEqual([
-    ['Echo', 'Foxtrot'],
-  ]);
+  await expect
+    .poll(async () => (await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title)))
+    .toEqual([['Echo', 'Foxtrot']]);
   await expect(view.locator(`.window-header.hibernated[data-key="w:${rec.id}"]`)).toBeVisible();
 
   // ↺ on a single entry does the same.
@@ -759,7 +769,7 @@ test('a window deleted while hibernated comes back hibernated, by Restore all or
   await entry.hover();
   await entry.getByRole('button', { name: 'Restore', exact: true }).click();
   await expect.poll(async () => (await recordById(sw, rec.id))?.state).toBe('hibernated');
-  expect((await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title))).toEqual([
-    ['Echo', 'Foxtrot'],
-  ]);
+  await expect
+    .poll(async () => (await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title)))
+    .toEqual([['Echo', 'Foxtrot']]);
 });

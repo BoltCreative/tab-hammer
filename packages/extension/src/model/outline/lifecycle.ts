@@ -68,11 +68,15 @@ export function detach(w: WindowRec, now: number): WindowRec {
 }
 
 /**
- * Closed by hand in Chrome: trashed, hibernated tabs included. Each tab keeps whether it was live
- * (`liveAtClose`), so restoring it reopens the live ones and leaves the rest hibernated.
+ * The window went from Chrome. Closed by hand: trashed, hibernated tabs included; each tab keeps
+ * whether it was live (`liveAtClose`), so restoring it reopens the live ones and leaves the rest
+ * hibernated. Gone some other way (its last open tabs moved to another window, or a close nobody
+ * saw): hibernated if it holds a hibernated tab, so nothing the user didn't close goes to the trash.
  */
-function closed(w: WindowRec, now: number): WindowRec {
-  return { ...detach(w, now), state: 'trashed', closedAt: now };
+function closed(w: WindowRec, now: number, byHand: boolean): WindowRec {
+  const next = detach(w, now);
+  if (!byHand && w.tabs.some((t) => !isLive(t))) return { ...next, state: 'hibernated' };
+  return { ...next, state: 'trashed', closedAt: now };
 }
 
 export function clearShutdown(w: WindowRec): WindowRec {
@@ -93,8 +97,16 @@ function mapWindows(o: Outline, fn: (w: WindowRec) => WindowRec | undefined): Ou
   return changed ? { windows } : o;
 }
 
-export function closeWindow(o: Outline, windowId: string, now: number): Outline {
-  return mapWindows(o, (w) => (w.id === windowId && w.state === 'live' ? closed(w, now) : w));
+/** `byHand`: the user closed it in Chrome (its tabs went with isWindowClosing). See closed(). */
+export function closeWindow(
+  o: Outline,
+  windowId: string,
+  now: number,
+  { byHand }: { byHand: boolean },
+): Outline {
+  return mapWindows(o, (w) =>
+    w.id === windowId && w.state === 'live' ? closed(w, now, byHand) : w,
+  );
 }
 
 export function hibernate(o: Outline, ids: string[], now: number): OpResult {

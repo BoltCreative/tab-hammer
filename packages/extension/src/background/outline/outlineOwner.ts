@@ -481,6 +481,9 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
     scheduleReconcile();
   });
   chrome.windows.onRemoved.addListener((windowId) => {
+    // Closed by hand: Chrome removed its tabs as the window closed. A window whose last tabs were
+    // moved out goes without that.
+    const byHand = closingWindowIds.has(windowId);
     void enqueue(() => {
       closingWindowIds.delete(windowId);
       selfClosing.windowRemoved(windowId);
@@ -490,7 +493,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
         before: (o) => {
           // A window the outline no longer holds (or never did) closes nothing.
           const rec = o.windows.find((w) => w.state === 'live' && w.chromeWindowId === windowId);
-          return rec ? closeWindow(o, rec.id, Date.now()) : o;
+          return rec ? closeWindow(o, rec.id, Date.now(), { byHand }) : o;
         },
       });
     });

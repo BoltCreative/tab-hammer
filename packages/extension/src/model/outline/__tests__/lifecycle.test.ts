@@ -25,7 +25,7 @@ describe('closeWindow', () => {
         }),
       ],
     };
-    const w = closeWindow(o, 'w', NOW).windows[0]!;
+    const w = closeWindow(o, 'w', NOW, { byHand: true }).windows[0]!;
     expect(w).toMatchObject({ state: 'trashed', closedAt: NOW, lastLiveAt: NOW });
     expect(w.chromeWindowId).toBeUndefined();
     expect(w.tabs.map((t) => [t.chromeTabId, t.liveAtClose])).toEqual([
@@ -45,12 +45,23 @@ describe('closeWindow', () => {
         }),
       ],
     };
-    const w = closeWindow(o, 'w', NOW).windows[0]!;
+    const w = closeWindow(o, 'w', NOW, { byHand: true }).windows[0]!;
     expect(w).toMatchObject({ state: 'trashed', closedAt: NOW });
     expect(w.hibernatedAtClose).toBeUndefined(); // it was live: restoring reopens it
     expect(w.provisional).toBeUndefined();
     expect(w.groups[0]!.chromeGroupId).toBeUndefined();
     expect(w.tabs.map((t) => t.liveAtClose)).toEqual([true, false]);
+  });
+
+  it('a window gone without being closed by hand (its open tabs moved out) keeps its hibernated tabs as a hibernated window', () => {
+    const o = {
+      windows: [
+        win('w', { chromeWindowId: 1, tabs: [tab('a', { chromeTabId: 11 }), tab('b')] }),
+        win('v', { chromeWindowId: 2, tabs: [tab('c', { chromeTabId: 12 })] }),
+      ],
+    };
+    const r = closeWindow(closeWindow(o, 'w', NOW, { byHand: false }), 'v', NOW, { byHand: false });
+    expect(r.windows.map((w) => w.state)).toEqual(['hibernated', 'trashed']);
   });
 
   it('returns untouched windows by reference', () => {
@@ -60,7 +71,7 @@ describe('closeWindow', () => {
         win('w2', { chromeWindowId: 2, tabs: [tab('b', { chromeTabId: 12 })] }),
       ],
     };
-    const r = closeWindow(o, 'w1', NOW);
+    const r = closeWindow(o, 'w1', NOW, { byHand: true });
     expect(r.windows[1]).toBe(o.windows[1]);
   });
 });
