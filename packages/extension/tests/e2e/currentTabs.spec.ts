@@ -9,6 +9,9 @@ const PANEL_PATH = 'src/view/panel.html';
 
 const page = (title: string) => `data:text/html,<title>${title}</title>`;
 
+/** The recenter tests' viewport height: short, so a dozen tabs are enough to scroll. */
+const SHORT_VIEW = 360;
+
 /** A new window holding `titles`, its tab `active` (index) made current. Returns Chrome's IDs. */
 async function makeWindow(
   sw: Worker,
@@ -143,23 +146,26 @@ test('recenter brings the current window’s active tab to the middle of the lis
   context,
   sw,
 }) => {
-  // Windows before and after a long one whose active tab is 12 rows into it: just enough rows that
-  // the tab is off screen whether the list is scrolled to the top or the bottom (checked below).
-  // Every tab loads a page, a renderer each, which CI's two-core runners pay for, so keep it small.
-  for (let i = 0; i < 4; i++) await makeWindow(sw, [`Before ${i}a`, `Before ${i}b`]);
-  const titles = Array.from({ length: 24 }, (_, i) => `Long ${i}`);
-  const long = await makeWindow(sw, titles, 12);
-  for (let i = 0; i < 4; i++) await makeWindow(sw, [`After ${i}a`, `After ${i}b`]);
-  const targetId = long.tabIds[12]!;
+  // Windows before and after a long one whose active tab is 6 rows into it, in a short viewport:
+  // just enough rows that the tab is off screen whether the list is scrolled to the top or the
+  // bottom (checked below). Every tab loads a page, a renderer each, and a test's cost must not
+  // grow with the runner's speed, so the viewport is what's small, not a long list.
+  for (let i = 0; i < 2; i++) await makeWindow(sw, [`Before ${i}`]);
+  const titles = Array.from({ length: 12 }, (_, i) => `Long ${i}`);
+  const long = await makeWindow(sw, titles, 6);
+  for (let i = 0; i < 2; i++) await makeWindow(sw, [`After ${i}`]);
+  const targetId = long.tabIds[6]!;
 
   // A docked panel's page, opened as a background tab in the long window so that window's active
-  // tab stays put: its current window is that one.
+  // tab stays put: its current window is that one. Shrunk, then reloaded, so it opens at that size.
   const pagePromise = context.waitForEvent('page', (p) => p.url().includes(PANEL_PATH));
   await sw.evaluate(
     async ({ windowId, url }) => void (await chrome.tabs.create({ windowId, url, active: false })),
     { windowId: long.windowId, url: `chrome-extension://${new URL(sw.url()).host}/${PANEL_PATH}` },
   );
   const panel = await pagePromise;
+  await panel.setViewportSize({ width: 420, height: SHORT_VIEW });
+  await panel.reload();
   const list = panel.locator('main.outline');
   const row = liveRow(panel, 'tab', targetId);
   const centered = async () => {
@@ -211,14 +217,14 @@ test('in the standalone window, recenter goes to the last-focused window’s act
   sw,
   view,
 }) => {
-  for (let i = 0; i < 4; i++) await makeWindow(sw, [`Before ${i}a`, `Before ${i}b`]);
+  for (let i = 0; i < 2; i++) await makeWindow(sw, [`Before ${i}`]);
   const long = await makeWindow(
     sw,
-    Array.from({ length: 16 }, (_, i) => `Long ${i}`),
-    8,
+    Array.from({ length: 12 }, (_, i) => `Long ${i}`),
+    6,
   );
-  for (let i = 0; i < 4; i++) await makeWindow(sw, [`After ${i}a`, `After ${i}b`]);
-  const targetId = long.tabIds[8]!;
+  for (let i = 0; i < 2; i++) await makeWindow(sw, [`After ${i}`]);
+  const targetId = long.tabIds[6]!;
   // Headless Chromium sends no focus events on macOS (and focuses one of its own choosing on
   // Linux), so the hook stands in for the user focusing the long window.
   await sw.evaluate(
@@ -229,7 +235,7 @@ test('in the standalone window, recenter goes to the last-focused window’s act
     long.windowId,
   );
   // A short view, so a modest list scrolls (fewer tabs: see the docked test above).
-  await view.setViewportSize({ width: 420, height: 400 });
+  await view.setViewportSize({ width: 420, height: SHORT_VIEW });
   const card = view.locator(`section:has(> [data-window-id="${long.windowId}"])`);
   await expect(card).toHaveClass(/\bfocused\b/);
 

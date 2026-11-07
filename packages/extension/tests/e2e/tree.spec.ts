@@ -1,10 +1,14 @@
-import { expect, liveRow, test } from './fixtures';
+import { expect, liveRow, synced, test } from './fixtures';
 
 type Setup = { winA: number; winB: number; groupedTabIds: [number, number]; lonelyTabId: number };
 
-// Build a known layout from inside the extension's service worker (it has the tabs/tabGroups APIs).
-async function buildLayout(sw: import('@playwright/test').Worker): Promise<Setup> {
-  return sw.evaluate(async () => {
+// Build a known layout from inside the extension's service worker (it has the tabs/tabGroups APIs),
+// resolving once the view shows it.
+async function buildLayout(
+  sw: import('@playwright/test').Worker,
+  view: import('@playwright/test').Page,
+): Promise<Setup> {
+  const s = await sw.evaluate(async () => {
     const a = await chrome.windows.create({
       url: [
         'data:text/html,<title>Alpha</title>',
@@ -23,6 +27,8 @@ async function buildLayout(sw: import('@playwright/test').Worker): Promise<Setup
     const bTabs = await chrome.tabs.query({ windowId: b!.id });
     return { winA: a!.id!, winB: b!.id!, groupedTabIds: grouped, lonelyTabId: bTabs[0]!.id! };
   });
+  await synced(sw, view);
+  return s;
 }
 
 const openOrFocus = (sw: import('@playwright/test').Worker) =>
@@ -109,7 +115,7 @@ test('renders window cards with a group row and indented tabs, excluding itself'
   // host_permissions outright, so the "allow previews" banner never appears here.
   await expect(view.getByTestId('permission-banner')).toHaveCount(0);
 
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const cardA = view.locator('section[data-testid="window-card"]', {
     has: liveRow(view, 'window', s.winA),
   });
@@ -126,7 +132,7 @@ test('renders window cards with a group row and indented tabs, excluding itself'
 });
 
 test('reflects a closed tab live', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const row = liveRow(view, 'tab', s.lonelyTabId);
   await expect(row).toBeVisible();
   await sw.evaluate(async (id) => {
@@ -140,7 +146,7 @@ test('click selects one, cmd/ctrl-click toggles, shift-click selects a range', a
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [t1, t2] = s.groupedTabIds;
   const row = (tabId: number) => liveRow(view, 'tab', tabId);
   await row(t1).click();
@@ -158,7 +164,7 @@ test('click selects one, cmd/ctrl-click toggles, shift-click selects a range', a
 type FocusCall = [windowId: number, updateInfo: chrome.windows.UpdateInfo];
 
 test('double-click a tab activates it and focuses its window', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [t1] = s.groupedTabIds;
   // Headless Chromium ignores window focus changes, so record the view's chrome.windows.update
   // calls (still calling through to Chrome) instead of observing which window ends up focused.
@@ -209,7 +215,7 @@ test("right-clicking a window header copies all its tabs' URLs in tab order", as
   // no clipboardWrite permission, and the view writes from the user's click without one.
   // No origin: Playwright can't parse chrome-extension:// origins, and this profile is throwaway.
   await context.grantPermissions(['clipboard-read']);
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const expected = await sw.evaluate(
     async (id) => (await chrome.tabs.query({ windowId: id })).map((t) => t.url || t.pendingUrl),
     s.winA,
@@ -228,7 +234,7 @@ test('the header search filters the outline, keeping window and group context', 
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   // Collapsed in Chrome: a match inside still shows.
   await sw.evaluate(async (tabId) => {
     const { groupId } = await chrome.tabs.get(tabId);
@@ -260,7 +266,7 @@ test('keyboard: focus stays in search while ↑/↓ move the cursor, ⇧ extends
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [alpha, bravo] = s.groupedTabIds;
   const row = (tabId: number) => liveRow(view, 'tab', tabId);
   const winA = liveRow(view, 'window', s.winA);
@@ -313,7 +319,7 @@ test('keyboard: focus stays in search while ↑/↓ move the cursor, ⇧ extends
 });
 
 test('typing anywhere goes to the search box, first character included', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const search = searchBox(view);
   await expect(liveRow(view, 'tab', s.lonelyTabId)).toBeVisible();
   // Nothing focused.
@@ -335,7 +341,7 @@ test('searching: the first match is the cursor, Enter opens the highlighted row,
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [, bravo] = s.groupedTabIds;
   const search = searchBox(view);
   await search.focus();

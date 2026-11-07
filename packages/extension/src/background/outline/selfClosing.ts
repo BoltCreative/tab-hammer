@@ -5,9 +5,10 @@
 // snapshot until Chrome reports them removed, the close fails, or the close has hung for
 // CLOSE_GIVE_UP_MS (a page's beforeunload Cancel stops it without any error), after which a window
 // or tab still open reconciles normally again.
+import { limitMs } from '../../shared/e2eBuild';
 import type { ChromeSnapshot, Effects } from '../../model/outline/types';
 
-export const CLOSE_GIVE_UP_MS = 10_000;
+export const CLOSE_GIVE_UP_MS = limitMs(10_000);
 
 export interface SelfClosing {
   /** Before running `effects`: these are about to close. */

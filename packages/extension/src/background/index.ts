@@ -13,6 +13,7 @@ import type { SyncPickerState } from '../shared/syncMessages';
 import { setWindowCreator } from './tabCommands';
 import { openingBounds, trackViewBounds } from './viewBounds';
 import { ensureViewWindow, pingView, viewUrl, type ViewWindowDeps } from './viewWindow';
+import { E2E_BUILD } from '../shared/e2eBuild';
 
 const viewWindowDeps: ViewWindowDeps = {
   viewTabs: viewWindows.viewTabs,
@@ -64,6 +65,9 @@ const outline = registerOutline({
     syncHandle.noteChange();
     previewPruner.schedule();
   },
+  // The e2e build has no quiet period: a test settles restored windows (the settle hook) once
+  // Chrome has finished restoring them, so a slow machine can't match a half-restored window.
+  ...(E2E_BUILD && { settleQuietMs: null }),
 });
 const syncHandle = registerSync(outline);
 // Previews live exactly as long as a window record (live, hibernated, or trashed) has a tab at
@@ -98,6 +102,7 @@ export interface TestHooks {
   hasPreview: (url: string) => Promise<boolean>;
   capturesPending: () => boolean;
   readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>;
+  settle: () => Promise<void>;
   outlineCommand: (c: OutlineCommand) => Promise<void>;
   focusWindow: (windowId: number) => Promise<void>;
   useTestSync: (opts: { apiBase: string; token: string }) => Promise<void>;
@@ -114,6 +119,7 @@ export interface TestHooks {
     await outline.idle();
     return { schemaVersion: OUTLINE_SCHEMA_VERSION, windows: outline.outline().windows };
   },
+  settle: () => outline.settle(),
   outlineCommand: async (c) => {
     await outline.command(c);
   },

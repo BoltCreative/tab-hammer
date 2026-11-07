@@ -6,10 +6,12 @@ import type { WindowRec } from '../../src/model/outline/types';
 import {
   expect,
   launchWithExtension,
+  loadedTabUrls,
   outlineCommand,
   readOutline,
   relaunch,
   serviceWorkerOf,
+  settle,
   startPageServer,
   test,
   type PageServer,
@@ -19,9 +21,9 @@ import {
 // detected here through onInstalled('install') (--load-extension reinstalls on each launch);
 // onStartup and chrome_update are covered by the browserSession unit tests.
 
-// A restored window settles (1.5s of quiet) before it is matched, after Chrome has started and
-// restored every tab: allow for that on top of the default.
-const RESTORE_TIMEOUT = 15_000;
+// A restored window is matched once it settles. The e2e build has no quiet period for that: each
+// test waits until Chrome has restored (and loaded) what it expects, then settles explicitly, so a
+// slow machine can't have a half-restored window matched.
 
 /** A temp profile and page server, removed after `body` however it ends. */
 async function withProfile(body: (dir: string, pages: PageServer) => Promise<void>) {
@@ -116,19 +118,24 @@ test('a browser restart re-links restored windows to their rows', async () => {
     try {
       sw = second.sw;
       await expect
-        .poll(async () => [await comeback(sw, recA.id), await comeback(sw, recB.id)], {
-          timeout: RESTORE_TIMEOUT,
-        })
-        .toEqual([
-          {
-            state: 'live',
-            name: 'Work',
-            tabs: liveTabs(recA),
-            groups: [{ id: groupA, title: 'Group', live: true }],
-            holders: 1,
-          },
-          { state: 'live', name: undefined, tabs: liveTabs(recB), groups: [], holders: 1 },
-        ]);
+        .poll(() => loadedTabUrls(sw))
+        .toEqual(
+          expect.arrayContaining([['A1', 'A2', 'A3'].map(pages.url), ['B1', 'B2'].map(pages.url)]),
+        );
+      await expect
+        .poll(() => sw.evaluate(async () => (await chrome.tabGroups.query({})).map((g) => g.title)))
+        .toEqual(['Group']);
+      await settle(sw);
+      expect([await comeback(sw, recA.id), await comeback(sw, recB.id)]).toEqual([
+        {
+          state: 'live',
+          name: 'Work',
+          tabs: liveTabs(recA),
+          groups: [{ id: groupA, title: 'Group', live: true }],
+          holders: 1,
+        },
+        { state: 'live', name: undefined, tabs: liveTabs(recB), groups: [], holders: 1 },
+      ]);
       expect(await ownRecords(sw)).toEqual({ records: 2, trashed: 0 });
     } finally {
       await second.context.close();
@@ -157,8 +164,16 @@ test('a restored window with a hibernated tab re-links, and that tab stays hiber
     try {
       sw = second.sw;
       await expect
-        .poll(async () => comeback(sw, recD.id), { timeout: RESTORE_TIMEOUT })
-        .toEqual({ state: 'live', name: undefined, tabs, groups: [], holders: 1 });
+        .poll(() => loadedTabUrls(sw))
+        .toEqual(expect.arrayContaining([['D1', 'D3'].map(pages.url)]));
+      await settle(sw);
+      expect(await comeback(sw, recD.id)).toEqual({
+        state: 'live',
+        name: undefined,
+        tabs,
+        groups: [],
+        holders: 1,
+      });
       expect(await ownRecords(sw)).toEqual({ records: 1, trashed: 0 });
     } finally {
       await second.context.close();
@@ -244,17 +259,14 @@ async function killChromium(dir: string): Promise<void> {
 
 /**
  * Relaunches Chromium on `dir` without restoring anything (no "Continue where you left off", or a
- * declined "Restore pages?" bubble), and waits until its startup window has settled unmatched.
+ * declined "Restore pages?" bubble), and settles its startup window (about:blank) once it's open.
  */
 async function relaunchWithoutRestore(dir: string) {
   const context = await launchWithExtension(dir);
   const sw = await serviceWorkerOf(context);
-  // The startup window is matched (or not) once it settles, so wait for it to stop being provisional.
-  await expect
-    .poll(async () => (await readOutline(sw)).windows.some((w) => w.provisional), {
-      timeout: RESTORE_TIMEOUT,
-    })
-    .toBe(false);
+  await expect.poll(() => loadedTabUrls(sw)).toEqual([['about:blank']]);
+  await settle(sw);
+  expect((await readOutline(sw)).windows.some((w) => w.provisional)).toBe(false);
   return { context, sw };
 }
 
