@@ -14,7 +14,7 @@ If you work in a git worktree, run `npm install` at the worktree root after `git
 
 ## Branches
 
-Work lands on `dev` through pull requests; `main` is the release branch and takes only `dev` (CI's `source` job fails a pull request into `main` from any other branch, and the `main` ruleset requires it). Both rulesets require the `gate` check, and `dev` requires a code owner's approval (`.github/CODEOWNERS`). Merging to `main` only runs CI; nothing deploys until a maintainer runs the Release workflow on `main` (`.github/workflows/release.yml`).
+Work lands on `dev` through pull requests; `main` is the release branch and takes only `dev` (CI's `source` job fails a pull request into `main` from any other branch). Both rulesets require a pull request and the `gate` check, and `main`'s also requires `source`. Merging to `main` only runs CI; nothing deploys until a maintainer runs the Release workflow on `main` (`.github/workflows/release.yml`).
 
 ## Completion gates
 
@@ -110,6 +110,7 @@ Sync lives in `src/background/sync/`, with pure logic in `src/model/sync/`.
 
 - In `npm run dev`, crxjs's service worker forwards every request to the extension's own origin to the Vite server; `build/faviconPassthrough.ts` exempts Chrome's `_favicon/` endpoint, and any other Chrome-served extension URL would need the same.
 - crxjs also reloads the whole extension whenever a file the service worker imports changes. `build/holdBrokenReloads.ts` holds that reload while the service worker's files don't link (a half-finished edit), since a service worker that fails to start takes crxjs's reload client down with it and the extension stays dead until reloaded by hand.
+- `build/mcpAutodeploy.ts` keeps the developer's installed MCP (`npm run install-mcp`) in step with the tree `npm run dev` runs in. Only if `install-state.json` exists in install's deploy folder (`layout()`), on start and after changes under `packages/mcp/src` or `packages/protocol/src` (debounced, `__tests__` ignored), it builds the package into a temp folder (`node packages/mcp/build.ts <dir>`) and copies over whichever of `host.js` and `server.js` differ, through `deployHost`/`deployServer` with the node install recorded, so the launcher stays pinned. It never installs, and never touches browser registrations or harness configs. A new `host.js` stops the running host (processes whose command line has the deployed `host.js` path as an argument, found with `ps`; not on Windows, where it asks for an extension reload instead), and the bridge's reconnect starts the new one; a new `server.js` logs that the agent needs a restart. A failed build logs and leaves the deployed copy alone. The installer and deploy modules load at run time, not through the config bundle, because Vite restarts the dev server whenever a config dependency changes.
 
 ### Optional maintainer tooling
 
@@ -117,7 +118,7 @@ Sync lives in `src/background/sync/`, with pure logic in `src/model/sync/`.
 
 ## Tests
 
-- Unit: `packages/*/src/**/__tests__/` (and `packages/extension/build/__tests__/` for the Vite plugin, run against the installed crxjs, and `packages/extension/scripts/__tests__/` for the store client). Pure logic only.
+- Unit: `packages/*/src/**/__tests__/` (and `packages/extension/build/__tests__/` for the Vite plugins: the reload hold run against the installed crxjs, the MCP autodeploy against a temp deploy folder with a fake build and host stop; and `packages/extension/scripts/__tests__/` for the store client). Pure logic only.
   - Extension: model; outline model (`src/model/outline/`: lifecycle, matching, reconcile, match application, open/place); outline store (against `fake-indexeddb`) and settle tracker (`src/background/outline/`); browser-session renewal; capture scheduling; per-window and on-demand debugger capture with an injected `chrome`; the capture queue; preview policy and the preview pruner; sync (`src/model/sync/`: schema validation, Restore all, Open-here copy, checkpoint retention, device list; `src/background/sync/`: the engine against an in-memory backend with a fake clock, the Drive backend against `tests/fakeDrive.ts`, the sync store, `chrome.sessions` with a stubbed `chrome`).
   - Store: the Chrome Web Store client (`packages/extension/scripts/__tests__/`) against a stand-in store: request shapes, the service account JWT, and a pending review holding back uploads and submissions.
   - MCP: native messaging framing; a functional test running the real MCP server process against the real relay with a stand-in extension; and the installer (`src/__tests__/`, which build `dist/` first): per-OS browser and harness path resolution (Windows paths via `path.win32`), the JSON and TOML config writers' byte-identical round trips, install/uninstall/doctor against a fake machine (Windows simulated with a fake registry), and the built CLI run in a child process with a temp `HOME`.

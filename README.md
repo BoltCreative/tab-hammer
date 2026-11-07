@@ -107,7 +107,7 @@ inside `~/Documents` without a permission prompt and `npx` clears its cache; bot
 updates arrive only when you re-run `npx tab-hammer-mcp@latest install`; `doctor` tells you when a
 newer version is out.
 
-From a checkout, `npm run install-mcp` builds the package and runs the same installer.
+From a checkout, `npm run install-mcp` builds the package and runs the same installer. After that, `npm run dev` keeps the installed host and server up to date with the checkout's source (it never installs on its own).
 
 ## Permissions
 
