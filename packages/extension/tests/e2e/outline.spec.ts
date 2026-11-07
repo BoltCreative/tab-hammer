@@ -727,3 +727,37 @@ test('Restore all on Recently closed reopens every closed window, each tab as it
     ['Charlie', true],
   ]);
 });
+
+test('a window deleted while hibernated comes back hibernated, by Restore all or ↺, opening nothing', async ({
+  sw,
+  view,
+}) => {
+  const before = (await chromeWindows(sw)).map((w) => w.id);
+  const { rec } = await windowARecord(sw);
+  await outlineCommand(sw, { cmd: 'hibernate', ids: [rec.id] });
+  await outlineCommand(sw, { cmd: 'trash', ids: [rec.id] });
+  const echo = await closedEchoWindow(sw);
+  const trash = view.getByRole('group', { name: 'Recently closed' });
+
+  await trash.getByRole('button', { name: 'Restore all', exact: true }).click();
+
+  // The hibernated one comes back as it was; the one closed live reopens.
+  await expect
+    .poll(async () => [(await recordById(sw, rec.id))?.state, (await recordById(sw, echo))?.state])
+    .toEqual(['hibernated', 'live']);
+  expect((await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title))).toEqual([
+    ['Echo', 'Foxtrot'],
+  ]);
+  await expect(view.locator(`.window-header.hibernated[data-key="w:${rec.id}"]`)).toBeVisible();
+
+  // ↺ on a single entry does the same.
+  await outlineCommand(sw, { cmd: 'trash', ids: [rec.id] });
+  await view.getByRole('button', { name: /^Recently closed \(1\)/ }).click();
+  const entry = view.getByTestId('trash-entry');
+  await entry.hover();
+  await entry.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect.poll(async () => (await recordById(sw, rec.id))?.state).toBe('hibernated');
+  expect((await chromeWindows(sw, before)).map((w) => w.tabs.map((t) => t.title))).toEqual([
+    ['Echo', 'Foxtrot'],
+  ]);
+});

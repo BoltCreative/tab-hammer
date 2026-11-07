@@ -99,6 +99,7 @@ export function attachOpened(o: Outline, windowId: string, opened: Opened, now: 
     next.lastLiveAt = now;
     next.modifiedAt = now;
     delete next.closedAt;
+    delete next.hibernatedAtClose;
     delete next.openAtShutdown;
   }
 

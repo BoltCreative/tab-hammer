@@ -134,6 +134,21 @@ describe('hibernate', () => {
 });
 
 describe('trash', () => {
+  it('a window deleted while hibernated is remembered as hibernated at close; a live one is not', () => {
+    const o = {
+      windows: [
+        win('h', { tabs: [tab('a')] }),
+        win('l', { chromeWindowId: 1, tabs: [tab('b', { chromeTabId: 11 })] }),
+      ],
+    };
+    const [h, l] = trash(o, ['h', 'l'], NOW).outline.windows;
+    expect(h).toMatchObject({ state: 'trashed', hibernatedAtClose: true });
+    expect(l!.state).toBe('trashed');
+    expect(l!.hibernatedAtClose).toBeUndefined();
+    // Out of the trash, the mark goes.
+    expect(untrash({ windows: [h!] }, ['h'], NOW).windows[0]!.hibernatedAtClose).toBeUndefined();
+  });
+
   it('trashing a hibernated tab deletes it; trashing a live tab removes it and closes it', () => {
     const o = {
       windows: [

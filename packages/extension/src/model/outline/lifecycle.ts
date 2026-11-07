@@ -134,7 +134,13 @@ export function trash(o: Outline, ids: string[], now: number): OpResult {
         effects.closeWindows.push(w.chromeWindowId!);
         return { ...clearShutdown(detach(w, now)), state: 'trashed', closedAt: now };
       }
-      return { ...clearShutdown(w), state: 'trashed', closedAt: now, modifiedAt: now };
+      return {
+        ...clearShutdown(w),
+        state: 'trashed',
+        closedAt: now,
+        modifiedAt: now,
+        hibernatedAtClose: true,
+      };
     }
     const removed = new Set(
       w.tabs
@@ -196,6 +202,7 @@ export function untrash(o: Outline, ids: string[], now: number): Outline {
     if (w.state !== 'trashed' || !selected.has(w.id)) return w;
     const next: WindowRec = { ...w, state: 'hibernated', modifiedAt: now };
     delete next.closedAt;
+    delete next.hibernatedAtClose;
     return next;
   });
 }

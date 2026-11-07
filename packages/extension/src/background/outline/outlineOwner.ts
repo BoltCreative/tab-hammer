@@ -14,6 +14,7 @@ import {
   renameWindow,
   startFresh,
   trash,
+  untrash,
 } from '../../model/outline/lifecycle';
 import { attachOpened, planOpen } from '../../model/outline/open';
 import { moveWindows, placeWindowAfter } from '../../model/outline/order';
@@ -406,10 +407,17 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
     return target.chromeWindowId;
   }
 
-  /** Opens a hibernated or trashed row in Chrome; part of a job. */
+  /**
+   * Opens a hibernated or trashed row in Chrome; part of a job. A trash entry deleted while
+   * hibernated comes back hibernated instead, opening nothing.
+   */
   async function openRow(id: string): Promise<void> {
     // A trash entry always reopens as a whole window, whichever of its rows was opened.
     const row = findRow(outline, id);
+    if (row?.window.state === 'trashed' && row.window.hibernatedAtClose) {
+      await commit(untrash(outline, [row.window.id], Date.now()), live!);
+      return;
+    }
     const plan = planOpen(outline, row?.window.state === 'trashed' ? row.window.id : id);
     if (!plan) return;
     const opened = await openPlanned(plan); // a failed window create leaves the outline as is
