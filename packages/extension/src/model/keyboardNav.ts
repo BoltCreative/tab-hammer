@@ -226,3 +226,14 @@ export function typesIntoSearch(e: {
     [...e.key].length === 1 || e.key === 'Dead' || e.key === 'Process' || e.key === 'Backspace'
   );
 }
+
+/** The view's own ⌘ shortcuts (Ctrl off a Mac), none of them Chrome's or macOS's. */
+export type ViewShortcut = 'currentTabs' | 'recenter';
+
+/** ⌘/ toggles Current tabs; ⌘\ recenters on the current window's tab. */
+export function viewShortcut(p: KeyPress): ViewShortcut | null {
+  if (!p.mod || p.alt || p.shift || p.otherMod) return null;
+  if (p.key === '/') return 'currentTabs';
+  if (p.key === '\\') return 'recenter';
+  return null;
+}

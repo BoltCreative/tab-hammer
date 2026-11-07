@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type ReactNode, type RefObject } from 'r
 import { ContextMenu } from '../components/ContextMenu';
 import { OUTLINE_TREE_ID, RECENTLY_CLOSED_ID } from '../components/rowProps';
 import { dockEverywhere, popOut, surface, useSidePanelSide } from '../chrome/dock';
-import { SEARCH_KEYS_HELP } from '../platform';
+import { CURRENT_TABS_KEYS, RECENTER_KEYS, SEARCH_KEYS_HELP } from '../platform';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
 import type { HeaderActions } from './useHeaderActions';
 
@@ -14,6 +14,9 @@ interface Props {
   activeDescendant: string | undefined; // the cursor row's DOM id
   matchCount: number | null; // tabs matching the search, or null when not searching
   banner?: ReactNode; // under the permission banner (another device's outline, say)
+  currentTabs: boolean; // the Current tabs toggle
+  onCurrentTabsChange: (on: boolean) => void;
+  onRecenter: () => void; // scroll to the current window's tab
 }
 
 /**
@@ -29,6 +32,9 @@ export function AppHeader({
   activeDescendant,
   matchCount,
   banner,
+  currentTabs,
+  onCurrentTabsChange,
+  onRecenter,
 }: Props) {
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; keyboard: boolean } | null>(null);
@@ -69,6 +75,32 @@ export function AppHeader({
             {matchCount === 1 ? '1 tab' : `${matchCount} tabs`}
           </span>
         )}
+        <button
+          type="button"
+          role="switch"
+          className="current-tabs-switch"
+          aria-checked={currentTabs}
+          title={`Show just each window's current tab (${CURRENT_TABS_KEYS})`}
+          onClick={() => onCurrentTabsChange(!currentTabs)}
+        >
+          <span className="switch-track" aria-hidden="true">
+            <span className="switch-thumb" />
+          </span>
+          Current tabs
+        </button>
+        <button
+          type="button"
+          className="toolbar-button menu-button recenter-button"
+          aria-label="Go to the current window"
+          title={`Go to the current window's tab (${RECENTER_KEYS})`}
+          onClick={onRecenter}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <circle cx="6" cy="6" r="3.5" fill="none" stroke="currentColor" />
+            <circle cx="6" cy="6" r="1" fill="currentColor" />
+            <path d="M6 0 V2 M6 10 V12 M0 6 H2 M10 6 H12" stroke="currentColor" />
+          </svg>
+        </button>
         <DockToggle />
         <button
           ref={button}
