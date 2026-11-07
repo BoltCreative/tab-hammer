@@ -74,7 +74,7 @@ const presses: KeyPress[] = KEYS.flatMap((key) =>
 describe('the shortcut table', () => {
   for (const mac of [true, false]) {
     it(`lists exactly the keys the handlers act on (${mac ? 'Mac' : 'Windows/Linux'})`, () => {
-      const listed = new Set(cheatSheet(mac, true).flatMap((s) => s.rows.flatMap((r) => r.keys)));
+      const listed = new Set(cheatSheet(mac).flatMap((s) => s.rows.flatMap((r) => r.keys)));
       for (const p of presses) {
         const label = comboLabel(
           {
@@ -109,12 +109,5 @@ describe('the shortcut table', () => {
     expect(comboLabel({ key: 'ArrowDown', alt: true, shift: true, mod: true }, false)).toBe(
       'Ctrl+Alt+Shift+↓',
     );
-  });
-
-  it('leaves recenter off the standalone window’s sheet', () => {
-    const ids = (docked: boolean) =>
-      cheatSheet(true, docked).flatMap((s) => s.rows.map((r) => r.id));
-    expect(ids(true)).toContain('recenter');
-    expect(ids(false)).not.toContain('recenter');
   });
 });

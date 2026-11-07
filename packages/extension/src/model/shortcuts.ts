@@ -59,8 +59,6 @@ export interface Shortcut {
   does: string;
   /** A short name, for the search box's tooltip. */
   short: string;
-  /** Only a docked panel has it (recenter needs the panel's own window). */
-  panelOnly?: true;
 }
 
 const up: Combo = { key: 'ArrowUp' };
@@ -134,9 +132,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     id: 'recenter',
     section: 'View',
     combos: [{ key: '\\', mod: true }],
-    does: "Go to this window's tab",
-    short: 'go to this window',
-    panelOnly: true,
+    does: "Go to the current window's tab",
+    short: 'go to the current window',
   },
   {
     id: 'shortcuts',
@@ -188,10 +185,9 @@ export interface SheetSection {
 }
 
 /** The Keyboard shortcuts sheet's sections, in the table's order. */
-export function cheatSheet(mac: boolean, docked: boolean): SheetSection[] {
+export function cheatSheet(mac: boolean): SheetSection[] {
   const sections: SheetSection[] = [];
   for (const s of SHORTCUTS) {
-    if (s.panelOnly && !docked) continue;
     let section = sections.find((x) => x.title === s.section);
     if (!section) sections.push((section = { title: s.section, rows: [] }));
     section.rows.push({ id: s.id, keys: s.combos.map((c) => comboLabel(c, mac)), does: s.does });

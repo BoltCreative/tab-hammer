@@ -33,7 +33,7 @@ import {
 import { draggedTabIds, planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
 import { useCurrentTabsSetting } from './chrome/currentTabsSetting';
-import { dockInto, surface, useHostWindowId } from './chrome/dock';
+import { dockInto, useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -220,7 +220,8 @@ export function App() {
       'aria-expanded': r?.expanded,
     };
   };
-  // The window being used: docked, the one this panel sits in; else Chrome's focused window.
+  // The window being used: docked, the one this panel sits in; else the last-focused normal Chrome
+  // window (none until one has been focused, and then recenter does nothing).
   const currentWindow = () =>
     (hostWindowId === undefined ? undefined : tree.find((w) => w.windowId === hostWindowId)) ??
     tree.find((w) => w.focused);
@@ -458,7 +459,7 @@ export function App() {
       e.preventDefault();
       if (shortcut === 'currentTabs') setCurrentTabs(!currentTabs);
       else if (shortcut === 'shortcuts') setShortcutsOpen(true);
-      else if (surface === 'panel') recenter();
+      else recenter();
       return;
     }
     if (shortcutOf(press) === 'escape') {
@@ -558,9 +559,7 @@ export function App() {
         matchCount={filtering ? countTabs(shown) : null}
         currentTabs={currentTabs}
         onCurrentTabsChange={setCurrentTabs}
-        // Docked only: a panel knows its window for sure, while the standalone window's notion of
-        // the current window can be stale (focus is tracked from events), so it doesn't offer it.
-        onRecenter={surface === 'panel' ? () => recenter() : undefined}
+        onRecenter={() => recenter()}
         banner={
           <>
             {shortcutsOpen && <ShortcutsPanel onClose={closeShortcuts} />}

@@ -74,8 +74,6 @@ test('Current tabs shows one row per window, follows the active tab live, yields
   await expect(tabRowsOf(view, a.windowId)).toHaveCount(3);
 
   const toggle = view.getByRole('button', { name: 'Current tabs' });
-  // Recenter is a docked panel's only: the standalone window can't be sure which window is current.
-  await expect(view.getByRole('button', { name: 'Go to the current window' })).toHaveCount(0);
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
@@ -198,6 +196,55 @@ test('recenter brings the current window’s active tab to the middle of the lis
   await panel.getByRole('button', { name: 'Current tabs' }).click();
   await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
   await panel.getByRole('button', { name: 'Go to the current window' }).click();
+  await expect(row).toHaveAttribute('data-cursor', 'true');
+  await expect.poll(centered).toBe(true);
+});
+
+test('in the standalone window, recenter goes to the last-focused window’s active tab', async ({
+  sw,
+  view,
+}) => {
+  for (let i = 0; i < 4; i++) await makeWindow(sw, [`Before ${i}a`, `Before ${i}b`]);
+  const long = await makeWindow(
+    sw,
+    Array.from({ length: 100 }, (_, i) => `Long ${i}`),
+    80,
+  );
+  for (let i = 0; i < 4; i++) await makeWindow(sw, [`After ${i}a`, `After ${i}b`]);
+  const targetId = long.tabIds[80]!;
+  // Headless Chromium sends no focus events on macOS (and focuses one of its own choosing on
+  // Linux), so the hook stands in for the user focusing the long window.
+  await sw.evaluate(
+    (id) =>
+      (
+        globalThis as unknown as { tabHammer: { focusWindow: (id: number) => Promise<void> } }
+      ).tabHammer.focusWindow(id),
+    long.windowId,
+  );
+  const card = view.locator(`section:has(> [data-window-id="${long.windowId}"])`);
+  await expect(card).toHaveClass(/\bfocused\b/);
+
+  const list = view.locator('main.outline');
+  const row = liveRow(view, 'tab', targetId);
+  const centered = async () => {
+    const l = (await list.boundingBox())!;
+    const r = (await row.boundingBox())!;
+    return Math.abs(r.y + r.height / 2 - (l.y + l.height / 2)) < 20;
+  };
+
+  // Scrolled away, with its window collapsed: the button expands it and comes back.
+  await liveRow(view, 'window', long.windowId).locator('.twisty').click();
+  await expect(row).toHaveCount(0);
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await view.getByRole('button', { name: 'Go to the current window' }).click();
+  await expect(row).toHaveAttribute('data-cursor', 'true');
+  await expect.poll(centered).toBe(true);
+
+  // Scrolled to the top: ⌘\ (Ctrl+\ off a Mac) does the same.
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await view.keyboard.press('ArrowDown'); // the cursor elsewhere first
+  await expect(row).not.toHaveAttribute('data-cursor', 'true');
+  await view.keyboard.press('ControlOrMeta+Backslash');
   await expect(row).toHaveAttribute('data-cursor', 'true');
   await expect.poll(centered).toBe(true);
 });

@@ -45,6 +45,11 @@ import { createSettleTracker } from './settleTracker';
 export interface OutlineOwner {
   /** Resolves once the job queue is empty. */
   idle(): Promise<void>;
+  /**
+   * What Chrome's windows.onFocusChanged does: `windowId` becomes the focused window if it's a
+   * normal one. Called directly by E2E, since headless Chromium sends no focus events on macOS.
+   */
+  focusChanged(windowId: number): void;
   /** Runs a command; resolves with the Chrome window it opened (newWindow, moveToNewWindow). */
   command(c: OutlineCommand): Promise<number | undefined>;
   /**
@@ -476,10 +481,11 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   chrome.windows.onCreated.addListener(scheduleReconcile);
   chrome.windows.onBoundsChanged.addListener(scheduleReconcile);
-  chrome.windows.onFocusChanged.addListener((windowId) => {
+  function focusChanged(windowId: number): void {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) focusEvent = windowId;
     scheduleReconcile();
-  });
+  }
+  chrome.windows.onFocusChanged.addListener(focusChanged);
   chrome.windows.onRemoved.addListener((windowId) => {
     // Closed by hand: Chrome removed its tabs as the window closed. A window whose last tabs were
     // moved out goes without that.
@@ -534,6 +540,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   return {
     idle: () => queue.idle(),
+    focusChanged,
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
     exportWindows: () => enqueue(async () => outline.windows.map(toSyncWindow)),

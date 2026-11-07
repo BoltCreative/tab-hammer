@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { cheatSheet } from '../../model/shortcuts';
 import { openShortcutSettings, useOpenShortcut } from '../chrome/commands';
-import { surface } from '../chrome/dock';
 import { IS_MAC } from '../platform';
 
 /**
@@ -12,7 +11,7 @@ import { IS_MAC } from '../platform';
 export function ShortcutsPanel({ onClose }: { onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const openKeys = useOpenShortcut();
-  const sections = cheatSheet(IS_MAC, surface === 'panel');
+  const sections = cheatSheet(IS_MAC);
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>('button')?.focus();
   }, []);
