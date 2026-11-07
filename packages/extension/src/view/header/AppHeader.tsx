@@ -77,16 +77,19 @@ export function AppHeader({
         )}
         <button
           type="button"
-          role="switch"
-          className="current-tabs-switch"
-          aria-checked={currentTabs}
+          className="toolbar-button menu-button current-tabs-toggle"
+          aria-label="Current tabs"
+          aria-pressed={currentTabs}
           title={`Show just each window's current tab (${CURRENT_TABS_KEYS})`}
           onClick={() => onCurrentTabsChange(!currentTabs)}
         >
-          <span className="switch-track" aria-hidden="true">
-            <span className="switch-thumb" />
-          </span>
-          Current tabs
+          {/* Window bars, each with one tab under it. */}
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <rect x="0.5" y="1" width="11" height="2" fill="currentColor" />
+            <rect x="2.5" y="4" width="8" height="1.5" fill="currentColor" opacity="0.6" />
+            <rect x="0.5" y="7" width="11" height="2" fill="currentColor" />
+            <rect x="2.5" y="10" width="8" height="1.5" fill="currentColor" opacity="0.6" />
+          </svg>
         </button>
         {onRecenter && (
           <button

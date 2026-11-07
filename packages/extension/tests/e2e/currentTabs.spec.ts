@@ -73,12 +73,12 @@ test('Current tabs shows one row per window, follows the active tab live, yields
   const b = await makeWindow(sw, ['B0', 'B1'], 0);
   await expect(tabRowsOf(view, a.windowId)).toHaveCount(3);
 
-  const toggle = view.getByRole('switch', { name: 'Current tabs' });
+  const toggle = view.getByRole('button', { name: 'Current tabs' });
   // Recenter is a docked panel's only: the standalone window can't be sure which window is current.
   await expect(view.getByRole('button', { name: 'Go to the current window' })).toHaveCount(0);
-  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(tabRowsOf(view, a.windowId)).toHaveCount(1);
   await expect(tabRowsOf(view, a.windowId)).toHaveAttribute('data-tab-id', String(a.tabIds[1]));
   await expect(tabRowsOf(view, b.windowId)).toHaveCount(1);
@@ -99,8 +99,8 @@ test('Current tabs shows one row per window, follows the active tab live, yields
   // Remembered: a reopened view starts in Current tabs.
   await view.close();
   const again = await openView(context, sw);
-  await expect(again.getByRole('switch', { name: 'Current tabs' })).toHaveAttribute(
-    'aria-checked',
+  await expect(again.getByRole('button', { name: 'Current tabs' })).toHaveAttribute(
+    'aria-pressed',
     'true',
   );
   await expect(tabRowsOf(again, a.windowId)).toHaveCount(1);
@@ -195,7 +195,7 @@ test('recenter brings the current window’s active tab to the middle of the lis
   await expect.poll(centered).toBe(true);
 
   // In Current tabs it's the same row.
-  await panel.getByRole('switch', { name: 'Current tabs' }).click();
+  await panel.getByRole('button', { name: 'Current tabs' }).click();
   await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
   await panel.getByRole('button', { name: 'Go to the current window' }).click();
   await expect(row).toHaveAttribute('data-cursor', 'true');

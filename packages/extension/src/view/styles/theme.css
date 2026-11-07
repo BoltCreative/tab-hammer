@@ -102,54 +102,11 @@ html[data-surface='panel'][data-side='left'] .app {
   color: var(--text);
   background: var(--row-hover);
 }
-/* The Current tabs toggle: a small switch and its label, sharing the search row (the row has to
-   fit Chrome's ~360px minimum side panel). */
-.current-tabs-switch {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.current-tabs-switch:hover,
-.current-tabs-switch[aria-checked='true'] {
-  color: var(--text);
-}
-.switch-track {
-  position: relative;
-  width: 22px;
-  height: 12px;
-  border-radius: 6px;
-  background: var(--card-border);
-  transition: background 0.12s;
-}
-.switch-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  transition: transform 0.12s;
-}
-.current-tabs-switch[aria-checked='true'] .switch-track {
-  background: var(--drop-indicator);
-}
-.current-tabs-switch[aria-checked='true'] .switch-thumb {
-  transform: translateX(10px);
-  background: var(--bg);
-}
-.current-tabs-switch:focus-visible {
-  outline: 1px solid var(--card-border-focused);
-  border-radius: 4px;
+/* An icon toggle that's on (Current tabs): highlighted like the drop indicator. */
+.menu-button[aria-pressed='true'] {
+  color: var(--drop-indicator);
+  border-color: var(--drop-indicator);
+  background: color-mix(in srgb, var(--drop-indicator) 15%, transparent);
 }
 /* Live progress (and Stop) for the running action, under the search row. */
 .toolbar-progress {
