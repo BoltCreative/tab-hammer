@@ -455,9 +455,12 @@ test("a closed window's tabs in Recently closed show their stored previews, by h
     .poll(async () =>
       (await readOutline(sw)).windows
         .find((w) => w.chromeWindowId === windows[0])
-        ?.tabs.map((t) => t.url),
+        ?.tabs.map((t) => [t.url, t.title]),
     )
-    .toEqual([first, second]);
+    .toEqual([
+      [first, 'first'],
+      [second, 'second'],
+    ]);
   await sw.evaluate((id) => chrome.windows.remove(id), windows[0]!);
   await expect
     .poll(async () => (await readOutline(sw)).windows.filter((w) => w.state === 'trashed').length)
