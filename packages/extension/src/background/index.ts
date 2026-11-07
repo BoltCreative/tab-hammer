@@ -90,13 +90,16 @@ connectBridge();
 // waits on hasPreview for a background capture to land in the store (and on capturesPending for
 // none to be due). readOutline returns the
 // worker's full in-memory records (Chrome IDs included) once its queued work is done. useTestSync,
-// syncNow, and syncState drive the sync engine against a test-served fake Drive.
+// syncNow, and syncState drive the sync engine against a test-served fake Drive. focusWindow is
+// Chrome's window focus event, which headless Chromium doesn't send on macOS; it resolves once the
+// outline has taken it in.
 export interface TestHooks {
   openOrFocus: () => Promise<void>;
   hasPreview: (url: string) => Promise<boolean>;
   capturesPending: () => boolean;
   readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>;
   outlineCommand: (c: OutlineCommand) => Promise<void>;
+  focusWindow: (windowId: number) => Promise<void>;
   useTestSync: (opts: { apiBase: string; token: string }) => Promise<void>;
   syncNow: () => Promise<void>;
   syncState: () => Promise<SyncPickerState>;
@@ -113,6 +116,10 @@ export interface TestHooks {
   },
   outlineCommand: async (c) => {
     await outline.command(c);
+  },
+  focusWindow: async (windowId) => {
+    outline.focusChanged(windowId);
+    await outline.idle();
   },
   // Points sync at a fake Drive served by the test (never Google), then syncs.
   useTestSync: async ({ apiBase, token }) => {

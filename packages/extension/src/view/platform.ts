@@ -1,24 +1,13 @@
+import { keysLabel, searchKeysHelp } from '../model/shortcuts';
+
 /** A Mac (⌘ is the command key) or not (Ctrl is). */
 export const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent);
 
-/** The command key's name in help text. */
-export const MOD_KEY = IS_MAC ? '⌘' : 'Ctrl+';
-
 /** The search box's tooltip: the outline's keys. */
-export const SEARCH_KEYS_HELP = [
-  'Type to search',
-  '↑/↓ move',
-  '⇧↑/↓ select',
-  `${MOD_KEY}↓ open`,
-  `${MOD_KEY}↑ up a level`,
-  `${IS_MAC ? '⌥' : 'Alt+'}↑/↓ move window`,
-  `${MOD_KEY}${IS_MAC ? '⌫' : 'Backspace'} move to trash`,
-  'Enter open',
-  'Esc clear',
-].join(' · ');
+export const SEARCH_KEYS_HELP = searchKeysHelp(IS_MAC);
 
 /** The Current tabs toggle's shortcut, for its tooltip. */
-export const CURRENT_TABS_KEYS = `${MOD_KEY}/`;
+export const CURRENT_TABS_KEYS = keysLabel('currentTabs', IS_MAC);
 
 /** The recenter button's shortcut, for its tooltip. */
-export const RECENTER_KEYS = `${MOD_KEY}\\`;
+export const RECENTER_KEYS = keysLabel('recenter', IS_MAC);

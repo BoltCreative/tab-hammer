@@ -22,6 +22,7 @@ import {
   typesIntoSearch,
   viewShortcut,
 } from '../model/keyboardNav';
+import { shortcutOf } from '../model/shortcuts';
 import {
   EXPAND_ALL,
   allRowKeys,
@@ -32,7 +33,7 @@ import {
 import { draggedTabIds, planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
 import { useCurrentTabsSetting } from './chrome/currentTabsSetting';
-import { dockInto, surface, useHostWindowId } from './chrome/dock';
+import { dockInto, useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -49,6 +50,7 @@ import { WindowCard } from './components/WindowCard';
 import { PreviewPanel } from './preview/PreviewPanel';
 import { usePreviewTarget } from './preview/usePreviewTarget';
 import { AppHeader } from './header/AppHeader';
+import { ShortcutsPanel } from './header/ShortcutsPanel';
 import { IS_MAC } from './platform';
 import { useHeaderActions } from './header/useHeaderActions';
 import type { SyncSource } from '../shared/syncMessages';
@@ -63,6 +65,7 @@ export function App() {
   const [remoteSource, setRemoteSource] = useState<SyncSource | null>(null);
   const [devicesOpen, setDevicesOpen] = useState(false);
   const closeDevices = useCallback(() => setDevicesOpen(false), []);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const remote = useRemoteOutline({
     source: remoteSource,
     state: syncState,
@@ -137,6 +140,10 @@ export function App() {
   const activeKey =
     cursor !== null && rowByKey.has(cursor) ? cursor : filtering ? (navRows[0]?.key ?? null) : null;
   const searchRef = useRef<HTMLInputElement>(null);
+  const closeShortcuts = useCallback(() => {
+    setShortcutsOpen(false);
+    searchRef.current?.focus();
+  }, []);
   const focusSearch = () => {
     const search = searchRef.current;
     if (!search || document.activeElement === search) return;
@@ -213,7 +220,8 @@ export function App() {
       'aria-expanded': r?.expanded,
     };
   };
-  // The window being used: docked, the one this panel sits in; else Chrome's focused window.
+  // The window being used: docked, the one this panel sits in; else the last-focused normal Chrome
+  // window (none until one has been focused, and then recenter does nothing).
   const currentWindow = () =>
     (hostWindowId === undefined ? undefined : tree.find((w) => w.windowId === hostWindowId)) ??
     tree.find((w) => w.focused);
@@ -302,6 +310,7 @@ export function App() {
     duplicateCount: duplicates.toClose.length,
     onCloseDuplicates: () => closeTabs(duplicates.toClose.flatMap((t) => t.tabId ?? [])),
     onOpenDevices: () => setDevicesOpen(true),
+    onOpenShortcuts: () => setShortcutsOpen(true),
     onNewWindow: () =>
       sendOpening({ cmd: 'newWindow', afterWindowId: currentWindow()?.id ?? null }),
   });
@@ -449,10 +458,17 @@ export function App() {
     if (shortcut) {
       e.preventDefault();
       if (shortcut === 'currentTabs') setCurrentTabs(!currentTabs);
-      else if (surface === 'panel') recenter();
+      else if (shortcut === 'shortcuts') setShortcutsOpen(true);
+      else recenter();
       return;
     }
-    if (e.key === 'Escape' && !press.mod && !press.alt && !press.shift) {
+    if (shortcutOf(press) === 'escape') {
+      // The shortcuts sheet first, wherever focus is (its own Escape covers focus inside it).
+      if (shortcutsOpen) {
+        e.preventDefault();
+        closeShortcuts();
+        return;
+      }
       // First clears the search (the cursor stays on its row, now among the whole outline), then
       // the selection.
       if (query !== '') {
@@ -543,11 +559,10 @@ export function App() {
         matchCount={filtering ? countTabs(shown) : null}
         currentTabs={currentTabs}
         onCurrentTabsChange={setCurrentTabs}
-        // Docked only: a panel knows its window for sure, while the standalone window's notion of
-        // the current window can be stale (focus is tracked from events), so it doesn't offer it.
-        onRecenter={surface === 'panel' ? () => recenter() : undefined}
+        onRecenter={() => recenter()}
         banner={
           <>
+            {shortcutsOpen && <ShortcutsPanel onClose={closeShortcuts} />}
             {devicesOpen && (
               <DevicesPanel
                 state={syncState}

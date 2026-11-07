@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { clearAllPreviews } from '../chrome/captureOutcome';
 import { openSidePanelSettings, surface } from '../chrome/dock';
 import type { MenuItem } from '../components/ContextMenu';
+import { keysLabel } from '../../model/shortcuts';
+import { IS_MAC } from '../platform';
 import type { RefreshProgress } from '../refresh/refreshRun';
 import { useRefreshPreviews, type RefreshState } from '../refresh/useRefreshPreviews';
 
@@ -39,7 +41,8 @@ export interface HeaderActions {
 }
 
 /**
- * The view's bulk actions (New window, Other devices, Close duplicates, Capture missing, Refresh all, Panel side when docked, Clear previews) and their live
+ * The view's bulk actions (New window, Other devices, Close duplicates, Capture missing, Refresh
+ * all, Panel side when docked, Keyboard shortcuts, Clear previews) and their live
  * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
@@ -48,8 +51,16 @@ export function useHeaderActions(opts: {
   onCloseDuplicates: () => Promise<void>;
   onOpenDevices: () => void; // shows the devices panel (other computers, checkpoints, sync)
   onNewWindow: () => void; // opens an empty Chrome window, its row after the focused window's
+  onOpenShortcuts: () => void; // shows the Keyboard shortcuts sheet
 }): HeaderActions {
-  const { onPreviewsChanged, duplicateCount, onCloseDuplicates, onOpenDevices, onNewWindow } = opts;
+  const {
+    onPreviewsChanged,
+    duplicateCount,
+    onCloseDuplicates,
+    onOpenDevices,
+    onNewWindow,
+    onOpenShortcuts,
+  } = opts;
   const [clear, setClear] = useState<'idle' | 'clearing' | 'cleared' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -126,6 +137,11 @@ export function useHeaderActions(opts: {
           },
         ]
       : []),
+    {
+      label: 'Keyboard shortcuts',
+      title: `Every key Tab Hammer answers to, and the one that opens it (${keysLabel('shortcuts', IS_MAC)})`,
+      onSelect: onOpenShortcuts,
+    },
     {
       label: 'Clear previews',
       title: 'Delete every stored preview (a debug tool)',

@@ -883,3 +883,52 @@ button.twisty {
 main.outline[hidden] {
   display: none;
 }
+/* Keyboard shortcuts sheet (src/view/header/ShortcutsPanel.tsx), in the header's banner area like
+   the devices panel. Keys left, what they do right; it fits the ~360px docked panel. */
+.shortcuts-heading {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.shortcuts-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 10px;
+  row-gap: 3px;
+}
+.shortcuts-row {
+  display: contents;
+}
+.shortcuts-row dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: baseline;
+}
+.shortcuts-row dt em {
+  color: var(--text-muted);
+}
+.shortcuts-row dd {
+  margin: 0;
+}
+.shortcuts-panel kbd {
+  font: inherit;
+  font-size: 11px;
+  padding: 0 4px;
+  border: 1px solid var(--card-border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.link-button {
+  all: unset;
+  color: var(--drop-indicator);
+  cursor: pointer;
+}
+.link-button:hover,
+.link-button:focus-visible {
+  text-decoration: underline;
+}

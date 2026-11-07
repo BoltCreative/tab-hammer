@@ -74,8 +74,6 @@ test('Current tabs shows one row per window, follows the active tab live, yields
   await expect(tabRowsOf(view, a.windowId)).toHaveCount(3);
 
   const toggle = view.getByRole('button', { name: 'Current tabs' });
-  // Recenter is a docked panel's only: the standalone window can't be sure which window is current.
-  await expect(view.getByRole('button', { name: 'Go to the current window' })).toHaveCount(0);
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
@@ -145,12 +143,14 @@ test('recenter brings the current window’s active tab to the middle of the lis
   context,
   sw,
 }) => {
-  // Windows before and after a long one whose active tab is 80 rows down.
+  // Windows before and after a long one whose active tab is 12 rows into it: just enough rows that
+  // the tab is off screen whether the list is scrolled to the top or the bottom (checked below).
+  // Every tab loads a page, a renderer each, which CI's two-core runners pay for, so keep it small.
   for (let i = 0; i < 4; i++) await makeWindow(sw, [`Before ${i}a`, `Before ${i}b`]);
-  const titles = Array.from({ length: 100 }, (_, i) => `Long ${i}`);
-  const long = await makeWindow(sw, titles, 80);
+  const titles = Array.from({ length: 24 }, (_, i) => `Long ${i}`);
+  const long = await makeWindow(sw, titles, 12);
   for (let i = 0; i < 4; i++) await makeWindow(sw, [`After ${i}a`, `After ${i}b`]);
-  const targetId = long.tabIds[80]!;
+  const targetId = long.tabIds[12]!;
 
   // A docked panel's page, opened as a background tab in the long window so that window's active
   // tab stays put: its current window is that one.
@@ -171,6 +171,11 @@ test('recenter brings the current window’s active tab to the middle of the lis
   // The panel opens recentered on it.
   await expect(row).toHaveAttribute('data-cursor', 'true');
   await expect.poll(centered).toBe(true);
+  // The list is long enough that the tab is off screen at either end.
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await expect(row).not.toBeInViewport();
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(row).not.toBeInViewport();
 
   // Scrolled away, with its window collapsed: the button expands it and comes back.
   await liveRow(panel, 'window', long.windowId).locator('.twisty').click();
@@ -198,6 +203,64 @@ test('recenter brings the current window’s active tab to the middle of the lis
   await panel.getByRole('button', { name: 'Current tabs' }).click();
   await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
   await panel.getByRole('button', { name: 'Go to the current window' }).click();
+  await expect(row).toHaveAttribute('data-cursor', 'true');
+  await expect.poll(centered).toBe(true);
+});
+
+test('in the standalone window, recenter goes to the last-focused window’s active tab', async ({
+  sw,
+  view,
+}) => {
+  for (let i = 0; i < 4; i++) await makeWindow(sw, [`Before ${i}a`, `Before ${i}b`]);
+  const long = await makeWindow(
+    sw,
+    Array.from({ length: 16 }, (_, i) => `Long ${i}`),
+    8,
+  );
+  for (let i = 0; i < 4; i++) await makeWindow(sw, [`After ${i}a`, `After ${i}b`]);
+  const targetId = long.tabIds[8]!;
+  // Headless Chromium sends no focus events on macOS (and focuses one of its own choosing on
+  // Linux), so the hook stands in for the user focusing the long window.
+  await sw.evaluate(
+    (id) =>
+      (
+        globalThis as unknown as { tabHammer: { focusWindow: (id: number) => Promise<void> } }
+      ).tabHammer.focusWindow(id),
+    long.windowId,
+  );
+  // A short view, so a modest list scrolls (fewer tabs: see the docked test above).
+  await view.setViewportSize({ width: 420, height: 400 });
+  const card = view.locator(`section:has(> [data-window-id="${long.windowId}"])`);
+  await expect(card).toHaveClass(/\bfocused\b/);
+
+  const list = view.locator('main.outline');
+  const row = liveRow(view, 'tab', targetId);
+  const centered = async () => {
+    const l = (await list.boundingBox())!;
+    const r = (await row.boundingBox())!;
+    return Math.abs(r.y + r.height / 2 - (l.y + l.height / 2)) < 20;
+  };
+
+  // The list is long enough that the tab is off screen at either end.
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await expect(row).not.toBeInViewport();
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(row).not.toBeInViewport();
+
+  // Scrolled away, with its window collapsed: the button expands it and comes back.
+  await liveRow(view, 'window', long.windowId).locator('.twisty').click();
+  await expect(row).toHaveCount(0);
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await view.getByRole('button', { name: 'Go to the current window' }).click();
+  await expect(row).toHaveAttribute('data-cursor', 'true');
+  await expect.poll(centered).toBe(true);
+
+  // Scrolled to the top: ⌘\ (Ctrl+\ off a Mac) does the same.
+  await view.keyboard.press('ArrowDown'); // the cursor elsewhere first
+  await expect(row).not.toHaveAttribute('data-cursor', 'true');
+  await list.evaluate((el) => (el.scrollTop = 0));
+  await expect(row).not.toBeInViewport();
+  await view.keyboard.press('ControlOrMeta+Backslash');
   await expect(row).toHaveAttribute('data-cursor', 'true');
   await expect.poll(centered).toBe(true);
 });

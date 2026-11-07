@@ -1,4 +1,5 @@
 import type { WindowNode } from './types';
+import { shortcutOf, type KeyPress, type ShortcutId } from './shortcuts';
 import { isGroupCollapsed, type CollapseState } from './visibleRows';
 
 /** One visible outline row, with what the ARIA tree pattern and keyboard navigation need. */
@@ -121,31 +122,7 @@ export function trashRows(
   return out;
 }
 
-/**
- * A key press, reduced to what the outline's keys care about. `mod` is the platform's command key
- * (⌘ on a Mac, Ctrl elsewhere); `otherMod` is the one that isn't (Ctrl on a Mac, the Windows key
- * elsewhere), which no outline key uses.
- */
-export interface KeyPress {
-  key: string;
-  shift: boolean;
-  alt: boolean;
-  mod: boolean;
-  otherMod: boolean;
-}
-
-export function keyPressOf(
-  e: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'metaKey' | 'ctrlKey'>,
-  mac: boolean,
-): KeyPress {
-  return {
-    key: e.key,
-    shift: e.shiftKey,
-    alt: e.altKey,
-    mod: mac ? e.metaKey : e.ctrlKey,
-    otherMod: mac ? e.ctrlKey : e.metaKey,
-  };
-}
+export { keyPressOf, type KeyPress } from './shortcuts';
 
 export type NavIntent =
   | { type: 'move'; key: string; extend: boolean } // put the cursor on key (and select it)
@@ -156,56 +133,57 @@ export type NavIntent =
 
 /**
  * What a key press means to the outline, command-palette style: focus stays in the search box,
- * so every text-editing key is left to it and only these drive the list. ↑/↓ move the cursor
- * (⇧ extends the selection), ⌥↑/↓ move the cursor's window, ⌘↓ opens (expands a collapsed row,
- * steps into an open one's children, activates a tab), ⌘↑ collapses or steps out to the parent,
- * ⌘⌫ trashes, and Enter opens the cursor row. Null for any other key, or when there's nothing to do.
+ * so every text-editing key is left to it and only these drive the list (each one a row of
+ * `SHORTCUTS`). ↑/↓ move the cursor (⇧ extends the selection), ⌥↑/↓ move the cursor's window, ⌘↓
+ * opens (expands a collapsed row, steps into an open one's children, activates a tab), ⌘↑
+ * collapses or steps out to the parent, ⌘⌫ trashes, and Enter opens the cursor row. Null for any
+ * other key, or when there's nothing to do.
  */
 export function navIntent(
   rows: readonly OutlineRow[],
   cursor: string | null,
   p: KeyPress,
 ): NavIntent | null {
-  if (rows.length === 0 || p.otherMod) return null;
+  if (rows.length === 0) return null;
+  const id = shortcutOf(p);
   const i = cursor === null ? -1 : rows.findIndex((r) => r.key === cursor);
   const row = i === -1 ? undefined : rows[i]!;
-  const move = (j: number, extend = p.shift): NavIntent => {
+  const move = (j: number, extend: boolean): NavIntent => {
     const to = rows[Math.max(0, Math.min(rows.length - 1, j))]!;
     // The selection never takes in Recently closed's rows.
     return { type: 'move', key: to.key, extend: extend && !to.trash && !row?.trash };
   };
-  const vertical = p.key === 'ArrowDown' || p.key === 'ArrowUp';
   const down = p.key === 'ArrowDown';
 
-  if (vertical && p.alt) {
-    if (p.mod || p.shift || !row || row.trash) return null;
-    return { type: 'moveWindow', key: row.key, delta: down ? 1 : -1 };
-  }
-  if (vertical && p.mod) {
-    if (p.shift || !row) return null;
-    if (down) {
+  switch (id) {
+    case 'moveWindow':
+      return row && !row.trash ? { type: 'moveWindow', key: row.key, delta: down ? 1 : -1 } : null;
+    case 'open':
+      if (!row) return null;
       if (row.expanded === false) return { type: 'toggleExpand', key: row.key };
       if (row.kind === 'tab') return { type: 'activate', key: row.key };
       if (rows[i + 1]?.parent === row.key) return move(i + 1, false);
       return null;
+    case 'up':
+      if (!row) return null;
+      if (row.expanded === true) return { type: 'toggleExpand', key: row.key };
+      if (row.parent === null) return null;
+      return { type: 'move', key: row.parent, extend: false };
+    case 'move':
+    case 'select': {
+      const extend = id === 'select';
+      // No cursor yet (or its row went away): ↓ lands on the first row, ↑ on the last.
+      if (!row) return move(down ? 0 : rows.length - 1, extend);
+      if (down) return i < rows.length - 1 ? move(i + 1, extend) : null;
+      return i > 0 ? move(i - 1, extend) : null;
     }
-    if (row.expanded === true) return { type: 'toggleExpand', key: row.key };
-    if (row.parent === null) return null;
-    return { type: 'move', key: row.parent, extend: false };
+    case 'trash':
+      return row && !row.trash ? { type: 'trash', key: row.key } : null;
+    case 'activate':
+      return row ? { type: 'activate', key: row.key } : null;
+    default:
+      return null;
   }
-  if (vertical) {
-    // No cursor yet (or its row went away): ↓ lands on the first row, ↑ on the last.
-    if (!row) return move(down ? 0 : rows.length - 1);
-    if (down) return i < rows.length - 1 ? move(i + 1) : null;
-    return i > 0 ? move(i - 1) : null;
-  }
-  if (p.key === 'Backspace' && p.mod && !p.alt && !p.shift) {
-    return row && !row.trash ? { type: 'trash', key: row.key } : null;
-  }
-  if (p.key === 'Enter' && !p.mod && !p.alt) {
-    return row ? { type: 'activate', key: row.key } : null;
-  }
-  return null;
 }
 
 /**
@@ -228,12 +206,10 @@ export function typesIntoSearch(e: {
 }
 
 /** The view's own ⌘ shortcuts (Ctrl off a Mac), none of them Chrome's or macOS's. */
-export type ViewShortcut = 'currentTabs' | 'recenter';
+export type ViewShortcut = Extract<ShortcutId, 'currentTabs' | 'recenter' | 'shortcuts'>;
 
-/** ⌘/ toggles Current tabs; ⌘\ recenters on the current window's tab. */
+/** ⌘/ toggles Current tabs, ⌘\ recenters on the current window's tab, ⌘' shows the shortcuts. */
 export function viewShortcut(p: KeyPress): ViewShortcut | null {
-  if (!p.mod || p.alt || p.shift || p.otherMod) return null;
-  if (p.key === '/') return 'currentTabs';
-  if (p.key === '\\') return 'recenter';
-  return null;
+  const id = shortcutOf(p);
+  return id === 'currentTabs' || id === 'recenter' || id === 'shortcuts' ? id : null;
 }
