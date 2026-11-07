@@ -308,6 +308,17 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
   const panel = view.getByTestId('preview-panel');
   await row.hover();
   await expect(panel.locator('.preview-shot')).toHaveCount(1);
+  // The background tab finishing its load schedules another capture of the window's visible page,
+  // which could otherwise land just after the clear: wait until it has loaded and none is due.
+  await expect
+    .poll(() =>
+      sw.evaluate(async (id) => {
+        const loaded = (await chrome.tabs.get(id)).status === 'complete';
+        const hooks = (globalThis as unknown as { tabHammer: TestHooks }).tabHammer;
+        return loaded && !hooks.capturesPending();
+      }, blankId),
+    )
+    .toBe(true);
 
   await runMenuAction(view, 'Clear previews');
   await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
@@ -417,4 +428,58 @@ test('a preview lasts as long as the outline uses its page: closing the tab drop
   await sw.evaluate((id) => chrome.tabs.remove(id), closedTab);
   await expect.poll(() => hasPreview(sw, closed)).toBe(false);
   expect(await hasPreview(sw, hibernated)).toBe(true);
+});
+
+test("a closed window's tabs in Recently closed show their stored previews, by hover or keyboard", async ({
+  context,
+  sw,
+  view,
+}) => {
+  await servePages(context);
+  const first = `${ORIGIN}/first`;
+  const second = `${ORIGIN}/second`;
+  // Each the visible tab of its own window, so the service worker captures it.
+  const windows = await sw.evaluate(
+    async (urls) =>
+      Promise.all(urls.map(async (url) => (await chrome.windows.create({ url }))!.id!)),
+    [first, second],
+  );
+  await expect.poll(() => hasPreview(sw, first)).toBe(true);
+  await expect.poll(() => hasPreview(sw, second)).toBe(true);
+  // Both tabs end up in one window, which the user then closes by hand: it goes to the trash.
+  await sw.evaluate(async ([a, b]) => {
+    const [tab] = await chrome.tabs.query({ windowId: b });
+    await chrome.tabs.move(tab!.id!, { windowId: a!, index: -1 });
+  }, windows);
+  await expect
+    .poll(async () =>
+      (await readOutline(sw)).windows
+        .find((w) => w.chromeWindowId === windows[0])
+        ?.tabs.map((t) => t.url),
+    )
+    .toEqual([first, second]);
+  await sw.evaluate((id) => chrome.windows.remove(id), windows[0]!);
+  await expect
+    .poll(async () => (await readOutline(sw)).windows.filter((w) => w.state === 'trashed').length)
+    .toBe(1);
+
+  const panel = view.getByTestId('preview-panel');
+  const shot = panel.locator('.preview-shot');
+  await view.getByRole('button', { name: /^Recently closed \(1\)/ }).click();
+  await view.getByTestId('trash-entry').getByRole('button', { name: 'Expand' }).click();
+  const tabs = view.locator('.trash-tab');
+  await expect(tabs.locator('.title')).toHaveText(['first', 'second']);
+
+  await tabs.nth(0).hover();
+  await expect(panel).toContainText(first);
+  await expect(shot).toHaveJSProperty('complete', true);
+  expect(await shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(640);
+
+  // The keyboard moves through the closed window's tabs, and the panel follows.
+  await view.getByRole('searchbox').hover();
+  await tabs.nth(0).focus();
+  await view.keyboard.press('ArrowDown');
+  await expect(tabs.nth(1)).toBeFocused();
+  await expect(panel).toContainText(second);
+  await expect(shot).toHaveJSProperty('complete', true);
 });

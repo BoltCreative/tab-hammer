@@ -8,6 +8,7 @@ import {
   renameWindow,
   startFresh,
   trash,
+  untrash,
 } from '../lifecycle';
 import { TRASH_TTL_MS } from '../types';
 import { group, tab, win } from './recs';
@@ -24,7 +25,7 @@ describe('closeWindow', () => {
         }),
       ],
     };
-    const w = closeWindow(o, 'w', NOW).windows[0]!;
+    const w = closeWindow(o, 'w', NOW, { byHand: true }).windows[0]!;
     expect(w).toMatchObject({ state: 'trashed', closedAt: NOW, lastLiveAt: NOW });
     expect(w.chromeWindowId).toBeUndefined();
     expect(w.tabs.map((t) => [t.chromeTabId, t.liveAtClose])).toEqual([
@@ -33,7 +34,7 @@ describe('closeWindow', () => {
     ]);
   });
 
-  it('closing a live window that holds hibernated tabs hibernates it instead', () => {
+  it('closing a live window that holds hibernated tabs trashes it too, each tab marked as it was', () => {
     const o = {
       windows: [
         win('w', {
@@ -44,12 +45,23 @@ describe('closeWindow', () => {
         }),
       ],
     };
-    const w = closeWindow(o, 'w', NOW).windows[0]!;
-    expect(w.state).toBe('hibernated');
-    expect(w.closedAt).toBeUndefined();
+    const w = closeWindow(o, 'w', NOW, { byHand: true }).windows[0]!;
+    expect(w).toMatchObject({ state: 'trashed', closedAt: NOW });
+    expect(w.hibernatedAtClose).toBeUndefined(); // it was live: restoring reopens it
     expect(w.provisional).toBeUndefined();
     expect(w.groups[0]!.chromeGroupId).toBeUndefined();
     expect(w.tabs.map((t) => t.liveAtClose)).toEqual([true, false]);
+  });
+
+  it('a window gone without being closed by hand (its open tabs moved out) keeps its hibernated tabs as a hibernated window', () => {
+    const o = {
+      windows: [
+        win('w', { chromeWindowId: 1, tabs: [tab('a', { chromeTabId: 11 }), tab('b')] }),
+        win('v', { chromeWindowId: 2, tabs: [tab('c', { chromeTabId: 12 })] }),
+      ],
+    };
+    const r = closeWindow(closeWindow(o, 'w', NOW, { byHand: false }), 'v', NOW, { byHand: false });
+    expect(r.windows.map((w) => w.state)).toEqual(['hibernated', 'trashed']);
   });
 
   it('returns untouched windows by reference', () => {
@@ -59,7 +71,7 @@ describe('closeWindow', () => {
         win('w2', { chromeWindowId: 2, tabs: [tab('b', { chromeTabId: 12 })] }),
       ],
     };
-    const r = closeWindow(o, 'w1', NOW);
+    const r = closeWindow(o, 'w1', NOW, { byHand: true });
     expect(r.windows[1]).toBe(o.windows[1]);
   });
 });
@@ -133,6 +145,21 @@ describe('hibernate', () => {
 });
 
 describe('trash', () => {
+  it('a window deleted while hibernated is remembered as hibernated at close; a live one is not', () => {
+    const o = {
+      windows: [
+        win('h', { tabs: [tab('a')] }),
+        win('l', { chromeWindowId: 1, tabs: [tab('b', { chromeTabId: 11 })] }),
+      ],
+    };
+    const [h, l] = trash(o, ['h', 'l'], NOW).outline.windows;
+    expect(h).toMatchObject({ state: 'trashed', hibernatedAtClose: true });
+    expect(l!.state).toBe('trashed');
+    expect(l!.hibernatedAtClose).toBeUndefined();
+    // Out of the trash, the mark goes.
+    expect(untrash({ windows: [h!] }, ['h'], NOW).windows[0]!.hibernatedAtClose).toBeUndefined();
+  });
+
   it('trashing a hibernated tab deletes it; trashing a live tab removes it and closes it', () => {
     const o = {
       windows: [
@@ -238,7 +265,7 @@ describe('rename, delete, expire', () => {
 });
 
 describe('startFresh and openAtShutdown', () => {
-  it('a fresh launch trashes live windows marked open-at-shutdown, and hibernates partly live ones', () => {
+  it('a fresh launch hibernates every live window, marked open-at-shutdown: nothing goes to the trash', () => {
     const o = {
       windows: [
         win('live', { chromeWindowId: 1, tabs: [tab('a', { chromeTabId: 11 })] }),
@@ -252,7 +279,10 @@ describe('startFresh and openAtShutdown', () => {
     };
     const r = startFresh(o, NOW);
     const [live, mixed, user, bin] = r.windows;
-    expect(live).toMatchObject({ state: 'trashed', closedAt: NOW, openAtShutdown: true });
+    // A crash or a quit that Chrome doesn't restore isn't the user closing the window.
+    expect(live).toMatchObject({ state: 'hibernated', openAtShutdown: true, lastLiveAt: NOW });
+    expect(live!.closedAt).toBeUndefined();
+    expect(live!.tabs.map((t) => [t.chromeTabId, t.liveAtClose])).toEqual([[undefined, true]]);
     expect(mixed).toMatchObject({ state: 'hibernated', openAtShutdown: true });
     expect(user).toBe(o.windows[2]);
     expect(bin).toBe(o.windows[3]);
@@ -283,5 +313,29 @@ describe('findRow', () => {
     expect(findRow(o, 'a')!.tab).toBe(o.windows[0]!.tabs[0]);
     expect(findRow(o, 'g')!.group).toBe(o.windows[0]!.groups[0]);
     expect(findRow(o, 'nope')).toBeUndefined();
+  });
+});
+
+describe('untrash', () => {
+  it('brings trashed windows back hibernated, in place, and leaves the rest alone', () => {
+    const o = {
+      windows: [
+        win('t1', { state: 'trashed', closedAt: 5, openAtShutdown: true, tabs: [tab('a')] }),
+        win('h', { tabs: [tab('b')] }),
+        win('t2', { state: 'trashed', closedAt: 6, tabs: [tab('c')] }),
+        win('t3', { state: 'trashed', closedAt: 7, tabs: [tab('d')] }),
+      ],
+    };
+    const r = untrash(o, ['t1', 'h', 't3', 'nope'], NOW);
+    expect(r.windows.map((w) => [w.id, w.state])).toEqual([
+      ['t1', 'hibernated'],
+      ['h', 'hibernated'],
+      ['t2', 'trashed'],
+      ['t3', 'hibernated'],
+    ]);
+    expect(r.windows[0]).toMatchObject({ modifiedAt: NOW, openAtShutdown: true });
+    expect(r.windows[0]!.closedAt).toBeUndefined();
+    expect(r.windows[1]).toBe(o.windows[1]);
+    expect(untrash(o, [], NOW)).toBe(o);
   });
 });

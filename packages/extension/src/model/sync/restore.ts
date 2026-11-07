@@ -1,7 +1,9 @@
 // Bringing windows from a sync file (another computer's, a checkpoint, or this computer's own after
 // its local data was wiped) into this computer's outline. Pure: the caller passes the clock and the
-// ID source. It only ever adds: records already in the outline are never touched.
+// ID source. It only ever adds, or takes a window out of this computer's trash: records already in
+// the outline are otherwise never touched.
 import { matchRestored } from '../outline/applyMatch';
+import { untrash } from '../outline/lifecycle';
 import type { GroupRec, Outline, TabRec, WindowRec } from '../outline/types';
 import type { SyncGroup, SyncTab, SyncWindow } from './export';
 
@@ -25,17 +27,28 @@ function outlineIds(o: Outline): Set<string> {
   return ids;
 }
 
+/** What a restore did: the windows it appended, and the ones it took out of this computer's trash. */
+export interface RestoreResult {
+  outline: Outline;
+  added: string[];
+  untrashed: string[];
+}
+
 /**
  * Every window of `windows` whose ID isn't in `o` is appended, hibernated (or, with `keepTrash`,
- * trashed ones stay trashed). A tab or group whose ID is already taken (it was moved to another
- * window since) gets a fresh ID. Windows without tabs are skipped. Returns the added window IDs.
+ * trashed ones stay trashed). A window the file has open (live or hibernated) that `o` holds in its
+ * trash comes back out of the trash, hibernated, keeping this computer's record. A tab or group
+ * whose ID is already taken (it was moved to another window since) gets a fresh ID. Windows without
+ * tabs are skipped.
  */
 export function restoreWindows(
   o: Outline,
   windows: SyncWindow[],
   { now, newId, keepTrash, relink = false }: RestoreOptions,
-): { outline: Outline; added: string[] } {
+): RestoreResult {
   const taken = outlineIds(o);
+  const localTrash = new Set(o.windows.filter((w) => w.state === 'trashed').map((w) => w.id));
+  const untrashed: string[] = [];
   const fresh = (id: string): string => {
     const next = taken.has(id) ? newId() : id;
     taken.add(next);
@@ -43,8 +56,13 @@ export function restoreWindows(
   };
   const added: WindowRec[] = [];
   for (const w of windows) {
-    if (taken.has(w.id) || w.tabs.length === 0) continue;
     const trashed = w.state === 'trashed';
+    if (localTrash.has(w.id) && !trashed) {
+      localTrash.delete(w.id);
+      untrashed.push(w.id);
+      continue;
+    }
+    if (taken.has(w.id) || w.tabs.length === 0) continue;
     if (trashed && !keepTrash) continue;
     taken.add(w.id);
     const groupIds = new Map<string, string>();
@@ -76,8 +94,13 @@ export function restoreWindows(
     if (wasLive) rec.openAtShutdown = true;
     added.push(rec);
   }
-  if (added.length === 0) return { outline: o, added: [] };
-  return { outline: { windows: [...o.windows, ...added] }, added: added.map((w) => w.id) };
+  const base = untrashed.length === 0 ? o : untrash(o, untrashed, now);
+  if (added.length === 0) return { outline: base, added: [], untrashed };
+  return {
+    outline: { windows: [...base.windows, ...added] },
+    added: added.map((w) => w.id),
+    untrashed,
+  };
 }
 
 /**
@@ -90,9 +113,9 @@ export function selfRestoreWindows(
   o: Outline,
   windows: SyncWindow[],
   { now, newId }: Pick<RestoreOptions, 'now' | 'newId'>,
-): { outline: Outline; added: string[] } {
+): RestoreResult {
   const r = restoreWindows(o, windows, { now, newId, keepTrash: true, relink: true });
   if (r.added.length === 0) return r;
   const live = r.outline.windows.filter((w) => w.state === 'live').map((w) => w.id);
-  return { outline: matchRestored(r.outline, live, now), added: r.added };
+  return { ...r, outline: matchRestored(r.outline, live, now) };
 }

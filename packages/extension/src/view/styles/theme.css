@@ -199,6 +199,34 @@ button.twisty {
 .trash-tab > * {
   opacity: 0.5;
 }
+/* A hovered trash entry's actions take its tab count's place. */
+.trash-entry:hover .count {
+  visibility: hidden;
+}
+/* The section's header: its toggle, then Restore all at the right. */
+.trash-bar {
+  display: flex;
+  align-items: center;
+}
+.trash-bar .trash-header {
+  flex: 1;
+  min-width: 0;
+}
+.trash-restore-all {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.trash-restore-all:hover {
+  background: var(--row-hover);
+  color: var(--text-strong);
+}
 /* The hover toolbar: icon buttons overlaid at the row's right edge, over the row's own background
    (inherited, so hover, selection, and the active tint all match), without changing its layout. */
 .row-toolbar {
@@ -318,7 +346,8 @@ button.twisty {
   padding-top: 4px;
 }
 .trash .window-header {
-  position: static;
+  /* Not sticky like the outline's bars, but still the hover toolbar's box (see .row). */
+  position: relative;
   height: 18px;
   margin: 0;
   padding: 0 4px;

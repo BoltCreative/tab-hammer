@@ -70,7 +70,7 @@ function install(
         });
         state.windows = r.outline.windows.map(toSyncWindow);
         engine.noteChange();
-        return r.added.length;
+        return { added: r.added.length, untrashed: r.untrashed.length };
       },
       wasFresh: async () => opts.fresh ?? false,
     },
@@ -292,8 +292,8 @@ describe('sync engine', () => {
     const b = install('b', backend, clock, { windows: [swin('mine'), swin('w2')] });
     await b.engine.start();
     await b.engine.sync();
-    const added = await b.engine.restoreAll({ kind: 'computer', installId: 'old' });
-    expect(added).toBe(1);
+    const counts = await b.engine.restoreAll({ kind: 'computer', installId: 'old' });
+    expect(counts).toEqual({ added: 1, untrashed: 0 });
     expect(b.state.windows.map((w) => [w.id, w.state])).toEqual([
       ['mine', 'hibernated'],
       ['w2', 'hibernated'],

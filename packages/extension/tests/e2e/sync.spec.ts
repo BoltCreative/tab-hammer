@@ -233,21 +233,22 @@ test("Restore all brings A's windows into B, hibernated, and Retire drops A's fi
   });
 });
 
-test('a checkpoint view restores windows deleted since', async () => {
+test('a checkpoint view restores windows deleted since, and takes trashed ones back out of the trash', async () => {
   await withTwoInstalls(async (a, _b, _drive, pages) => {
     const w1 = await hibernatedWindow(a.sw, pages, ['Keep1']);
     const w2 = await hibernatedWindow(a.sw, pages, ['Keep2']);
     await hooks(a.sw).syncNow();
 
-    // Delete both for good: a push that drops most windows checkpoints the last pushed outline.
-    for (const id of [w1.id, w2.id]) {
-      await outlineCommand(a.sw, { cmd: 'trash', ids: [id] });
-      await outlineCommand(a.sw, { cmd: 'deleteForever', windowId: id });
-    }
+    // Delete one for good and trash the other: a push that drops most windows checkpoints the last
+    // pushed outline.
+    await outlineCommand(a.sw, { cmd: 'trash', ids: [w1.id, w2.id] });
+    await outlineCommand(a.sw, { cmd: 'deleteForever', windowId: w1.id });
     await hooks(a.sw).syncNow();
-    expect((await readOutline(a.sw)).windows.some((w) => w.id === w1.id || w.id === w2.id)).toBe(
-      false,
-    );
+    expect(
+      (await readOutline(a.sw)).windows
+        .filter((w) => w.id === w1.id || w.id === w2.id)
+        .map((w) => w.state),
+    ).toEqual(['trashed']);
 
     const view = await a.view();
     await runMenuAction(view, 'Other devices…');
@@ -260,8 +261,11 @@ test('a checkpoint view restores windows deleted since', async () => {
     await expect(view.getByTestId('remote-banner')).toContainText('Checkpoint of');
     await expect(view.getByTestId('remote-tab')).toContainText(['Keep1', 'Keep2']);
     await view.getByRole('button', { name: 'Restore all' }).click();
-    await expect(view.getByTestId('remote-banner')).toContainText('Restored 2 windows');
+    await expect(view.getByTestId('remote-banner')).toContainText(
+      "Restored 2 windows, hibernated: 1 at the bottom of this computer's outline, 1 from Recently closed",
+    );
 
+    // Keep2 comes back in its own place, ahead of Keep1, which is added at the bottom.
     await expect
       .poll(async () =>
         (await readOutline(a.sw)).windows
@@ -269,8 +273,8 @@ test('a checkpoint view restores windows deleted since', async () => {
           .map((w) => [w.state, w.tabs.map((t) => t.title)]),
       )
       .toEqual([
-        ['hibernated', ['Keep1']],
         ['hibernated', ['Keep2']],
+        ['hibernated', ['Keep1']],
       ]);
   });
 });

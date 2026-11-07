@@ -124,14 +124,29 @@ export async function createGroup(
 }
 
 /**
- * Where a reopened window goes. Chrome won't take a maximized or fullscreen state together with
- * bounds, so those reopen in that state on Chrome's choice of screen; a minimized one reopens as a
- * normal window where it was.
+ * Where a reopened window goes: its saved position and size, so it opens on the screen it was on.
+ * A minimized one reopens as a normal window there.
  */
 function placement(b: WindowBounds | undefined): Partial<chrome.windows.CreateData> | undefined {
   if (b === undefined) return undefined;
-  if (b.state === 'maximized' || b.state === 'fullscreen') return { state: b.state };
   return { left: b.left, top: b.top, width: b.width, height: b.height };
+}
+
+/**
+ * After the create: Chrome won't take a maximized or fullscreen state together with bounds, so a
+ * window that was in one is put back into it now that it's on its own screen. A window Chrome
+ * placed somewhere other than asked is moved back. Neither failing stops the open.
+ */
+async function settlePlacement(w: chrome.windows.Window, b: WindowBounds): Promise<void> {
+  if (w.id === undefined) return;
+  if (b.state === 'maximized' || b.state === 'fullscreen') {
+    await chrome.windows.update(w.id, { state: b.state }).catch(() => undefined);
+    return;
+  }
+  const at = { left: b.left, top: b.top, width: b.width, height: b.height };
+  if (w.left === at.left && w.top === at.top && w.width === at.width && w.height === at.height)
+    return;
+  await chrome.windows.update(w.id, at).catch(() => undefined);
 }
 
 /**
@@ -148,9 +163,12 @@ export async function openPlanned(plan: OpenPlan): Promise<Opened> {
     const base: chrome.windows.CreateData = { url: first!.url, focused: true };
     const placed = placement(plan.bounds);
     // Bounds Chrome rejects (off every screen since a monitor change, say) don't stop the open.
-    const w = placed
-      ? await chrome.windows.create({ ...base, ...placed }).catch(() => chrome.windows.create(base))
-      : await chrome.windows.create(base);
+    let w: chrome.windows.Window | undefined;
+    if (placed && plan.bounds) {
+      w = await chrome.windows.create({ ...base, ...placed }).catch(() => undefined);
+      if (w) await settlePlacement(w, plan.bounds);
+      else w = await chrome.windows.create(base);
+    } else w = await chrome.windows.create(base);
     const firstTabId = w?.tabs?.[0]?.id;
     if (w?.id === undefined || firstTabId === undefined) throw new Error('window create failed');
     chromeWindowId = w.id;

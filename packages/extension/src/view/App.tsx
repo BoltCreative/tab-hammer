@@ -111,9 +111,11 @@ export function App() {
     if (key.startsWith('t:')) showPreview(key);
   };
   const previewTab = useMemo(() => {
-    const node = previewKey === null ? undefined : findNode(tree, previewKey);
+    // A tab of the outline, or of a window in Recently closed.
+    const node =
+      previewKey === null ? undefined : (findNode(tree, previewKey) ?? findNode(trash, previewKey));
     return node?.kind === 'tab' ? node : undefined;
-  }, [tree, previewKey]);
+  }, [tree, trash, previewKey]);
   const [previewEpoch, setPreviewEpoch] = useState(0);
   // Previews were cleared or refreshed: the panel looks its tab's preview up again.
   const bumpPreviewEpoch = useCallback(() => setPreviewEpoch((n) => n + 1), []);
@@ -415,6 +417,9 @@ export function App() {
           <RecentlyClosed
             entries={trash}
             restore={commands.open}
+            restoreAll={(ids) => send({ cmd: 'openAll', ids })}
+            hover={hover}
+            showPreview={showPreview}
             deleteForever={commands.deleteForever}
           />
         )}

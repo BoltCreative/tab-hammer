@@ -67,11 +67,15 @@ export function detach(w: WindowRec, now: number): WindowRec {
   return next;
 }
 
-/** Hibernated if it holds any hibernated tab, else trashed. */
-function closed(w: WindowRec, now: number): WindowRec {
-  const keepsTabs = w.tabs.some((t) => !isLive(t));
+/**
+ * The window went from Chrome. Closed by hand: trashed, hibernated tabs included; each tab keeps
+ * whether it was live (`liveAtClose`), so restoring it reopens the live ones and leaves the rest
+ * hibernated. Gone some other way (its last open tabs moved to another window, or a close nobody
+ * saw): hibernated if it holds a hibernated tab, so nothing the user didn't close goes to the trash.
+ */
+function closed(w: WindowRec, now: number, byHand: boolean): WindowRec {
   const next = detach(w, now);
-  if (keepsTabs) return { ...next, state: 'hibernated' };
+  if (!byHand && w.tabs.some((t) => !isLive(t))) return { ...next, state: 'hibernated' };
   return { ...next, state: 'trashed', closedAt: now };
 }
 
@@ -93,8 +97,16 @@ function mapWindows(o: Outline, fn: (w: WindowRec) => WindowRec | undefined): Ou
   return changed ? { windows } : o;
 }
 
-export function closeWindow(o: Outline, windowId: string, now: number): Outline {
-  return mapWindows(o, (w) => (w.id === windowId && w.state === 'live' ? closed(w, now) : w));
+/** `byHand`: the user closed it in Chrome (its tabs went with isWindowClosing). See closed(). */
+export function closeWindow(
+  o: Outline,
+  windowId: string,
+  now: number,
+  { byHand }: { byHand: boolean },
+): Outline {
+  return mapWindows(o, (w) =>
+    w.id === windowId && w.state === 'live' ? closed(w, now, byHand) : w,
+  );
 }
 
 export function hibernate(o: Outline, ids: string[], now: number): OpResult {
@@ -134,7 +146,13 @@ export function trash(o: Outline, ids: string[], now: number): OpResult {
         effects.closeWindows.push(w.chromeWindowId!);
         return { ...clearShutdown(detach(w, now)), state: 'trashed', closedAt: now };
       }
-      return { ...clearShutdown(w), state: 'trashed', closedAt: now, modifiedAt: now };
+      return {
+        ...clearShutdown(w),
+        state: 'trashed',
+        closedAt: now,
+        modifiedAt: now,
+        hibernatedAtClose: true,
+      };
     }
     const removed = new Set(
       w.tabs
@@ -186,6 +204,21 @@ export function deleteWindow(o: Outline, windowId: string): Outline {
   return mapWindows(o, (w) => (w.id === windowId ? undefined : w));
 }
 
+/**
+ * Takes the given trashed windows out of the trash, hibernated, where they sit in the outline.
+ * Nothing opens in Chrome. Other windows, and IDs that aren't trashed windows, are left alone.
+ */
+export function untrash(o: Outline, ids: string[], now: number): Outline {
+  const selected = new Set(ids);
+  return mapWindows(o, (w) => {
+    if (w.state !== 'trashed' || !selected.has(w.id)) return w;
+    const next: WindowRec = { ...w, state: 'hibernated', modifiedAt: now };
+    delete next.closedAt;
+    delete next.hibernatedAtClose;
+    return next;
+  });
+}
+
 export function expireTrash(o: Outline, now: number): Outline {
   return mapWindows(o, (w) =>
     w.state === 'trashed' && w.closedAt !== undefined && now - w.closedAt > TRASH_TTL_MS
@@ -194,9 +227,14 @@ export function expireTrash(o: Outline, now: number): Outline {
   );
 }
 
-/** Fresh browser launch: every live window closes, remembered as open at shutdown. */
+/**
+ * Fresh browser launch: every live window stops being live and is kept hibernated, remembered as
+ * open at shutdown. Never trashed: the browser quitting, crashing, or being killed isn't the user
+ * closing a window, and Chrome may not restore any of them (no "Continue where you left off", or a
+ * declined "Restore pages?"). Each one Chrome does restore is re-linked to its row (applyMatch).
+ */
 export function startFresh(o: Outline, now: number): Outline {
   return mapWindows(o, (w) =>
-    w.state === 'live' ? { ...closed(w, now), openAtShutdown: true } : w,
+    w.state === 'live' ? { ...detach(w, now), state: 'hibernated', openAtShutdown: true } : w,
   );
 }

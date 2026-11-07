@@ -2,6 +2,12 @@
 import type { SyncWindow } from '../model/sync/export';
 import type { ComputerEntry, DeviceEntry } from '../model/sync/devices';
 
+/** What Restore all did: windows it added, and windows it took out of this computer's trash. */
+export interface RestoreCounts {
+  added: number;
+  untrashed: number;
+}
+
 export const SYNC_PORT = 'tabHammer.sync';
 export const SYNC_COMMAND = 'tabHammer.syncCommand';
 

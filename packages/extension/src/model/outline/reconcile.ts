@@ -272,11 +272,15 @@ export function reconcile(o: Outline, input: ReconcileInput): ReconcileResult {
     return stampIfChanged(w, remapped, referenced(kept, remapped));
   }
 
-  /** Rule 2: Chrome closed the window without us seeing it. */
+  /**
+   * Rule 2: Chrome closed the window before its onRemoved was handled. Closed by hand if Chrome
+   * removed its tabs as the window closed (a focus change can reconcile first); otherwise unknown.
+   */
   function missedClose(w: WindowRec): WindowRec | undefined {
     const rest = withoutMoved(w, undefined);
     if (rest.tabs.length === 0) return undefined; // every tab moved to another window
-    return closeWindow({ windows: [rest] }, rest.id, now).windows[0];
+    const byHand = closingWindowIds.has(w.chromeWindowId!);
+    return closeWindow({ windows: [rest] }, rest.id, now, { byHand }).windows[0];
   }
 
   /** `w` with the bounds Chrome reports for it. Machine-local, so modifiedAt stays. */

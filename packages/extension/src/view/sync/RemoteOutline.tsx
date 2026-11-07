@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type KeyboardEvent, type React
 import type { SyncGroup, SyncTab, SyncWindow } from '../../model/sync/export';
 import type {
   RemoteOutline as Remote,
+  RestoreCounts,
   SyncPickerState,
   SyncSource,
 } from '../../shared/syncMessages';
@@ -38,6 +39,16 @@ const OpenHereIcon = (
 );
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
+
+/** What Restore all did, in the user's words. */
+function restoreText({ added, untrashed }: RestoreCounts): string {
+  if (added === 0 && untrashed === 0) return 'This computer already has every window';
+  const bottom = "at the bottom of this computer's outline";
+  if (untrashed === 0) return `Restored ${plural(added, 'window')}, hibernated, ${bottom}`;
+  if (added === 0)
+    return `Restored ${plural(untrashed, 'window')} from Recently closed, hibernated`;
+  return `Restored ${plural(added + untrashed, 'window')}, hibernated: ${added} ${bottom}, ${untrashed} from Recently closed`;
+}
 
 /** Something to show in the banner: a result, a question, or an error. */
 type Notice =
@@ -121,11 +132,9 @@ export function useRemoteOutline({ source, state, onBack }: Props): {
     });
   const restoreAll = () =>
     act(async () => {
-      const added = await sendSyncCommand<number>({ cmd: 'restoreAll', source });
-      const text =
-        added === 0
-          ? 'This computer already has every window'
-          : `Restored ${plural(added, 'window')}, hibernated, at the bottom of this computer's outline`;
+      const counts = await sendSyncCommand<RestoreCounts>({ cmd: 'restoreAll', source });
+      const text = restoreText(counts);
+      const added = counts.added;
       // Taking over a replaced computer: offer to retire its file.
       if (source.kind === 'computer' && added > 0)
         return { kind: 'retire', text, installId: source.installId };

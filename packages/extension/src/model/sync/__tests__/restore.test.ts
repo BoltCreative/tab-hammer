@@ -38,9 +38,31 @@ describe('restoreWindows', () => {
     expect(r.outline.windows[0]).toBe(a);
   });
 
-  it('skips a window present only in the local trash', () => {
-    const local: Outline = { windows: [win('a', { state: 'trashed', closedAt: 1 })] };
-    expect(restoreWindows(local, [swin('a')], opts()).added).toEqual([]);
+  it('brings a window that is in the local trash back out, hibernated, in its own place', () => {
+    const local: Outline = {
+      windows: [
+        win('a', { state: 'trashed', closedAt: 1, name: 'mine', tabs: [tab('a1'), tab('a2')] }),
+        win('b', { tabs: [tab('b1')] }),
+      ],
+    };
+    // The local record is kept (it's this computer's latest), only taken out of the trash.
+    const r = restoreWindows(local, [swin('a', { name: 'theirs' }), swin('c')], opts());
+    expect(r.added).toEqual(['c']);
+    expect(r.untrashed).toEqual(['a']);
+    const a = r.outline.windows[0]!;
+    expect(a).toMatchObject({ id: 'a', state: 'hibernated', name: 'mine', modifiedAt: 50 });
+    expect(a.closedAt).toBeUndefined();
+    expect(a.tabs.map((t) => t.id)).toEqual(['a1', 'a2']);
+    expect(r.outline.windows.map((w) => w.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('leaves a locally trashed window in the trash when the file has it trashed too', () => {
+    const local: Outline = {
+      windows: [win('a', { state: 'trashed', closedAt: 1, tabs: [tab('a1')] })],
+    };
+    const r = restoreWindows(local, [swin('a', { state: 'trashed', closedAt: 1 })], opts());
+    expect(r).toMatchObject({ added: [], untrashed: [] });
+    expect(r.outline).toBe(local);
   });
 
   it('leaves the file trash out of Restore all', () => {

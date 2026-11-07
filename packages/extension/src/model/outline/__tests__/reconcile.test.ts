@@ -212,6 +212,17 @@ describe('reconcile', () => {
     expect(w2!.groups.map((x) => x.id)).toEqual(['G']);
   });
 
+  it('a window Chrome reported closing and has gone is trashed, hibernated tabs and all', () => {
+    const o = { windows: [win('w', { chromeWindowId: 1, tabs: [live('a', 11), tab('h')] })] };
+    const r = reconcile(o, input(snap({ windows: {} }), [1]));
+    const w = r.outline.windows[0]!;
+    expect(w.state).toBe('trashed');
+    expect(w.tabs.map((x) => [x.id, x.liveAtClose])).toEqual([
+      ['a', true],
+      ['h', false],
+    ]);
+  });
+
   it('a missed close of a window holding hibernated tabs hibernates it', () => {
     const o = { windows: [win('w', { chromeWindowId: 1, tabs: [live('a', 11), tab('h')] })] };
     const w = reconcile(o, input(snap({ windows: {} }))).outline.windows[0]!;
