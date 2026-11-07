@@ -212,11 +212,11 @@ describe('reconcile', () => {
     expect(w2!.groups.map((x) => x.id)).toEqual(['G']);
   });
 
-  it('a missed close of a window holding hibernated tabs hibernates it', () => {
+  it('a missed close of a window holding hibernated tabs trashes it, each tab marked as it was', () => {
     const o = { windows: [win('w', { chromeWindowId: 1, tabs: [live('a', 11), tab('h')] })] };
     const w = reconcile(o, input(snap({ windows: {} }))).outline.windows[0]!;
-    expect(w.state).toBe('hibernated');
-    expect(w.closedAt).toBeUndefined();
+    expect(w.state).toBe('trashed');
+    expect(w.closedAt).toBeDefined();
     expect(w.tabs.map((x) => [x.id, x.liveAtClose])).toEqual([
       ['a', true],
       ['h', false],

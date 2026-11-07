@@ -34,7 +34,7 @@ describe('closeWindow', () => {
     ]);
   });
 
-  it('closing a live window that holds hibernated tabs hibernates it instead', () => {
+  it('closing a live window that holds hibernated tabs trashes it too, each tab marked as it was', () => {
     const o = {
       windows: [
         win('w', {
@@ -46,8 +46,8 @@ describe('closeWindow', () => {
       ],
     };
     const w = closeWindow(o, 'w', NOW).windows[0]!;
-    expect(w.state).toBe('hibernated');
-    expect(w.closedAt).toBeUndefined();
+    expect(w).toMatchObject({ state: 'trashed', closedAt: NOW });
+    expect(w.hibernatedAtClose).toBeUndefined(); // it was live: restoring reopens it
     expect(w.provisional).toBeUndefined();
     expect(w.groups[0]!.chromeGroupId).toBeUndefined();
     expect(w.tabs.map((t) => t.liveAtClose)).toEqual([true, false]);

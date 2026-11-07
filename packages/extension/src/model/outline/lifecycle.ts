@@ -67,12 +67,12 @@ export function detach(w: WindowRec, now: number): WindowRec {
   return next;
 }
 
-/** Hibernated if it holds any hibernated tab, else trashed. */
+/**
+ * Closed by hand in Chrome: trashed, hibernated tabs included. Each tab keeps whether it was live
+ * (`liveAtClose`), so restoring it reopens the live ones and leaves the rest hibernated.
+ */
 function closed(w: WindowRec, now: number): WindowRec {
-  const keepsTabs = w.tabs.some((t) => !isLive(t));
-  const next = detach(w, now);
-  if (keepsTabs) return { ...next, state: 'hibernated' };
-  return { ...next, state: 'trashed', closedAt: now };
+  return { ...detach(w, now), state: 'trashed', closedAt: now };
 }
 
 export function clearShutdown(w: WindowRec): WindowRec {
