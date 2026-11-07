@@ -24,6 +24,8 @@ export interface CaptureScheduler<R = unknown> {
    * Pair it with trigger() to capture a window on demand through the debounce and rate limit.
    */
   nextCapture(windowId: number): Promise<R | undefined>;
+  /** A capture is waiting out its debounce or the rate limit, or running (a test hook reads it). */
+  pending(): boolean;
 }
 
 export function createCaptureScheduler<R = unknown>(
@@ -85,5 +87,6 @@ export function createCaptureScheduler<R = unknown>(
         waiters.set(windowId, [...(waiters.get(windowId) ?? []), resolve]);
       });
     },
+    pending: () => debounces.size > 0 || queue.length > 0 || running || waiting,
   };
 }

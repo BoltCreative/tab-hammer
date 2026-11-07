@@ -205,6 +205,9 @@ async function clearAll(): Promise<void> {
 
 const quietly = (p: Promise<unknown>) => void p.catch(() => {});
 
+/** A window capture is due or running (test hook: wait it out before asserting on the store). */
+export const capturesPending = (): boolean => scheduler.pending();
+
 /** Registers the capture listeners. Must run synchronously at service worker top level. */
 export function registerPreviewCapture(): void {
   // Incognito tabs are filtered here so they don't spend the capture rate budget; captureWindow

@@ -5,7 +5,7 @@ import { connectBridge } from './bridge';
 import { registerDock } from './dock';
 import { registerOutline } from './outline/outlineOwner';
 import { OUTLINE_SCHEMA_VERSION } from './outline/outlineStore';
-import { registerPreviewCapture, viewWindows } from './previews';
+import { capturesPending, registerPreviewCapture, viewWindows } from './previews';
 import { registerSync } from './sync/registerSync';
 import { createPreviewPruner } from './previewPrune';
 import { prunePreviews } from '../shared/previewStore';
@@ -87,12 +87,14 @@ chrome.runtime.onInstalled.addListener(() => void ensureViewWindow(viewWindowDep
 connectBridge();
 
 // Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and
-// waits on hasPreview for a background capture to land in the store. readOutline returns the
+// waits on hasPreview for a background capture to land in the store (and on capturesPending for
+// none to be due). readOutline returns the
 // worker's full in-memory records (Chrome IDs included) once its queued work is done. useTestSync,
 // syncNow, and syncState drive the sync engine against a test-served fake Drive.
 export interface TestHooks {
   openOrFocus: () => Promise<void>;
   hasPreview: (url: string) => Promise<boolean>;
+  capturesPending: () => boolean;
   readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>;
   outlineCommand: (c: OutlineCommand) => Promise<void>;
   useTestSync: (opts: { apiBase: string; token: string }) => Promise<void>;
@@ -104,6 +106,7 @@ export interface TestHooks {
 (globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
   openOrFocus,
   hasPreview: async (url) => (await getPreview(url)) !== undefined,
+  capturesPending,
   readOutline: async () => {
     await outline.idle();
     return { schemaVersion: OUTLINE_SCHEMA_VERSION, windows: outline.outline().windows };

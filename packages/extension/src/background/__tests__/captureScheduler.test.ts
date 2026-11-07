@@ -20,6 +20,19 @@ function setup(capture?: (windowId: number) => Promise<unknown>) {
 }
 
 describe('createCaptureScheduler', () => {
+  it('reports a capture pending from its trigger until the capture has finished', async () => {
+    let finish!: () => void;
+    const { scheduler } = setup(() => new Promise<void>((r) => (finish = r)));
+    expect(scheduler.pending()).toBe(false);
+    scheduler.trigger(1);
+    expect(scheduler.pending()).toBe(true); // debouncing
+    await vi.advanceTimersByTimeAsync(600);
+    expect(scheduler.pending()).toBe(true); // running
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(scheduler.pending()).toBe(false);
+  });
+
   it('captures once, debounceMs after the last of a burst of triggers for a window', async () => {
     const { scheduler, starts } = setup();
     const t0 = Date.now();

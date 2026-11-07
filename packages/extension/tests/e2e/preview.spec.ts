@@ -308,6 +308,17 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
   const panel = view.getByTestId('preview-panel');
   await row.hover();
   await expect(panel.locator('.preview-shot')).toHaveCount(1);
+  // The background tab finishing its load schedules another capture of the window's visible page,
+  // which could otherwise land just after the clear: wait until it has loaded and none is due.
+  await expect
+    .poll(() =>
+      sw.evaluate(async (id) => {
+        const loaded = (await chrome.tabs.get(id)).status === 'complete';
+        const hooks = (globalThis as unknown as { tabHammer: TestHooks }).tabHammer;
+        return loaded && !hooks.capturesPending();
+      }, blankId),
+    )
+    .toBe(true);
 
   await runMenuAction(view, 'Clear previews');
   await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
