@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import type { TabNode, WindowNode } from '../../model/types';
 import { faviconUrl } from '../chrome/favicon';
+import type { HoverHandlers } from '../preview/usePreviewTarget';
 import { RowToolbar, TrashIcon, RestoreIcon, type RowAction } from './RowToolbar';
 
 interface Props {
@@ -8,14 +9,40 @@ interface Props {
   restore: (id: string) => void; // opens the window in Chrome, its tabs as they were at close
   restoreAll: (ids: string[]) => void; // brings every entry back to the outline, hibernated
   deleteForever: (id: string) => void;
+  hover: HoverHandlers; // a tab row hovered: the preview panel shows it
+  showPreview: (key: string) => void; // a tab row focused with the keyboard: shown at once
+}
+
+type TabProps = Pick<Props, 'hover' | 'showPreview'>;
+
+/** Arrow keys move focus between a closed window's tab rows (they're not in the outline's Tab order). */
+function moveFocus(e: KeyboardEvent<HTMLElement>, from: HTMLElement | null) {
+  const next =
+    e.key === 'ArrowDown'
+      ? from?.nextElementSibling
+      : e.key === 'ArrowUp'
+        ? from?.previousElementSibling
+        : undefined;
+  if (next === undefined) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (next instanceof HTMLElement && next.classList.contains('trash-tab')) next.focus();
 }
 
 /**
  * The trash: closed windows, newest first, at the bottom of the outline. Plain rows, not outline
- * rows: no selection, keyboard navigation, or drag. Only whole windows come back. Restore all, on
- * the section's own header, brings every one back hibernated, so nothing loads in Chrome.
+ * rows: no selection or drag, and only whole windows come back. A closed window's tabs preview in
+ * the panel like the outline's, on hover or as the arrow keys move through them. Restore all, on
+ * the section's own header, brings every window back hibernated, so nothing loads in Chrome.
  */
-export function RecentlyClosed({ entries, restore, restoreAll, deleteForever }: Props) {
+export function RecentlyClosed({
+  entries,
+  restore,
+  restoreAll,
+  deleteForever,
+  hover,
+  showPreview,
+}: Props) {
   const [open, setOpen] = useState(false);
   if (entries.length === 0) return null;
   return (
@@ -44,7 +71,14 @@ export function RecentlyClosed({ entries, restore, restoreAll, deleteForever }: 
       {open && (
         <div role="list">
           {entries.map((w) => (
-            <TrashEntry key={w.key} win={w} restore={restore} deleteForever={deleteForever} />
+            <TrashEntry
+              key={w.key}
+              win={w}
+              restore={restore}
+              deleteForever={deleteForever}
+              hover={hover}
+              showPreview={showPreview}
+            />
           ))}
         </div>
       )}
@@ -56,7 +90,9 @@ function TrashEntry({
   win,
   restore,
   deleteForever,
-}: { win: WindowNode } & Pick<Props, 'restore' | 'deleteForever'>) {
+  hover,
+  showPreview,
+}: { win: WindowNode } & Pick<Props, 'restore' | 'deleteForever'> & TabProps) {
   const [expanded, setExpanded] = useState(false);
   const actions: RowAction[] = [
     { label: 'Restore', icon: RestoreIcon, onClick: () => restore(win.id) },
@@ -80,6 +116,11 @@ function TrashEntry({
             setExpanded((x) => !x);
           }}
           onDoubleClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            // Down from an expanded window's twisty goes into its tabs.
+            if (e.key !== 'ArrowDown' || !expanded) return;
+            moveFocus(e, e.currentTarget.closest<HTMLElement>('.trash-entry'));
+          }}
         >
           {expanded ? '▾' : '▸'}
         </button>
@@ -89,14 +130,23 @@ function TrashEntry({
         </span>
         <RowToolbar actions={actions} />
       </div>
-      {expanded && tabs.map((t) => <TrashTab key={t.key} tab={t} />)}
+      {expanded &&
+        tabs.map((t) => <TrashTab key={t.key} tab={t} hover={hover} showPreview={showPreview} />)}
     </div>
   );
 }
 
-function TrashTab({ tab }: { tab: TabNode }) {
+function TrashTab({ tab, hover, showPreview }: { tab: TabNode } & TabProps) {
   return (
-    <div className="row tab trash-tab" role="listitem">
+    <div
+      className="row tab trash-tab"
+      role="listitem"
+      tabIndex={-1}
+      onMouseEnter={() => hover.onRowEnter(tab.key)}
+      onMouseLeave={hover.onRowLeave}
+      onFocus={() => showPreview(tab.key)}
+      onKeyDown={(e) => moveFocus(e, e.currentTarget)}
+    >
       {tab.url ? (
         <img className="favicon" src={faviconUrl(tab.url)} alt="" />
       ) : (
