@@ -186,6 +186,20 @@ export function deleteWindow(o: Outline, windowId: string): Outline {
   return mapWindows(o, (w) => (w.id === windowId ? undefined : w));
 }
 
+/**
+ * Takes the given trashed windows out of the trash, hibernated, where they sit in the outline.
+ * Nothing opens in Chrome. Other windows, and IDs that aren't trashed windows, are left alone.
+ */
+export function untrash(o: Outline, ids: string[], now: number): Outline {
+  const selected = new Set(ids);
+  return mapWindows(o, (w) => {
+    if (w.state !== 'trashed' || !selected.has(w.id)) return w;
+    const next: WindowRec = { ...w, state: 'hibernated', modifiedAt: now };
+    delete next.closedAt;
+    return next;
+  });
+}
+
 export function expireTrash(o: Outline, now: number): Outline {
   return mapWindows(o, (w) =>
     w.state === 'trashed' && w.closedAt !== undefined && now - w.closedAt > TRASH_TTL_MS

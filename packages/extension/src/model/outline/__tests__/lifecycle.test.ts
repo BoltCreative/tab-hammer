@@ -8,6 +8,7 @@ import {
   renameWindow,
   startFresh,
   trash,
+  untrash,
 } from '../lifecycle';
 import { TRASH_TTL_MS } from '../types';
 import { group, tab, win } from './recs';
@@ -286,5 +287,29 @@ describe('findRow', () => {
     expect(findRow(o, 'a')!.tab).toBe(o.windows[0]!.tabs[0]);
     expect(findRow(o, 'g')!.group).toBe(o.windows[0]!.groups[0]);
     expect(findRow(o, 'nope')).toBeUndefined();
+  });
+});
+
+describe('untrash', () => {
+  it('brings trashed windows back hibernated, in place, and leaves the rest alone', () => {
+    const o = {
+      windows: [
+        win('t1', { state: 'trashed', closedAt: 5, openAtShutdown: true, tabs: [tab('a')] }),
+        win('h', { tabs: [tab('b')] }),
+        win('t2', { state: 'trashed', closedAt: 6, tabs: [tab('c')] }),
+        win('t3', { state: 'trashed', closedAt: 7, tabs: [tab('d')] }),
+      ],
+    };
+    const r = untrash(o, ['t1', 'h', 't3', 'nope'], NOW);
+    expect(r.windows.map((w) => [w.id, w.state])).toEqual([
+      ['t1', 'hibernated'],
+      ['h', 'hibernated'],
+      ['t2', 'trashed'],
+      ['t3', 'hibernated'],
+    ]);
+    expect(r.windows[0]).toMatchObject({ modifiedAt: NOW, openAtShutdown: true });
+    expect(r.windows[0]!.closedAt).toBeUndefined();
+    expect(r.windows[1]).toBe(o.windows[1]);
+    expect(untrash(o, [], NOW)).toBe(o);
   });
 });

@@ -24,6 +24,7 @@ import { copyForOpen } from '../../model/sync/copy';
 import { toSyncWindow, type SyncWindow } from '../../model/sync/export';
 import { restoreWindows, selfRestoreWindows } from '../../model/sync/restore';
 import { SWAP_KEY } from '../../shared/captureSwap';
+import type { RestoreCounts } from '../../shared/syncMessages';
 import {
   OUTLINE_PORT,
   isOutlineCommandRequest,
@@ -62,10 +63,11 @@ export interface OutlineOwner {
   /** The outline database held nothing when this worker started (a new or wiped profile). */
   wasFresh(): Promise<boolean>;
   /**
-   * Adds the windows the outline lacks, hibernated (see restoreWindows); returns how many. With
-   * `selfRestore`, keeps the file's trash and re-links open windows (see selfRestoreWindows).
+   * Adds the windows the outline lacks, hibernated, and takes the ones in its trash back out (see
+   * restoreWindows); returns how many of each. With `selfRestore`, keeps the file's trash and
+   * re-links open windows (see selfRestoreWindows).
    */
-  restoreWindows(windows: SyncWindow[], selfRestore: boolean): Promise<number>;
+  restoreWindows(windows: SyncWindow[], selfRestore: boolean): Promise<RestoreCounts>;
   /** Opens a copy of another outline's window, group, or tab here, with new IDs. */
   openCopy(window: SyncWindow, rowId: string): Promise<void>;
 }
@@ -521,7 +523,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
           ? selfRestoreWindows(outline, windows, { now, newId })
           : restoreWindows(outline, windows, { now, newId, keepTrash: false });
         await commit(r.outline, live!);
-        return r.added.length;
+        return { added: r.added.length, untrashed: r.untrashed.length };
       }),
     openCopy: (window, rowId) =>
       enqueue(async () => {
