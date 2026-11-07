@@ -32,7 +32,7 @@ import {
 import { draggedTabIds, planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
 import { useCurrentTabsSetting } from './chrome/currentTabsSetting';
-import { dockInto, useHostWindowId } from './chrome/dock';
+import { dockInto, surface, useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -449,7 +449,7 @@ export function App() {
     if (shortcut) {
       e.preventDefault();
       if (shortcut === 'currentTabs') setCurrentTabs(!currentTabs);
-      else recenter();
+      else if (surface === 'panel') recenter();
       return;
     }
     if (e.key === 'Escape' && !press.mod && !press.alt && !press.shift) {
@@ -543,7 +543,9 @@ export function App() {
         matchCount={filtering ? countTabs(shown) : null}
         currentTabs={currentTabs}
         onCurrentTabsChange={setCurrentTabs}
-        onRecenter={() => recenter()}
+        // Docked only: a panel knows its window for sure, while the standalone window's notion of
+        // the current window can be stale (focus is tracked from events), so it doesn't offer it.
+        onRecenter={surface === 'panel' ? () => recenter() : undefined}
         banner={
           <>
             {devicesOpen && (

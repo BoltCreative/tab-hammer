@@ -74,6 +74,8 @@ test('Current tabs shows one row per window, follows the active tab live, yields
   await expect(tabRowsOf(view, a.windowId)).toHaveCount(3);
 
   const toggle = view.getByRole('switch', { name: 'Current tabs' });
+  // Recenter is a docked panel's only: the standalone window can't be sure which window is current.
+  await expect(view.getByRole('button', { name: 'Go to the current window' })).toHaveCount(0);
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');

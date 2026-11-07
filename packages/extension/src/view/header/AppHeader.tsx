@@ -16,7 +16,7 @@ interface Props {
   banner?: ReactNode; // under the permission banner (another device's outline, say)
   currentTabs: boolean; // the Current tabs toggle
   onCurrentTabsChange: (on: boolean) => void;
-  onRecenter: () => void; // scroll to the current window's tab
+  onRecenter?: () => void; // scroll to the current window's tab (docked panels only)
 }
 
 /**
@@ -88,19 +88,21 @@ export function AppHeader({
           </span>
           Current tabs
         </button>
-        <button
-          type="button"
-          className="toolbar-button menu-button recenter-button"
-          aria-label="Go to the current window"
-          title={`Go to the current window's tab (${RECENTER_KEYS})`}
-          onClick={onRecenter}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <circle cx="6" cy="6" r="3.5" fill="none" stroke="currentColor" />
-            <circle cx="6" cy="6" r="1" fill="currentColor" />
-            <path d="M6 0 V2 M6 10 V12 M0 6 H2 M10 6 H12" stroke="currentColor" />
-          </svg>
-        </button>
+        {onRecenter && (
+          <button
+            type="button"
+            className="toolbar-button menu-button recenter-button"
+            aria-label="Go to the current window"
+            title={`Go to the current window's tab (${RECENTER_KEYS})`}
+            onClick={onRecenter}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <circle cx="6" cy="6" r="3.5" fill="none" stroke="currentColor" />
+              <circle cx="6" cy="6" r="1" fill="currentColor" />
+              <path d="M6 0 V2 M6 10 V12 M0 6 H2 M10 6 H12" stroke="currentColor" />
+            </svg>
+          </button>
+        )}
         <DockToggle />
         <button
           ref={button}
