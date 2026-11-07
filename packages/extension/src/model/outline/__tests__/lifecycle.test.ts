@@ -238,7 +238,7 @@ describe('rename, delete, expire', () => {
 });
 
 describe('startFresh and openAtShutdown', () => {
-  it('a fresh launch trashes live windows marked open-at-shutdown, and hibernates partly live ones', () => {
+  it('a fresh launch hibernates every live window, marked open-at-shutdown: nothing goes to the trash', () => {
     const o = {
       windows: [
         win('live', { chromeWindowId: 1, tabs: [tab('a', { chromeTabId: 11 })] }),
@@ -252,7 +252,10 @@ describe('startFresh and openAtShutdown', () => {
     };
     const r = startFresh(o, NOW);
     const [live, mixed, user, bin] = r.windows;
-    expect(live).toMatchObject({ state: 'trashed', closedAt: NOW, openAtShutdown: true });
+    // A crash or a quit that Chrome doesn't restore isn't the user closing the window.
+    expect(live).toMatchObject({ state: 'hibernated', openAtShutdown: true, lastLiveAt: NOW });
+    expect(live!.closedAt).toBeUndefined();
+    expect(live!.tabs.map((t) => [t.chromeTabId, t.liveAtClose])).toEqual([[undefined, true]]);
     expect(mixed).toMatchObject({ state: 'hibernated', openAtShutdown: true });
     expect(user).toBe(o.windows[2]);
     expect(bin).toBe(o.windows[3]);

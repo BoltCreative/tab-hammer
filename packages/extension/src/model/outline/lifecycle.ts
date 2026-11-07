@@ -194,9 +194,14 @@ export function expireTrash(o: Outline, now: number): Outline {
   );
 }
 
-/** Fresh browser launch: every live window closes, remembered as open at shutdown. */
+/**
+ * Fresh browser launch: every live window stops being live and is kept hibernated, remembered as
+ * open at shutdown. Never trashed: the browser quitting, crashing, or being killed isn't the user
+ * closing a window, and Chrome may not restore any of them (no "Continue where you left off", or a
+ * declined "Restore pages?"). Each one Chrome does restore is re-linked to its row (applyMatch).
+ */
 export function startFresh(o: Outline, now: number): Outline {
   return mapWindows(o, (w) =>
-    w.state === 'live' ? { ...closed(w, now), openAtShutdown: true } : w,
+    w.state === 'live' ? { ...detach(w, now), state: 'hibernated', openAtShutdown: true } : w,
   );
 }
