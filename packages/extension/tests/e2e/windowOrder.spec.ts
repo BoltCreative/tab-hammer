@@ -1,9 +1,17 @@
 import type { Locator, Page, Worker } from '@playwright/test';
 import type { WindowRec } from '../../src/model/outline/types';
-import { expect, liveRow, outlineCommand, readOutline, runMenuAction, test } from './fixtures';
+import {
+  expect,
+  liveRow,
+  outlineCommand,
+  readOutline,
+  runMenuAction,
+  synced,
+  test,
+} from './fixtures';
 
 // Three windows, one tab each: Alpha, Bravo, Charlie (in that order in the outline).
-async function threeWindows(sw: Worker) {
+async function threeWindows(sw: Worker, view: Page) {
   const ids = await sw.evaluate(async () => {
     const out: number[] = [];
     for (const title of ['Alpha', 'Bravo', 'Charlie']) {
@@ -12,6 +20,7 @@ async function threeWindows(sw: Worker) {
     }
     return out;
   });
+  await synced(sw, view);
   const recs: WindowRec[] = [];
   for (const id of ids) recs.push(await liveRecord(sw, id));
   return recs;
@@ -67,7 +76,7 @@ test('a window header dropped at another header’s edge reorders; its middle me
   sw,
   view,
 }) => {
-  const [a, b, c] = await threeWindows(sw);
+  const [a, b, c] = await threeWindows(sw, view);
   const ids = [a!.id, b!.id, c!.id];
   await expect.poll(() => viewOrder(view, ids)).toEqual(ids);
   const header = (rec: WindowRec) => liveRow(view, 'window', rec.chromeWindowId!);
@@ -115,7 +124,7 @@ test('a window header dropped at another header’s edge reorders; its middle me
 });
 
 test('Alt+Down moves the cursor’s window one place down', async ({ sw, view }) => {
-  const [a, b, c] = await threeWindows(sw);
+  const [a, b, c] = await threeWindows(sw, view);
   const ids = [a!.id, b!.id, c!.id];
   await expect.poll(() => viewOrder(view, ids)).toEqual(ids);
   await liveRow(view, 'window', a!.chromeWindowId!).click();
@@ -145,7 +154,7 @@ test('New window, from the menu, opens an empty Chrome window as a known row', a
   sw,
   view,
 }) => {
-  const [a] = await threeWindows(sw);
+  const [a] = await threeWindows(sw, view);
   const before = new Set((await readOutline(sw)).windows.map((w) => w.id));
   // Where the row lands depends on which window headless Chromium reports focused (one on Linux,
   // none on macOS), so placement is checked through the command below, with a fixed anchor.
@@ -166,7 +175,7 @@ test('New window, from the menu, opens an empty Chrome window as a known row', a
 });
 
 test('New window is on the outline background’s right-click menu too', async ({ sw, view }) => {
-  await threeWindows(sw);
+  await threeWindows(sw, view);
   const before = new Set((await readOutline(sw)).windows.map((w) => w.id));
   await view.locator('main.outline').click({ button: 'right', position: { x: 20, y: 400 } });
   await view
@@ -199,6 +208,7 @@ test('dropping tabs on "new window" moves them into a brand-new window', async (
   await outlineCommand(sw, { cmd: 'hibernate', ids: [foxtrot!.id] });
   const row = (id: string) => view.locator(`[data-key="t:${id}"]`);
   await expect(row(foxtrot!.id)).toHaveClass(/hibernated/);
+  await synced(sw, view);
 
   await expect(view.getByTestId('new-window-drop')).toHaveCount(0);
   await row(foxtrot!.id).click();
@@ -240,7 +250,7 @@ test('right-click "Open in new window" seeds a new window with the selected tabs
   sw,
   view,
 }) => {
-  const [a, b] = await threeWindows(sw);
+  const [a, b] = await threeWindows(sw, view);
   const extra = await sw.evaluate(
     async (windowId) =>
       (await chrome.tabs.create({ windowId, url: 'data:text/html,<title>Alpha2</title>' })).id!,
@@ -285,6 +295,7 @@ test('a window emptied of its open tabs by Open in new window stays a hibernated
   const [echo, foxtrot] = rec!.tabs;
   await outlineCommand(sw, { cmd: 'hibernate', ids: [foxtrot!.id] });
   await expect(view.locator(`[data-key="t:${foxtrot!.id}"]`)).toHaveClass(/hibernated/);
+  await synced(sw, view);
 
   // Echo, the window's only open tab, moves out: Chrome closes the window.
   const echoRow = view.locator(`[data-key="t:${echo!.id}"]`);

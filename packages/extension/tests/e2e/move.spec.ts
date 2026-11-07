@@ -1,10 +1,10 @@
 import type { Locator, Page, Worker } from '@playwright/test';
 import type { WindowRec } from '../../src/model/outline/types';
-import { expect, liveRow, outlineCommand, readOutline, test } from './fixtures';
+import { expect, liveRow, outlineCommand, readOutline, synced, test } from './fixtures';
 
-// Window A: [Research: Alpha, Bravo] Charlie ; Window B: Delta
-async function buildLayout(sw: Worker) {
-  return sw.evaluate(async () => {
+// Window A: [Research: Alpha, Bravo] Charlie ; Window B: Delta. Resolves once the view shows it.
+async function buildLayout(sw: Worker, view: Page) {
+  const s = await sw.evaluate(async () => {
     const a = await chrome.windows.create({
       url: [
         'data:text/html,<title>Alpha</title>',
@@ -30,6 +30,8 @@ async function buildLayout(sw: Worker) {
       delta: delta!.id!,
     };
   });
+  await synced(sw, view);
+  return s;
 }
 
 // A window's tabs in Chrome's order, as "Title" or "Title@GroupTitle".
@@ -77,7 +79,7 @@ async function recordById(sw: Worker, id: string): Promise<WindowRec | undefined
 }
 
 // Window C: Echo, Foxtrot (hibernated), Golf.
-async function buildWindowC(sw: Worker) {
+async function buildWindowC(sw: Worker, view: Page) {
   const winC = await sw.evaluate(async () => {
     const c = await chrome.windows.create({
       url: [
@@ -96,6 +98,7 @@ async function buildWindowC(sw: Worker) {
     ['Foxtrot', false],
     ['Golf', true],
   ]);
+  await synced(sw, view);
   return { winC, rec };
 }
 
@@ -103,7 +106,7 @@ test('dragging a multi-selection moves the tabs to another window, in outline or
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   await liveRow(view, 'tab', s.alpha).click();
   await liveRow(view, 'tab', s.charlie).click({ modifiers: ['ControlOrMeta'] });
   await liveRow(view, 'tab', s.charlie).dragTo(liveRow(view, 'tab', s.delta), {
@@ -121,14 +124,14 @@ test('dragging a group onto another window header moves the whole group there', 
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   await liveRow(view, 'group', s.groupId).dragTo(liveRow(view, 'window', s.winB));
   await expect.poll(() => strip(sw, s.winB)).toEqual(['Delta', 'Alpha@Research', 'Bravo@Research']);
   await expect.poll(() => strip(sw, s.winA)).toEqual(['Charlie']);
 });
 
 test('dragging a group later in its own window keeps it a group', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   await liveRow(view, 'group', s.groupId).dragTo(liveRow(view, 'tab', s.charlie), {
     targetPosition: await edge(liveRow(view, 'tab', s.charlie), 'bottom'),
   });
@@ -138,7 +141,7 @@ test('dragging a group later in its own window keeps it a group', async ({ sw, v
 });
 
 test('dropping a tab between grouped tabs puts it in that group', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   await liveRow(view, 'tab', s.delta).dragTo(liveRow(view, 'tab', s.bravo), {
     targetPosition: await edge(liveRow(view, 'tab', s.bravo), 'top'),
   });
@@ -151,7 +154,7 @@ test("dropping tabs from two windows after a group's last tab adds them to its e
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   await liveRow(view, 'tab', s.delta).click();
   await liveRow(view, 'tab', s.charlie).click({ modifiers: ['ControlOrMeta'] });
   await liveRow(view, 'tab', s.delta).dragTo(liveRow(view, 'tab', s.bravo), {
@@ -166,7 +169,7 @@ test('dropping a grouped tab before the group header takes it out of the group',
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   await liveRow(view, 'tab', s.bravo).dragTo(liveRow(view, 'group', s.groupId), {
     targetPosition: await edge(liveRow(view, 'group', s.groupId), 'top'),
   });
@@ -174,7 +177,7 @@ test('dropping a grouped tab before the group header takes it out of the group',
 });
 
 test('dragging a live tab into a hibernated window hibernates it there', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const a = await liveRecord(sw, s.winA, 3);
   const b = await liveRecord(sw, s.winB, 1);
   const alpha = a.tabs[0]!;
@@ -198,9 +201,9 @@ test('dragging a live tab into a hibernated window hibernates it there', async (
 });
 
 test('dragging a window row moves all its tabs into another window', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const a = await liveRecord(sw, s.winA, 3);
-  const { winC, rec: c } = await buildWindowC(sw);
+  const { winC, rec: c } = await buildWindowC(sw, view);
 
   await liveRow(view, 'window', winC).dragTo(liveRow(view, 'window', s.winA));
 
@@ -224,9 +227,9 @@ test('a mixed drop moves live tabs in Chrome and hibernated rows in the outline,
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const a = await liveRecord(sw, s.winA, 3);
-  const { rec: c } = await buildWindowC(sw);
+  const { rec: c } = await buildWindowC(sw, view);
   const [echo, foxtrot, golf] = c.tabs;
 
   // Foxtrot (hibernated) and Golf (live), dropped before Alpha: both join Research there.
@@ -270,7 +273,7 @@ test("moving a group's only live tab past its hibernated tab keeps it in the gro
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const a = await liveRecord(sw, s.winA, 3);
   const [alpha, bravo, charlie] = a.tabs;
   await outlineCommand(sw, { cmd: 'hibernate', ids: [bravo!.id] });

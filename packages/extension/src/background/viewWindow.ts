@@ -1,3 +1,4 @@
+import { limitMs } from '../shared/e2eBuild';
 import { VIEW_PING } from '../shared/viewPing';
 
 /**
@@ -16,7 +17,7 @@ import { VIEW_PING } from '../shared/viewPing';
 export const VIEW_PATH = 'src/view/index.html';
 export const REMEMBERED_KEY = 'viewWindow';
 /** How long a live view gets to answer a ping before it's treated as blank and reloaded. */
-const PING_TIMEOUT_MS = 1000;
+const PING_TIMEOUT_MS = limitMs(1000);
 
 export interface ViewTab {
   tabId: number;

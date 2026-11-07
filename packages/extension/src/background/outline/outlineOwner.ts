@@ -45,6 +45,8 @@ import { createSettleTracker } from './settleTracker';
 export interface OutlineOwner {
   /** Resolves once the job queue is empty. */
   idle(): Promise<void>;
+  /** Matches every window waiting out its quiet period now, then resolves once that's done. */
+  settle(): Promise<void>;
   /**
    * What Chrome's windows.onFocusChanged does: `windowId` becomes the focused window if it's a
    * normal one. Called directly by E2E, since headless Chromium sends no focus events on macOS.
@@ -81,6 +83,11 @@ export interface OutlineOwner {
 export interface OutlineOptions {
   /** The persisted outline changed (called after each change is saved). */
   onChange?: () => void;
+  /**
+   * How long restored windows' tabs must stop changing before they're matched; null: never on
+   * their own, only on settle() (the e2e build).
+   */
+  settleQuietMs?: number | null;
 }
 
 /** chrome.storage.local key of this install's ID, stamped on every window record it creates. */
@@ -138,6 +145,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   const tracker = createSettleTracker({
     onSettled: (ids) => void enqueue(() => step({ after: (o) => matchSettled(o, ids) })),
+    quietMs: opts.settleQuietMs,
   });
 
   function matchSettled(o: Outline, chromeWindowIds: number[]): Outline {
@@ -540,6 +548,12 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   return {
     idle: () => queue.idle(),
+    settle: async () => {
+      // Reconcile first, so windows whose events are still queued are tracked, then settle them.
+      await enqueue(() => step());
+      tracker.flush();
+      await queue.idle();
+    },
     focusChanged,
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,

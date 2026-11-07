@@ -1,3 +1,4 @@
+import { limitMs } from '../../shared/e2eBuild';
 import { useEffect, useRef, useState } from 'react';
 import { clearAllPreviews } from '../chrome/captureOutcome';
 import { openSidePanelSettings, surface } from '../chrome/dock';
@@ -7,7 +8,7 @@ import { IS_MAC } from '../platform';
 import type { RefreshProgress } from '../refresh/refreshRun';
 import { useRefreshPreviews, type RefreshState } from '../refresh/useRefreshPreviews';
 
-const CONFIRM_MS = 1500;
+const CONFIRM_MS = limitMs(1500);
 
 // Refresh is the only thing that attaches the debugger, which shows Chrome's "started debugging
 // this browser" banner (and shifts this window's content) unless Chrome was launched with
