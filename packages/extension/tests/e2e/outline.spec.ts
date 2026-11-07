@@ -233,6 +233,52 @@ test('a hibernated window reopens at its last position and size', async ({ sw })
   expect((await recordById(sw, rec.id))?.state).toBe('live');
 });
 
+for (const [how, closeCmd] of [
+  ['deleted (Recently closed)', 'trash'],
+  ['hibernated', 'hibernate'],
+] as const) {
+  test(`reopening a ${how} window opens the tabs that were live and keeps the hibernated ones as rows`, async ({
+    sw,
+  }) => {
+    const others = (await chromeWindows(sw)).map((w) => w.id);
+    const { a, rec } = await windowARecord(sw);
+    const bravo = rec.tabs[1]!;
+    await outlineCommand(sw, { cmd: 'hibernate', ids: [bravo.id] });
+    await outlineCommand(sw, { cmd: closeCmd, ids: [rec.id] });
+    await expect.poll(async () => (await chromeWindows(sw)).some((w) => w.id === a)).toBe(false);
+    expect((await recordById(sw, rec.id))?.state).toBe(
+      closeCmd === 'trash' ? 'trashed' : 'hibernated',
+    );
+
+    await outlineCommand(sw, { cmd: 'open', id: rec.id });
+
+    await expect
+      .poll(async () => (await chromeWindows(sw, others)).map((w) => w.tabs))
+      .toEqual([
+        [
+          { title: 'Alpha', group: 'Research' },
+          { title: 'Charlie', group: null },
+        ],
+      ]);
+    await expect
+      .poll(async () => {
+        const r = await recordById(sw, rec.id);
+        return {
+          state: r?.state,
+          tabs: r?.tabs.map((t) => [t.title, t.chromeTabId !== undefined]),
+        };
+      })
+      .toEqual({
+        state: 'live',
+        tabs: [
+          ['Alpha', true],
+          ['Bravo', false],
+          ['Charlie', true],
+        ],
+      });
+  });
+}
+
 test('hibernating one tab keeps its row in place; opening it puts it back at its position', async ({
   sw,
 }) => {
