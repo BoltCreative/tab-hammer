@@ -102,6 +102,12 @@ html[data-surface='panel'][data-side='left'] .app {
   color: var(--text);
   background: var(--row-hover);
 }
+/* An icon toggle that's on (Current tabs): highlighted like the drop indicator. */
+.menu-button[aria-pressed='true'] {
+  color: var(--drop-indicator);
+  border-color: var(--drop-indicator);
+  background: color-mix(in srgb, var(--drop-indicator) 15%, transparent);
+}
 /* Live progress (and Stop) for the running action, under the search row. */
 .toolbar-progress {
   display: flex;

@@ -83,7 +83,8 @@ export function createViewWindowFinder(browserSession: () => Promise<string>) {
     const url = viewUrl();
     const popups = await chrome.tabs.query({ windowType: 'popup' });
     const showing = popups
-      .filter((t) => (t.url ?? t.pendingUrl ?? '').startsWith(url))
+      // A tab still loading reports url '' (not undefined), so fall through to its pending URL.
+      .filter((t) => (t.url || t.pendingUrl || '').startsWith(url))
       .flatMap((t) =>
         t.id === undefined ? [] : [{ tabId: t.id, windowId: t.windowId, orphaned: false }],
       )

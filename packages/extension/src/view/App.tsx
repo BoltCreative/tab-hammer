@@ -11,7 +11,8 @@ import {
 import { emptySelection, selectionReducer } from '../model/selection';
 import type { GroupNode, OutlineView, TabNode, WindowNode } from '../model/types';
 import { findDuplicates } from '../model/duplicates';
-import { countTabs, filterTree } from '../model/filterTree';
+import { countTabs, filterTree, queryTerms } from '../model/filterTree';
+import { currentTabsNavRows, currentTabsTree, recenterTarget } from '../model/currentTabs';
 import {
   TRASH_SECTION_KEY,
   keyPressOf,
@@ -19,6 +20,7 @@ import {
   outlineRows,
   trashRows,
   typesIntoSearch,
+  viewShortcut,
 } from '../model/keyboardNav';
 import {
   EXPAND_ALL,
@@ -29,7 +31,8 @@ import {
 } from '../model/visibleRows';
 import { draggedTabIds, planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
-import { dockInto, useHostWindowId } from './chrome/dock';
+import { useCurrentTabsSetting } from './chrome/currentTabsSetting';
+import { dockInto, surface, useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
 import type { OutlineCommand } from '../shared/outlineMessages';
 import { ContextMenu } from './components/ContextMenu';
@@ -78,18 +81,32 @@ export function App() {
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
   const [query, setQuery] = useState('');
-  const shown = useMemo(() => filterTree(tree, query), [tree, query]);
-  const filtering = shown !== tree;
+  const filtering = queryTerms(query).length > 0;
+  // Current tabs: each window shows just its active tab (a view filter, remembered and shared by
+  // every view). A search overrides it while the query is non-empty.
+  const [currentTabs, setCurrentTabs] = useCurrentTabsSetting();
+  const currentView = currentTabs && !filtering;
+  const shown = useMemo(
+    () => (filtering ? filterTree(tree, query) : currentView ? currentTabsTree(tree) : tree),
+    [tree, query, filtering, currentView],
+  );
   // A docked panel marks the browser window it sits in, and opens scrolled to it.
   const hostWindowId = useHostWindowId();
   // Duplicates are found across the whole tree, whatever the search shows.
   const duplicates = useMemo(() => findDuplicates(tree), [tree]);
-  const shownCollapse = filtering ? EXPAND_ALL : collapse;
+  const shownCollapse = filtering || currentView ? EXPAND_ALL : collapse;
   const rows = useMemo(() => outlineRows(shown, shownCollapse), [shown, shownCollapse]);
+  const rowAria = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows]);
   // What can be selected: the outline's rows.
   const visible = useMemo(() => rows.map((r) => r.key), [rows]);
   // Recently closed: whether the section is open and which of its windows show their tabs.
   const [trashOpen, setTrashOpen] = useState(false);
+  // Turning Current tabs on (here or in another view) folds Recently closed away.
+  const [prevCurrentTabs, setPrevCurrentTabs] = useState(currentTabs);
+  if (prevCurrentTabs !== currentTabs) {
+    setPrevCurrentTabs(currentTabs);
+    if (currentTabs) setTrashOpen(false);
+  }
   const [trashExpanded, setTrashExpanded] = useState<ReadonlySet<string>>(new Set());
   const toggleTrashEntry = (key: string) =>
     setTrashExpanded((s) => {
@@ -98,31 +115,15 @@ export function App() {
       else next.add(key);
       return next;
     });
-  // What the cursor moves through: the outline's rows, then Recently closed's (hidden while
-  // searching, since search doesn't cover the trash).
-  const navRows = useMemo(
-    () => (filtering ? rows : [...rows, ...trashRows(trash, trashOpen, trashExpanded)]),
-    [filtering, rows, trash, trashOpen, trashExpanded],
-  );
+  // What the cursor moves through: the outline's rows (in Current tabs, the tabs stand for their
+  // windows), then Recently closed's (hidden while searching, since search doesn't cover the trash).
+  const navRows = useMemo(() => {
+    const outline = currentView ? currentTabsNavRows(rows) : rows;
+    return filtering ? outline : [...outline, ...trashRows(trash, trashOpen, trashExpanded)];
+  }, [filtering, currentView, rows, trash, trashOpen, trashExpanded]);
   const rowByKey = useMemo(() => new Map(navRows.map((r) => [r.key, r])), [navRows]);
   // Only the outline list scrolls; the header above it stays fixed.
   const listRef = useRef<HTMLElement>(null);
-
-  // Once, when a docked panel opens: scroll its own window's card to the top of the list.
-  const scrolledToHost = useRef(false);
-  useEffect(() => {
-    if (scrolledToHost.current || hostWindowId === undefined) return;
-    const list = listRef.current;
-    const card = list
-      ?.querySelector(`[data-kind="window"][data-window-id="${hostWindowId}"]`)
-      ?.closest('section');
-    if (!list || !card) return; // not in the outline yet; try again on the next broadcast
-    scrolledToHost.current = true;
-    // Set directly: scrollIntoView would honor the list's scroll-padding (room for keyboard focus
-    // under a pinned bar) and stop short. The list's bottom padding lets even the last window
-    // reach the top.
-    list.scrollTop += card.getBoundingClientRect().top - list.getBoundingClientRect().top;
-  }, [hostWindowId, tree]);
 
   // Rows a search hides leave the selection, so a drag never carries rows the user can't see.
   useEffect(() => {
@@ -170,6 +171,11 @@ export function App() {
     dispatch(selectionActionFor(e, key, visible));
     // Focus lives in the search box, so the next key typed or pressed goes there.
     focusSearch();
+    // In Current tabs, a plain click on a tab goes to it: its window comes forward on that tab.
+    if (currentView && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      const node = findNode(shown, key);
+      if (node?.kind === 'tab') onActivate(node);
+    }
   };
   const recordId = (key: string) => findNode(tree, key)?.id;
   const drag = useRowDrag(selection.selected, {
@@ -196,7 +202,7 @@ export function App() {
     },
   });
   const rowProps: RowPropsFor = (key, kind) => {
-    const r = rowByKey.get(key);
+    const r = rowAria.get(key);
     return {
       ...drag.row(key, kind),
       id: rowDomId(key),
@@ -364,6 +370,62 @@ export function App() {
     else onToggleGroup(key);
   };
 
+  // Recenter: the current window's active tab (its header, with none) goes to the middle of the
+  // list, its window and group expanded, with the cursor on it, so Enter acts on it right away.
+  // Leaves any search, since it's about the whole outline. State only, so a docked panel's first
+  // render can do it too.
+  const [centerOn, setCenterOn] = useState<{ key: string; n: number } | null>(null);
+  const planRecenter = (win: WindowNode) => {
+    const target = recenterTarget(win, collapse);
+    if (target.expandWindow || target.expandGroup) {
+      setCollapse((c) => {
+        let next = c;
+        if (target.expandWindow) {
+          const windows = new Set(next.collapsedWindows);
+          windows.delete(win.key);
+          next = { ...next, collapsedWindows: windows };
+        }
+        return target.expandGroup ? toggleGroup(target.expandGroup, next) : next;
+      });
+    }
+    if (query !== '') setQuery('');
+    setCursor(target.key);
+    setCenterOn((c) => ({ key: target.key, n: (c?.n ?? 0) + 1 }));
+    return target.key;
+  };
+  const recenter = (win: WindowNode | undefined = currentWindow()) => {
+    if (!win) return;
+    const key = planRecenter(win);
+    if (key.startsWith('t:')) showPreview(key);
+    focusSearch();
+  };
+  // Once, when a docked panel opens: recenter on the browser window it sits in, as soon as both
+  // that window and the outline are known.
+  const [centeredOnHost, setCenteredOnHost] = useState(false);
+  if (!centeredOnHost && hostWindowId !== undefined) {
+    const host = tree.find((w) => w.windowId === hostWindowId);
+    if (host) {
+      setCenteredOnHost(true);
+      planRecenter(host);
+    }
+  }
+  // After the render that shows the target row: center it in the list (clear of the sticky window
+  // bar above and the preview panel below, which sits outside the list). Declared after the
+  // cursor's scroll-into-view, so it runs last.
+  const centered = useRef(0);
+  useEffect(() => {
+    const list = listRef.current;
+    if (!centerOn || centered.current === centerOn.n || !list) return;
+    const row = document.getElementById(rowDomId(centerOn.key));
+    if (!row) return; // not rendered yet; try again on the next outline
+    centered.current = centerOn.n;
+    const l = list.getBoundingClientRect();
+    const r = row.getBoundingClientRect();
+    // Set directly: scrollIntoView would honour the list's scroll-padding. The list's bottom
+    // padding leaves room to center even the last rows.
+    list.scrollTop += r.top - l.top - (l.height - r.height) / 2;
+  }, [centerOn, rows]);
+
   // The view's keys, command-palette style (`navIntent`): focus lives in the search box, typing
   // anywhere goes there, and only ↑/↓-based keys, modifier combos, Enter and Escape drive the
   // outline. One listener on the document, so they work wherever focus is in this page (each
@@ -383,6 +445,13 @@ export function App() {
     if (onControl && (e.key === 'Enter' || e.key === ' ')) return;
 
     const press = keyPressOf(e, IS_MAC);
+    const shortcut = viewShortcut(press);
+    if (shortcut) {
+      e.preventDefault();
+      if (shortcut === 'currentTabs') setCurrentTabs(!currentTabs);
+      else if (surface === 'panel') recenter();
+      return;
+    }
     if (e.key === 'Escape' && !press.mod && !press.alt && !press.shift) {
       // First clears the search (the cursor stays on its row, now among the whole outline), then
       // the selection.
@@ -472,6 +541,11 @@ export function App() {
         searchRef={searchRef}
         activeDescendant={activeKey === null ? undefined : rowDomId(activeKey)}
         matchCount={filtering ? countTabs(shown) : null}
+        currentTabs={currentTabs}
+        onCurrentTabsChange={setCurrentTabs}
+        // Docked only: a panel knows its window for sure, while the standalone window's notion of
+        // the current window can be stale (focus is tracked from events), so it doesn't offer it.
+        onRecenter={surface === 'panel' ? () => recenter() : undefined}
         banner={
           <>
             {devicesOpen && (

@@ -16,3 +16,9 @@ export const SEARCH_KEYS_HELP = [
   'Enter open',
   'Esc clear',
 ].join(' · ');
+
+/** The Current tabs toggle's shortcut, for its tooltip. */
+export const CURRENT_TABS_KEYS = `${MOD_KEY}/`;
+
+/** The recenter button's shortcut, for its tooltip. */
+export const RECENTER_KEYS = `${MOD_KEY}\\`;
