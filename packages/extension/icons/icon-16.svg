@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="geometricPrecision">
+  <!-- Tab Hammer at 16px: icon.svg flattened (no gradient or shadow, one-colour hammer) and
+       drawn on the pixel grid, so the handle lands on whole pixels instead of blurring. -->
+  <rect width="16" height="16" rx="2.7" fill="#3d4cb9"/>
+  <path fill="#f6ead3" d="M5.5 3H12V5H9V13H7V5H5.6C4.9 5 4.2 5.4 3.4 6.2 3.5 4.3 4.3 3 5.5 3Z"/>
+</svg>
