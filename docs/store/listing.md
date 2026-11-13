@@ -126,21 +126,30 @@ Homepage URL: `https://boltcreative.com/tab-hammer`. Support email: `support@bol
 non-personal tabs (open-source project pages, documentation, news front pages), several windows and
 a couple of named groups.
 
+The images live in `docs/store/images/`. `npm run store-assets -w @tab-hammer/extension` builds
+`dist-e2e` and regenerates them all (screenshots and promo tiles) in headless Chromium from a made-up
+outline of local fake pages (`packages/extension/scripts/store-assets.ts`). Window header colours
+come from random window IDs, so they change between runs.
+
 1. **The outline:** the Tab Hammer window beside a browser window, three or four windows with
    colourful section headers, a couple of tab groups, the preview panel showing a hovered tab.
+   `docs/store/images/screenshot-1-outline.png`
 2. **Previews:** the cursor resting on a tab, the preview panel below the outline showing its
-   screenshot.
+   screenshot. `docs/store/images/screenshot-2-previews.png`
 3. **Hibernate and restore:** a hibernated (dimmed) window and the Recently closed section open.
+   `docs/store/images/screenshot-3-hibernate.png`
 4. **Other devices:** the devices panel listing another computer and a phone, with a remote
-   outline shown read-only.
+   outline shown read-only. `docs/store/images/screenshot-4-devices.png`
 5. **Search and rearrange:** the search box filtering to a few matches, or a multi-selection being
-   dragged into another window.
+   dragged into another window. `docs/store/images/screenshot-5-search.png` (the search box)
 
 ## Promotional images
 
 - **Small promo tile (required):** 440×280, PNG or JPEG. The Tab Hammer icon and name on a plain
   background, with a hint of the outline (window bars in their colours). Minimal text.
+  `docs/store/images/promo-small-440x280.png`
 - **Marquee promo tile (optional):** 1400×560, PNG or JPEG. Only used if the store features the
   item. The outline window on one side, the name and one line ("Every tab, one outline") on the
-  other.
+  other. `docs/store/images/promo-marquee-1400x560.png`
+- The tiles regenerate with the screenshots (`npm run store-assets -w @tab-hammer/extension`).
 - **Store icon:** 128×128 PNG, `packages/extension/icons/icon-128.png`.
