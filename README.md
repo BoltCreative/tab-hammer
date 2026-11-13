@@ -1,3 +1,5 @@
+<img src="packages/extension/icons/icon-128.png" width="96" height="96" alt="Tab Hammer icon: a cream claw hammer on an indigo tile">
+
 # Tab Hammer
 
 Tab Hammer is a Chrome extension that shows every open Chrome window, tab group, and tab as a live
