@@ -2,6 +2,7 @@
 .worktrees/
 .superpowers/
 .scratch/
+.data/
 scratchpad/
 node_modules/
 dist/
