@@ -224,9 +224,20 @@ test('a docked panel opens scrolled to the window it sits in, and marks it', asy
     'data-window-id',
     String(hostId),
   );
-  // It's scrolled to the top of the list.
+  // It's scrolled to the window's current tab (the panel page's own tab here): that row sits in
+  // the middle of the list, or as near as the list's top allows, clear of the sticky window bar.
+  const activeId = await sw.evaluate(
+    async (windowId) => (await chrome.tabs.query({ windowId, active: true }))[0]!.id!,
+    hostId,
+  );
+  const row = panel.locator(`[data-tab-id="${activeId}"]`);
+  await expect(row).toHaveAttribute('data-cursor', 'true');
   const list = panel.locator('main.outline');
-  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  const listTop = (await list.boundingBox())!.y;
-  await expect.poll(async () => Math.abs((await host.boundingBox())!.y - listTop)).toBeLessThan(2);
+  await expect
+    .poll(async () => {
+      const l = (await list.boundingBox())!;
+      const r = (await row.boundingBox())!;
+      return r.y >= l.y + 22 && r.y + r.height <= l.y + l.height;
+    })
+    .toBe(true);
 });

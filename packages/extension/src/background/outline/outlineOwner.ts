@@ -14,6 +14,7 @@ import {
   renameWindow,
   startFresh,
   trash,
+  untrash,
 } from '../../model/outline/lifecycle';
 import { attachOpened, planOpen } from '../../model/outline/open';
 import { moveWindows, placeWindowAfter } from '../../model/outline/order';
@@ -24,6 +25,7 @@ import { copyForOpen } from '../../model/sync/copy';
 import { toSyncWindow, type SyncWindow } from '../../model/sync/export';
 import { restoreWindows, selfRestoreWindows } from '../../model/sync/restore';
 import { SWAP_KEY } from '../../shared/captureSwap';
+import type { RestoreCounts } from '../../shared/syncMessages';
 import {
   OUTLINE_PORT,
   isOutlineCommandRequest,
@@ -43,6 +45,13 @@ import { createSettleTracker } from './settleTracker';
 export interface OutlineOwner {
   /** Resolves once the job queue is empty. */
   idle(): Promise<void>;
+  /** Matches every window waiting out its quiet period now, then resolves once that's done. */
+  settle(): Promise<void>;
+  /**
+   * What Chrome's windows.onFocusChanged does: `windowId` becomes the focused window if it's a
+   * normal one. Called directly by E2E, since headless Chromium sends no focus events on macOS.
+   */
+  focusChanged(windowId: number): void;
   /** Runs a command; resolves with the Chrome window it opened (newWindow, moveToNewWindow). */
   command(c: OutlineCommand): Promise<number | undefined>;
   /**
@@ -62,10 +71,11 @@ export interface OutlineOwner {
   /** The outline database held nothing when this worker started (a new or wiped profile). */
   wasFresh(): Promise<boolean>;
   /**
-   * Adds the windows the outline lacks, hibernated (see restoreWindows); returns how many. With
-   * `selfRestore`, keeps the file's trash and re-links open windows (see selfRestoreWindows).
+   * Adds the windows the outline lacks, hibernated, and takes the ones in its trash back out (see
+   * restoreWindows); returns how many of each. With `selfRestore`, keeps the file's trash and
+   * re-links open windows (see selfRestoreWindows).
    */
-  restoreWindows(windows: SyncWindow[], selfRestore: boolean): Promise<number>;
+  restoreWindows(windows: SyncWindow[], selfRestore: boolean): Promise<RestoreCounts>;
   /** Opens a copy of another outline's window, group, or tab here, with new IDs. */
   openCopy(window: SyncWindow, rowId: string): Promise<void>;
 }
@@ -73,6 +83,11 @@ export interface OutlineOwner {
 export interface OutlineOptions {
   /** The persisted outline changed (called after each change is saved). */
   onChange?: () => void;
+  /**
+   * How long restored windows' tabs must stop changing before they're matched; null: never on
+   * their own, only on settle() (the e2e build).
+   */
+  settleQuietMs?: number | null;
 }
 
 /** chrome.storage.local key of this install's ID, stamped on every window record it creates. */
@@ -130,6 +145,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   const tracker = createSettleTracker({
     onSettled: (ids) => void enqueue(() => step({ after: (o) => matchSettled(o, ids) })),
+    quietMs: opts.settleQuietMs,
   });
 
   function matchSettled(o: Outline, chromeWindowIds: number[]): Outline {
@@ -276,6 +292,19 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
       case 'deleteForever':
         await commit(deleteWindow(outline, c.windowId), live!);
         return;
+      case 'openAll': {
+        // One after another, like that many ↺ clicks; one that fails doesn't stop the rest.
+        let failed: unknown;
+        for (const id of c.ids) {
+          try {
+            await openRow(id);
+          } catch (err) {
+            failed ??= err;
+          }
+        }
+        if (failed !== undefined) throw failed;
+        return;
+      }
       case 'open':
         await openRow(c.id);
         return;
@@ -391,10 +420,17 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
     return target.chromeWindowId;
   }
 
-  /** Opens a hibernated or trashed row in Chrome; part of a job. */
+  /**
+   * Opens a hibernated or trashed row in Chrome; part of a job. A trash entry deleted while
+   * hibernated comes back hibernated instead, opening nothing.
+   */
   async function openRow(id: string): Promise<void> {
     // A trash entry always reopens as a whole window, whichever of its rows was opened.
     const row = findRow(outline, id);
+    if (row?.window.state === 'trashed' && row.window.hibernatedAtClose) {
+      await commit(untrash(outline, [row.window.id], Date.now()), live!);
+      return;
+    }
     const plan = planOpen(outline, row?.window.state === 'trashed' ? row.window.id : id);
     if (!plan) return;
     const opened = await openPlanned(plan); // a failed window create leaves the outline as is
@@ -453,11 +489,15 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   chrome.windows.onCreated.addListener(scheduleReconcile);
   chrome.windows.onBoundsChanged.addListener(scheduleReconcile);
-  chrome.windows.onFocusChanged.addListener((windowId) => {
+  function focusChanged(windowId: number): void {
     if (windowId !== chrome.windows.WINDOW_ID_NONE) focusEvent = windowId;
     scheduleReconcile();
-  });
+  }
+  chrome.windows.onFocusChanged.addListener(focusChanged);
   chrome.windows.onRemoved.addListener((windowId) => {
+    // Closed by hand: Chrome removed its tabs as the window closed. A window whose last tabs were
+    // moved out goes without that.
+    const byHand = closingWindowIds.has(windowId);
     void enqueue(() => {
       closingWindowIds.delete(windowId);
       selfClosing.windowRemoved(windowId);
@@ -467,7 +507,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
         before: (o) => {
           // A window the outline no longer holds (or never did) closes nothing.
           const rec = o.windows.find((w) => w.state === 'live' && w.chromeWindowId === windowId);
-          return rec ? closeWindow(o, rec.id, Date.now()) : o;
+          return rec ? closeWindow(o, rec.id, Date.now(), { byHand }) : o;
         },
       });
     });
@@ -508,6 +548,13 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
 
   return {
     idle: () => queue.idle(),
+    settle: async () => {
+      // Reconcile first, so windows whose events are still queued are tracked, then settle them.
+      await enqueue(() => step());
+      tracker.flush();
+      await queue.idle();
+    },
+    focusChanged,
     command: (c) => enqueue(() => runCommand(c)),
     outline: () => outline,
     exportWindows: () => enqueue(async () => outline.windows.map(toSyncWindow)),
@@ -521,7 +568,7 @@ export function registerOutline(opts: OutlineOptions = {}): OutlineOwner {
           ? selfRestoreWindows(outline, windows, { now, newId })
           : restoreWindows(outline, windows, { now, newId, keepTrash: false });
         await commit(r.outline, live!);
-        return r.added.length;
+        return { added: r.added.length, untrashed: r.untrashed.length };
       }),
     openCopy: (window, rowId) =>
       enqueue(async () => {

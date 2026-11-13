@@ -37,6 +37,7 @@ export interface WindowRec {
   state: WindowState;
   chromeWindowId?: number; // present iff state === 'live'
   closedAt?: number; // trashed only
+  hibernatedAtClose?: boolean; // trashed only: it was hibernated when deleted, so it comes back so
   openAtShutdown?: boolean;
   provisional?: boolean; // live, unknown origin, not yet matched
   lastLiveAt: number;

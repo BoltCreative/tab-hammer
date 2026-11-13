@@ -102,6 +102,12 @@ html[data-surface='panel'][data-side='left'] .app {
   color: var(--text);
   background: var(--row-hover);
 }
+/* An icon toggle that's on (Current tabs): highlighted like the drop indicator. */
+.menu-button[aria-pressed='true'] {
+  color: var(--drop-indicator);
+  border-color: var(--drop-indicator);
+  background: color-mix(in srgb, var(--drop-indicator) 15%, transparent);
+}
 /* Live progress (and Stop) for the running action, under the search row. */
 .toolbar-progress {
   display: flex;
@@ -199,6 +205,34 @@ button.twisty {
 .trash-tab > * {
   opacity: 0.5;
 }
+/* A hovered trash entry's actions take its tab count's place. */
+.trash-entry:hover .count {
+  visibility: hidden;
+}
+/* The section's header: its toggle, then Restore all at the right. */
+.trash-bar {
+  display: flex;
+  align-items: center;
+}
+.trash-bar .trash-header {
+  flex: 1;
+  min-width: 0;
+}
+.trash-restore-all {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.trash-restore-all:hover {
+  background: var(--row-hover);
+  color: var(--text-strong);
+}
 /* The hover toolbar: icon buttons overlaid at the row's right edge, over the row's own background
    (inherited, so hover, selection, and the active tint all match), without changing its layout. */
 .row-toolbar {
@@ -251,7 +285,9 @@ button.twisty {
 .row:focus {
   outline: none;
 }
-.row:focus-visible {
+.row:focus-visible,
+/* The keyboard cursor: focus stays in the search box, which names this row as its active one. */
+.row[data-cursor] {
   outline: 1px solid var(--drop-indicator);
   outline-offset: -1px;
 }
@@ -318,7 +354,8 @@ button.twisty {
   padding-top: 4px;
 }
 .trash .window-header {
-  position: static;
+  /* Not sticky like the outline's bars, but still the hover toolbar's box (see .row). */
+  position: relative;
   height: 18px;
   margin: 0;
   padding: 0 4px;
@@ -845,4 +882,53 @@ button.twisty {
 /* This computer's outline stays mounted (keeping its scroll) while another device is shown. */
 main.outline[hidden] {
   display: none;
+}
+/* Keyboard shortcuts sheet (src/view/header/ShortcutsPanel.tsx), in the header's banner area like
+   the devices panel. Keys left, what they do right; it fits the ~360px docked panel. */
+.shortcuts-heading {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.shortcuts-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 10px;
+  row-gap: 3px;
+}
+.shortcuts-row {
+  display: contents;
+}
+.shortcuts-row dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: baseline;
+}
+.shortcuts-row dt em {
+  color: var(--text-muted);
+}
+.shortcuts-row dd {
+  margin: 0;
+}
+.shortcuts-panel kbd {
+  font: inherit;
+  font-size: 11px;
+  padding: 0 4px;
+  border: 1px solid var(--card-border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.link-button {
+  all: unset;
+  color: var(--drop-indicator);
+  cursor: pointer;
+}
+.link-button:hover,
+.link-button:focus-visible {
+  text-decoration: underline;
 }

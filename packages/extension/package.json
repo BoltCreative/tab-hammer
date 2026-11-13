@@ -7,13 +7,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:e2e": "TAB_HAMMER_NO_OAUTH=1 vite build --outDir dist-e2e --emptyOutDir",
+    "build:e2e": "TAB_HAMMER_NO_OAUTH=1 vite build --mode e2e --outDir dist-e2e --emptyOutDir",
     "build:store": "TAB_HAMMER_STORE=1 vite build --outDir dist-store --emptyOutDir && node scripts/pack-store.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "make:chrome-launcher": "scripts/make-chrome-launcher.sh",
-    "render-icons": "node scripts/render-icons.ts"
+    "render-icons": "node scripts/render-icons.ts",
+    "store-assets": "npm run build:e2e && node scripts/store-assets.ts"
   },
   "dependencies": {
     "@tab-hammer/protocol": "*",

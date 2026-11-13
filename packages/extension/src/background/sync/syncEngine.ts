@@ -23,6 +23,7 @@ import type {
   CheckpointEntry,
   DriveStatus,
   RemoteOutline,
+  RestoreCounts,
   SyncPickerState,
   SyncSource,
 } from '../../shared/syncMessages';
@@ -55,10 +56,11 @@ export interface SyncEngineDeps {
   outline: {
     windows: () => Promise<SyncWindow[]>; // this computer's export, trash included
     /**
-     * Adds the windows this outline lacks (hibernated); returns how many were added. A self-restore
-     * keeps the file's trash and re-links the windows open now to the ones live in the file.
+     * Adds the windows this outline lacks (hibernated) and takes the ones it has in its trash back
+     * out; returns how many of each. A self-restore keeps the file's trash and re-links the windows
+     * open now to the ones live in the file.
      */
-    restore: (windows: SyncWindow[], selfRestore: boolean) => Promise<number>;
+    restore: (windows: SyncWindow[], selfRestore: boolean) => Promise<RestoreCounts>;
     /** The outline database was empty when this worker started. */
     wasFresh: () => Promise<boolean>;
   };
@@ -77,7 +79,7 @@ export interface SyncEngine {
   flushNow(): Promise<void>; // the pending push, now (test hook)
   pickerState(): Promise<SyncPickerState>;
   outlineOf(source: SyncSource): Promise<RemoteOutline>;
-  restoreAll(source: SyncSource): Promise<number>;
+  restoreAll(source: SyncSource): Promise<RestoreCounts>;
   forget(installId: string): Promise<void>;
   rename(name: string): Promise<void>;
   signIn(): Promise<void>;

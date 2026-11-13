@@ -161,6 +161,21 @@ describe('Chrome Web Store client', () => {
     expect(calls.some((c) => c.url.endsWith(':publish'))).toBe(false);
   });
 
+  it('counts a version already submitted or published as done, without submitting again', async () => {
+    const waiting = fakeStore({ [`GET ${ITEM}:fetchStatus`]: [pending] });
+    expect(await waiting.cws.publish('0.1.0.41')).toEqual({
+      done: true,
+      message: '0.1.0.41 is already submitted and waiting on review.',
+    });
+    const live = fakeStore({ [`GET ${ITEM}:fetchStatus`]: [idle] });
+    expect(await live.cws.publish('0.1.0.40')).toEqual({
+      done: true,
+      message: '0.1.0.40 is already published.',
+    });
+    for (const { calls } of [waiting, live])
+      expect(calls.some((c) => c.url.endsWith(':publish'))).toBe(false);
+  });
+
   it('signs in with a refresh token when there is no service account', async () => {
     const calls: Call[] = [];
     const cws = new Cws({

@@ -32,13 +32,18 @@ export function planOpen(o: Outline, rowId: string): OpenPlan | null {
   const row = findRow(o, rowId);
   if (!row) return null;
   const w = row.window;
+  // A closed window reopened whole comes back as it closed: the tabs live then open, and the ones
+  // already hibernated stay hibernated rows. With no tab marked (a window that came from a sync
+  // file, or was never live), every tab opens.
+  const wholeClosed = !row.tab && !row.group && w.state !== 'live';
+  const asClosed = wholeClosed && w.tabs.some((t) => t.liveAtClose === true);
   const opening = new Set(
     w.tabs
       .filter((t) => {
         if (isLive(t)) return false;
         if (row.tab) return t.id === row.tab.id;
         if (row.group) return t.groupId === row.group.id;
-        return true;
+        return !asClosed || t.liveAtClose === true;
       })
       .map((t) => t.id),
   );
@@ -94,6 +99,7 @@ export function attachOpened(o: Outline, windowId: string, opened: Opened, now: 
     next.lastLiveAt = now;
     next.modifiedAt = now;
     delete next.closedAt;
+    delete next.hibernatedAtClose;
     delete next.openAtShutdown;
   }
 

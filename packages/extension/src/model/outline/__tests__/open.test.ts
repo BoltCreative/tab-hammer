@@ -39,6 +39,54 @@ describe('planOpen', () => {
     ]);
   });
 
+  it('reopens a closed window with the tabs that were live when it closed, keeping the others hibernated', () => {
+    for (const state of ['trashed', 'hibernated'] as const) {
+      const o: Outline = {
+        windows: [
+          win('w', {
+            state,
+            closedAt: state === 'trashed' ? 1 : undefined,
+            groups: [group('g')],
+            tabs: [
+              tab('a', { liveAtClose: true }),
+              tab('h1', { liveAtClose: false }),
+              tab('b', { liveAtClose: true, groupId: 'g' }),
+              tab('h2', { liveAtClose: false, groupId: 'g' }),
+              tab('h3'),
+            ],
+          }),
+        ],
+      };
+      const plan = planOpen(o, 'w')!;
+      expect(plan.tabs.map((t) => [t.tabId, t.index])).toEqual([
+        ['a', 0],
+        ['b', 1],
+      ]);
+      expect(plan.groups).toEqual([group('g')]);
+    }
+  });
+
+  it('opens every tab of a closed window none of whose tabs is marked live at close', () => {
+    // A window restored from a sync file, or made hibernated from the start, has no such marks.
+    const o: Outline = {
+      windows: [win('w', { tabs: [tab('a'), tab('b', { liveAtClose: false })] })],
+    };
+    expect(planOpen(o, 'w')!.tabs.map((t) => t.tabId)).toEqual(['a', 'b']);
+  });
+
+  it('opens a hibernated group or tab of a closed window whatever it was at close', () => {
+    const o: Outline = {
+      windows: [
+        win('w', {
+          groups: [group('g')],
+          tabs: [tab('a', { liveAtClose: true }), tab('h', { liveAtClose: false, groupId: 'g' })],
+        }),
+      ],
+    };
+    expect(planOpen(o, 'h')!.tabs.map((t) => t.tabId)).toEqual(['h']);
+    expect(planOpen(o, 'g')!.tabs.map((t) => t.tabId)).toEqual(['h']);
+  });
+
   it('plans one hibernated tab of a live window at its live index', () => {
     const o: Outline = {
       windows: [

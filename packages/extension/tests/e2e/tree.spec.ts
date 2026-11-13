@@ -1,10 +1,14 @@
-import { expect, liveRow, test } from './fixtures';
+import { expect, liveRow, synced, test } from './fixtures';
 
 type Setup = { winA: number; winB: number; groupedTabIds: [number, number]; lonelyTabId: number };
 
-// Build a known layout from inside the extension's service worker (it has the tabs/tabGroups APIs).
-async function buildLayout(sw: import('@playwright/test').Worker): Promise<Setup> {
-  return sw.evaluate(async () => {
+// Build a known layout from inside the extension's service worker (it has the tabs/tabGroups APIs),
+// resolving once the view shows it.
+async function buildLayout(
+  sw: import('@playwright/test').Worker,
+  view: import('@playwright/test').Page,
+): Promise<Setup> {
+  const s = await sw.evaluate(async () => {
     const a = await chrome.windows.create({
       url: [
         'data:text/html,<title>Alpha</title>',
@@ -23,6 +27,8 @@ async function buildLayout(sw: import('@playwright/test').Worker): Promise<Setup
     const bTabs = await chrome.tabs.query({ windowId: b!.id });
     return { winA: a!.id!, winB: b!.id!, groupedTabIds: grouped, lonelyTabId: bTabs[0]!.id! };
   });
+  await synced(sw, view);
+  return s;
 }
 
 const openOrFocus = (sw: import('@playwright/test').Worker) =>
@@ -46,6 +52,14 @@ test('opening twice focuses the existing Tab Hammer window instead of making ano
   expect(await popupIds(sw)).toEqual([viewWindowId]);
   await openOrFocus(sw);
   expect(await popupIds(sw)).toEqual([viewWindowId]);
+});
+
+test('Alt+Shift+H is registered as the toolbar button’s shortcut', async ({ sw }) => {
+  const commands = await sw.evaluate(() => chrome.commands.getAll());
+  // On a Mac Chrome reports Alt as ⌥ and Shift as ⇧.
+  expect(commands.find((c) => c.name === '_execute_action')?.shortcut).toMatch(
+    /^(Alt\+Shift\+H|⌥⇧H)$/,
+  );
 });
 
 test('after an extension reload, opening reuses the old window and closes leftovers', async ({
@@ -101,7 +115,7 @@ test('renders window cards with a group row and indented tabs, excluding itself'
   // host_permissions outright, so the "allow previews" banner never appears here.
   await expect(view.getByTestId('permission-banner')).toHaveCount(0);
 
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const cardA = view.locator('section[data-testid="window-card"]', {
     has: liveRow(view, 'window', s.winA),
   });
@@ -118,7 +132,7 @@ test('renders window cards with a group row and indented tabs, excluding itself'
 });
 
 test('reflects a closed tab live', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const row = liveRow(view, 'tab', s.lonelyTabId);
   await expect(row).toBeVisible();
   await sw.evaluate(async (id) => {
@@ -132,7 +146,7 @@ test('click selects one, cmd/ctrl-click toggles, shift-click selects a range', a
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [t1, t2] = s.groupedTabIds;
   const row = (tabId: number) => liveRow(view, 'tab', tabId);
   await row(t1).click();
@@ -150,7 +164,7 @@ test('click selects one, cmd/ctrl-click toggles, shift-click selects a range', a
 type FocusCall = [windowId: number, updateInfo: chrome.windows.UpdateInfo];
 
 test('double-click a tab activates it and focuses its window', async ({ sw, view }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [t1] = s.groupedTabIds;
   // Headless Chromium ignores window focus changes, so record the view's chrome.windows.update
   // calls (still calling through to Chrome) instead of observing which window ends up focused.
@@ -175,12 +189,14 @@ test('double-click a tab activates it and focuses its window', async ({ sw, view
 });
 
 test('the header stays put while only the outline list scrolls', async ({ sw, view }) => {
+  // A short view, so a few tabs overflow the list (each tab is a renderer: keep them few).
+  await view.setViewportSize({ width: 420, height: 300 });
   await sw.evaluate(async () => {
-    const urls = Array.from({ length: 40 }, (_, i) => `data:text/html,<title>T${i}</title>`);
+    const urls = Array.from({ length: 10 }, (_, i) => `data:text/html,<title>T${i}</title>`);
     await chrome.windows.create({ url: urls });
   });
   const list = view.locator('main.outline');
-  await expect(view.locator('[role="treeitem"], .row').nth(40)).toBeAttached();
+  await expect(view.locator('[role="treeitem"], .row').nth(10)).toBeAttached();
   const header = view.locator('header.app-header');
   const headerTop = async () => (await header.boundingBox())!.y;
   expect(await headerTop()).toBe(0);
@@ -201,7 +217,7 @@ test("right-clicking a window header copies all its tabs' URLs in tab order", as
   // no clipboardWrite permission, and the view writes from the user's click without one.
   // No origin: Playwright can't parse chrome-extension:// origins, and this profile is throwaway.
   await context.grantPermissions(['clipboard-read']);
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const expected = await sw.evaluate(
     async (id) => (await chrome.tabs.query({ windowId: id })).map((t) => t.url || t.pendingUrl),
     s.winA,
@@ -220,13 +236,13 @@ test('the header search filters the outline, keeping window and group context', 
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   // Collapsed in Chrome: a match inside still shows.
   await sw.evaluate(async (tabId) => {
     const { groupId } = await chrome.tabs.get(tabId);
     await chrome.tabGroups.update(groupId, { collapsed: true });
   }, s.groupedTabIds[0]);
-  const search = view.getByRole('searchbox', { name: 'Search tabs by title or URL' });
+  const search = searchBox(view);
   await search.fill('bravo');
   const rows = view.locator('main.outline [role="treeitem"]');
   await expect(rows).toHaveCount(3);
@@ -245,22 +261,34 @@ test('the header search filters the outline, keeping window and group context', 
   await expect(view.getByTestId('match-count')).toHaveCount(0);
 });
 
-test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter activates', async ({
+const searchBox = (view: import('@playwright/test').Page) =>
+  view.getByRole('combobox', { name: 'Search tabs by title or URL' });
+
+test('keyboard: focus stays in search while ↑/↓ move the cursor, ⇧ extends, ⌘↑/↓ collapse and open, Enter activates', async ({
   sw,
   view,
 }) => {
-  const s = await buildLayout(sw);
+  const s = await buildLayout(sw, view);
   const [alpha, bravo] = s.groupedTabIds;
   const row = (tabId: number) => liveRow(view, 'tab', tabId);
   const winA = liveRow(view, 'window', s.winA);
+  const search = searchBox(view);
   const selectedTabIds = () =>
     view
       .locator('[aria-selected="true"]')
       .evaluateAll((els) => els.map((e) => Number((e as HTMLElement).dataset.tabId)));
+  // The cursor row: the one the search box names as active, and marked for the highlight.
+  const expectCursor = async (r: ReturnType<typeof row>) => {
+    await expect(search).toBeFocused();
+    await expect(search).toHaveAttribute('aria-activedescendant', (await r.getAttribute('id'))!);
+    await expect(r).toHaveAttribute('data-cursor', 'true');
+    await expect(view.locator('[data-cursor]')).toHaveCount(1);
+  };
 
   await row(alpha).click();
+  await expectCursor(row(alpha));
   await view.keyboard.press('ArrowDown');
-  await expect(row(bravo)).toBeFocused();
+  await expectCursor(row(bravo));
   expect(await selectedTabIds()).toEqual([bravo]);
   await view.keyboard.press('Shift+ArrowDown'); // onto Charlie, the window's loose tab
   const charlie = Number(
@@ -269,27 +297,76 @@ test('keyboard: arrows move and extend the selection, Left/Right collapse, Enter
   expect(await selectedTabIds()).toEqual([bravo, charlie]);
   await expect(row(charlie)).toHaveAttribute('aria-level', '2');
   await expect(row(bravo)).toHaveAttribute('aria-level', '3');
-  await expect(row(charlie)).toHaveAttribute('tabindex', '0');
+  await expectCursor(row(charlie));
 
-  await view.keyboard.press('ArrowLeft'); // to the window
-  await expect(winA).toBeFocused();
+  // Left, Right, Home and End are the search box's text keys now: the cursor stays put.
+  for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) await view.keyboard.press(key);
+  await expectCursor(row(charlie));
+
+  await view.keyboard.press('ControlOrMeta+ArrowUp'); // to the window
+  await expectCursor(winA);
   await expect(winA).toHaveAttribute('aria-expanded', 'true');
-  await view.keyboard.press('ArrowLeft'); // collapse it
+  await view.keyboard.press('ControlOrMeta+ArrowUp'); // collapse it
   await expect(winA).toHaveAttribute('aria-expanded', 'false');
   await expect(row(alpha)).toHaveCount(0);
-  await view.keyboard.press('ArrowRight'); // expand
-  await view.keyboard.press('ArrowRight'); // into the group
-  await expect(liveRow(view, 'group', await groupIdOf(sw, alpha))).toBeFocused();
+  await view.keyboard.press('ControlOrMeta+ArrowDown'); // expand
+  await view.keyboard.press('ControlOrMeta+ArrowDown'); // into the group
+  await expectCursor(liveRow(view, 'group', await groupIdOf(sw, alpha)));
   await view.keyboard.press('ArrowDown');
   await view.keyboard.press('Enter');
   await expect
     .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, alpha))
     .toBe(true);
+  await expect(search).toHaveValue('');
+});
 
-  // Down arrow from the search box lands in the outline.
-  await view.getByRole('searchbox').focus();
-  await view.keyboard.press('ArrowDown');
-  await expect(row(alpha)).toBeFocused();
+test('typing anywhere goes to the search box, first character included', async ({ sw, view }) => {
+  const s = await buildLayout(sw, view);
+  const search = searchBox(view);
+  await expect(liveRow(view, 'tab', s.lonelyTabId)).toBeVisible();
+  // Nothing focused.
+  await view.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect(search).not.toBeFocused();
+  await view.keyboard.type('delt');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('delt');
+  await expect(view.getByTestId('match-count')).toHaveText('1 tab');
+
+  // A focused button too: the key types after what's already there.
+  await view.getByRole('button', { name: 'Actions' }).focus();
+  await view.keyboard.press('a');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('delta');
+});
+
+test('searching: the first match is the cursor, Enter opens the highlighted row, Esc clears the search and then the selection', async ({
+  sw,
+  view,
+}) => {
+  const s = await buildLayout(sw, view);
+  const [, bravo] = s.groupedTabIds;
+  const search = searchBox(view);
+  await search.focus();
+  await view.keyboard.type('bravo');
+  const winA = liveRow(view, 'window', s.winA);
+  await expect(winA).toHaveAttribute('data-cursor', 'true');
+  await view.keyboard.press('ArrowDown'); // the group
+  await view.keyboard.press('ArrowDown'); // Bravo
+  await expect(liveRow(view, 'tab', bravo)).toHaveAttribute('data-cursor', 'true');
+  await view.keyboard.press('Enter');
+  await expect
+    .poll(() => sw.evaluate(async (id) => (await chrome.tabs.get(id)).active, bravo))
+    .toBe(true);
+
+  // Esc clears the search; the cursor stays on Bravo, now among the whole outline, still selected.
+  await view.keyboard.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(liveRow(view, 'tab', s.lonelyTabId)).toBeVisible();
+  await expect(liveRow(view, 'tab', bravo)).toHaveAttribute('data-cursor', 'true');
+  await expect(liveRow(view, 'tab', bravo)).toHaveAttribute('aria-selected', 'true');
+  // Again: the selection goes.
+  await view.keyboard.press('Escape');
+  await expect(view.locator('[aria-selected="true"]')).toHaveCount(0);
 });
 
 async function groupIdOf(sw: import('@playwright/test').Worker, tabId: number) {

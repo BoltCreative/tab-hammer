@@ -1,3 +1,4 @@
+import { limitMs } from '../shared/e2eBuild';
 import { VIEW_PING } from '../shared/viewPing';
 
 /**
@@ -16,7 +17,7 @@ import { VIEW_PING } from '../shared/viewPing';
 export const VIEW_PATH = 'src/view/index.html';
 export const REMEMBERED_KEY = 'viewWindow';
 /** How long a live view gets to answer a ping before it's treated as blank and reloaded. */
-const PING_TIMEOUT_MS = 1000;
+const PING_TIMEOUT_MS = limitMs(1000);
 
 export interface ViewTab {
   tabId: number;
@@ -83,7 +84,8 @@ export function createViewWindowFinder(browserSession: () => Promise<string>) {
     const url = viewUrl();
     const popups = await chrome.tabs.query({ windowType: 'popup' });
     const showing = popups
-      .filter((t) => (t.url ?? t.pendingUrl ?? '').startsWith(url))
+      // A tab still loading reports url '' (not undefined), so fall through to its pending URL.
+      .filter((t) => (t.url || t.pendingUrl || '').startsWith(url))
       .flatMap((t) =>
         t.id === undefined ? [] : [{ tabId: t.id, windowId: t.windowId, orphaned: false }],
       )

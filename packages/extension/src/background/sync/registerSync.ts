@@ -1,6 +1,7 @@
 // Wires the sync engine into the service worker: Drive through chrome.identity (when a client ID
 // is configured), Chrome Sync devices through chrome.sessions, the 5-minute pull alarm, the picker's
 // port and commands. Must be called synchronously at service worker top level.
+import { E2E_BUILD } from '../../shared/e2eBuild';
 import { sessionIdOfRow } from '../../model/sync/devices';
 import {
   SYNC_PORT,
@@ -91,7 +92,11 @@ export function registerSync(owner: OutlineOwner): SyncHandle {
     devices: () => devices.read(),
     store: createSyncStore(),
     now: Date.now,
-    timers: { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as number) },
+    // The e2e build never pushes on its own: a test pushes with the syncNow hook, so a delayed push
+    // can't land in the middle of what it checks.
+    timers: E2E_BUILD
+      ? { set: () => 0, clear: () => undefined }
+      : { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h as number) },
     onState: broadcast,
     onError: (err) => console.error('[sync]', err),
   });

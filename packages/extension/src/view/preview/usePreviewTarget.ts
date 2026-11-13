@@ -1,7 +1,9 @@
+import { E2E_BUILD } from '../../shared/e2eBuild';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /** How long the pointer rests on a tab row before the preview panel switches to it. */
-export const HOVER_DELAY_MS = 200;
+// No rest in the e2e build: a test's hover shows its tab before the test's next step can land.
+export const HOVER_DELAY_MS = E2E_BUILD ? 0 : 200;
 
 export interface HoverHandlers {
   onRowEnter: (key: string) => void;

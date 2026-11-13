@@ -1,11 +1,21 @@
 name: Release
 
-# Submits the Chrome Web Store draft (the last build Store upload put there) for review; the store
-# publishes it once it passes. Run it from Actions -> Release -> Run workflow, on main. If a review
-# is already pending it submits nothing and says so. docs/store/release.md has the whole flow.
+# The one deploy button: Actions -> Release -> Run workflow, on main. Merging to main only runs CI.
+# Three independent parts, each with a line in the run summary:
 #
-# There's deliberately no version-tag trigger: a tag pushed with a merge would race that merge's
-# draft upload and could submit the draft before it.
+# - store:    builds the Chrome Web Store package, uploads it as the item's draft, tags the commit
+#             store/<version>, and submits the draft for review (the store publishes it once it
+#             passes). Its version is the manifest's release version plus main's commit count as a
+#             fourth part (0.1.0 -> 0.1.0.57), so every upload is above the last without a
+#             version-bump commit. Skipped, with a notice, until the store secrets are set.
+# - npm:      publishes packages/mcp (tab-hammer-mcp) unless npm already has its version, through
+#             npm trusted publishing (GitHub OIDC; no npm token is stored anywhere).
+# - registry: after npm, lists packages/mcp/server.json in the MCP registry unless the registry
+#             already has that version (GitHub OIDC grants the io.github.BoltCreative namespace).
+#
+# store and npm don't wait on each other, so missing store secrets or a pending store review never
+# hold back the MCP package. Running Release again is safe: each part skips what's already out.
+# docs/store/release.md has the whole flow and the one-time setup.
 
 on:
   workflow_dispatch:
@@ -13,27 +23,245 @@ on:
 permissions:
   contents: read
 
+# One release at a time, so store calls never overlap; queued runs wait their turn.
 concurrency:
   group: chrome-web-store
   cancel-in-progress: false
 
 jobs:
-  submit:
-    if: github.ref == 'refs/heads/main'
+  guard:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 2
     steps:
+      - name: Release runs on main only
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Release runs on main only, not $GITHUB_REF. Run it again with main selected."
+            echo "Release refused: it runs on main only, not \`$GITHUB_REF\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  store:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write # the store/<version> tag
+    env:
+      CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+      CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+      CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
+      CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+      CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+      CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+    steps:
+      - name: Check the store secrets
+        id: config
+        run: |
+          if [ -n "$CWS_PUBLISHER_ID" ] && [ -n "$CWS_ITEM_ID" ] && \
+             { [ -n "$CWS_SERVICE_ACCOUNT_KEY" ] || [ -n "$CWS_REFRESH_TOKEN" ]; }; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Chrome Web Store secrets aren't set, so nothing was uploaded. Setup: docs/store/release.md."
+            echo "- **Chrome Web Store:** skipped, the store secrets aren't set (docs/store/release.md)." >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.config.outputs.ready == 'true'
+        with:
+          fetch-depth: 0 # the commit count, and the store tags
       - uses: actions/setup-node@v4
+        if: steps.config.outputs.ready == 'true'
         with:
           node-version: '22.x'
-      # The client is plain Node (fetch, node:crypto), so no npm ci.
-      - name: Submit the draft for review
+          cache: npm
+      - if: steps.config.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Build the store package
+        id: build
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          TAB_HAMMER_BUILD=$(git rev-list --count HEAD) npm run build:store
+          version=$(node -p "require('./packages/extension/dist-store/manifest.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # A tag means an earlier run already uploaded this commit's build; just submit it.
+          if git rev-parse -q --verify "refs/tags/store/$version" >/dev/null; then
+            echo "::notice::$version is already uploaded (tag store/$version)."
+            echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "uploaded=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the draft
+        id: upload
+        if: steps.build.outputs.uploaded == 'false'
         env:
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
-          CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
-        run: node packages/extension/scripts/cws.ts publish
+          VERSION: ${{ steps.build.outputs.version }}
+        run: node packages/extension/scripts/cws.ts upload "packages/extension/release/tab-hammer-$VERSION.zip"
+
+      # While a review is pending the store takes no upload; nothing is submitted then.
+      - name: Held back by a pending review
+        id: held
+        if: steps.upload.outputs.uploaded == 'false'
+        env:
+          MESSAGE: ${{ steps.upload.outputs.message }}
+        run: |
+          echo "- **Chrome Web Store:** held back. $MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Tag the uploaded commit
+        if: steps.upload.outputs.uploaded == 'true'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          git tag "store/$VERSION"
+          git push origin "refs/tags/store/$VERSION"
+
+      - name: Submit the draft for review
+        id: submit
+        if: steps.build.outputs.uploaded == 'true' || steps.upload.outputs.uploaded == 'true'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: node packages/extension/scripts/cws.ts publish "$VERSION"
+
+      - name: Summary
+        if: steps.submit.outcome == 'success'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+          FRESH: ${{ steps.upload.outputs.uploaded == 'true' }}
+          MESSAGE: ${{ steps.submit.outputs.message }}
+        run: |
+          if [ "$FRESH" = true ]; then did="uploaded $VERSION as the draft."; else did="$VERSION was already uploaded."; fi
+          echo "- **Chrome Web Store:** $did $MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Summary (failed)
+        if: failure() && steps.held.outcome != 'failure'
+        run: echo "- **Chrome Web Store:** failed; see the store job's log." >> "$GITHUB_STEP_SUMMARY"
+
+  npm:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this version on npm yet?
+        id: check
+        run: |
+          version=$(node -p "require('./packages/mcp/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/tab-hammer-mcp/$version")
+          case "$code" in
+            200) echo "::notice::tab-hammer-mcp@$version is already on npm."
+                 echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+            404) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::npm answered $code when asked for tab-hammer-mcp@$version."; exit 1 ;;
+          esac
+
+      # Trusted publishing needs Node 22.14+ and npm 11.5.1+ (docs.npmjs.com/trusted-publishers).
+      # registry-url writes the .npmrc; npm uses the job's OIDC token instead of NODE_AUTH_TOKEN.
+      # No npm cache in a release build.
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.publish == 'true'
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+      - name: npm 11.5.1 or newer
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+      - if: steps.check.outputs.publish == 'true'
+        run: npm ci
+
+      # prepublishOnly builds dist/ and runs the package's tests first.
+      - name: Publish tab-hammer-mcp
+        if: steps.check.outputs.publish == 'true'
+        working-directory: packages/mcp
+        run: npm publish --access public --provenance
+
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+          PUBLISH: ${{ steps.check.outputs.publish }}
+          STATUS: ${{ job.status }}
+        run: |
+          if [ "$STATUS" != success ]; then line="failed; see the npm job's log."
+          elif [ "$PUBLISH" = true ]; then line="published tab-hammer-mcp@$VERSION."
+          else line="tab-hammer-mcp@$VERSION was already published."; fi
+          echo "- **npm:** $line" >> "$GITHUB_STEP_SUMMARY"
+
+  registry:
+    needs: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # mcp-publisher login github-oidc
+    env:
+      # Pinned and verified against its Sigstore bundle; bump it deliberately.
+      MCP_PUBLISHER_VERSION: v1.8.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is this version in the MCP registry yet?
+        id: check
+        run: |
+          name=$(jq -r .name packages/mcp/server.json)
+          version=$(jq -r .version packages/mcp/server.json)
+          echo "label=$name $version" >> "$GITHUB_OUTPUT"
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            "https://registry.modelcontextprotocol.io/v0.1/servers/${name//\//%2F}/versions/$version")
+          case "$code" in
+            200) echo "::notice::$name $version is already in the MCP registry."
+                 echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+            404) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::The MCP registry answered $code when asked for $name $version."; exit 1 ;;
+          esac
+
+      - name: Install cosign
+        if: steps.check.outputs.publish == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # As the registry's own GitHub Actions guide does it.
+      - name: Download and verify mcp-publisher
+        if: steps.check.outputs.publish == 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          archive=mcp-publisher_linux_amd64.tar.gz
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          rm -f "$archive" "$archive.sigstore.json"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Publish server.json
+        if: steps.check.outputs.publish == 'true'
+        working-directory: packages/mcp
+        run: |
+          mcp-publisher login github-oidc
+          mcp-publisher publish
+
+      - name: Summary
+        if: always()
+        env:
+          LABEL: ${{ steps.check.outputs.label }}
+          PUBLISH: ${{ steps.check.outputs.publish }}
+          STATUS: ${{ job.status }}
+        run: |
+          if [ "$STATUS" != success ]; then line="failed; see the registry job's log."
+          elif [ "$PUBLISH" = true ]; then line="published $LABEL."
+          else line="$LABEL was already published."; fi
+          echo "- **MCP registry:** $line" >> "$GITHUB_STEP_SUMMARY"

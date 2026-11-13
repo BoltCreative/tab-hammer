@@ -97,5 +97,6 @@ Changed: ${[MANIFEST, ...PACKAGE_JSONS, 'package-lock.json', SERVER_JSON].join('
 Next (docs/store/release.md):
   npm run gate
   git commit -am "chore: release ${version}"
-  Land it through a PR. Merging uploads ${version}.<build> to the store as a draft, and the
-  Release workflow (Actions -> Release) submits it for review.`);
+  Land it on dev through a PR, then dev on main. Running the Release workflow on main
+  (Actions -> Release) uploads ${version}.<build> to the store and submits it for review, and
+  publishes tab-hammer-mcp@${version} to npm and the MCP registry.`);

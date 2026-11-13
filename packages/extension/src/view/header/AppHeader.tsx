@@ -1,6 +1,8 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ContextMenu } from '../components/ContextMenu';
+import { OUTLINE_TREE_ID, RECENTLY_CLOSED_ID } from '../components/rowProps';
 import { dockEverywhere, popOut, surface, useSidePanelSide } from '../chrome/dock';
+import { CURRENT_TABS_KEYS, RECENTER_KEYS, SEARCH_KEYS_HELP } from '../platform';
 import { PreviewPermissionBanner } from '../permission/PreviewPermissionBanner';
 import type { HeaderActions } from './useHeaderActions';
 
@@ -8,9 +10,13 @@ interface Props {
   actions: HeaderActions;
   query: string;
   onQueryChange: (query: string) => void;
-  onSearchArrowDown: () => void;
+  searchRef: RefObject<HTMLInputElement | null>;
+  activeDescendant: string | undefined; // the cursor row's DOM id
   matchCount: number | null; // tabs matching the search, or null when not searching
   banner?: ReactNode; // under the permission banner (another device's outline, say)
+  currentTabs: boolean; // the Current tabs toggle
+  onCurrentTabsChange: (on: boolean) => void;
+  onRecenter: () => void; // scroll to the current window's tab
 }
 
 /**
@@ -22,9 +28,13 @@ export function AppHeader({
   actions,
   query,
   onQueryChange,
-  onSearchArrowDown,
+  searchRef,
+  activeDescendant,
   matchCount,
   banner,
+  currentTabs,
+  onCurrentTabsChange,
+  onRecenter,
 }: Props) {
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; keyboard: boolean } | null>(null);
@@ -42,26 +52,58 @@ export function AppHeader({
       <PreviewPermissionBanner />
       {banner}
       <div className="toolbar" role="toolbar" aria-label="Tab Hammer tools">
+        {/* Where focus lives: a combobox whose highlighted option is the outline's cursor row.
+            App's document key handler drives the outline from here (↑/↓, Enter, Escape…). */}
         <input
+          ref={searchRef}
           type="search"
+          role="combobox"
           className="search"
           placeholder="Search tabs"
+          title={SEARCH_KEYS_HELP}
           aria-label="Search tabs by title or URL"
+          aria-expanded="true"
+          aria-autocomplete="list"
+          aria-controls={`${OUTLINE_TREE_ID} ${RECENTLY_CLOSED_ID}`}
+          aria-activedescendant={activeDescendant}
+          autoFocus
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onQueryChange('');
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              onSearchArrowDown();
-            }
-          }}
         />
         {matchCount !== null && (
           <span className="toolbar-status" data-testid="match-count">
             {matchCount === 1 ? '1 tab' : `${matchCount} tabs`}
           </span>
         )}
+        <button
+          type="button"
+          className="toolbar-button menu-button current-tabs-toggle"
+          aria-label="Current tabs"
+          aria-pressed={currentTabs}
+          title={`Show just each window's current tab (${CURRENT_TABS_KEYS})`}
+          onClick={() => onCurrentTabsChange(!currentTabs)}
+        >
+          {/* Window bars, each with one tab under it. */}
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <rect x="0.5" y="1" width="11" height="2" fill="currentColor" />
+            <rect x="2.5" y="4" width="8" height="1.5" fill="currentColor" opacity="0.6" />
+            <rect x="0.5" y="7" width="11" height="2" fill="currentColor" />
+            <rect x="2.5" y="10" width="8" height="1.5" fill="currentColor" opacity="0.6" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="toolbar-button menu-button recenter-button"
+          aria-label="Go to the current window"
+          title={`Go to the current window's tab (${RECENTER_KEYS})`}
+          onClick={onRecenter}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <circle cx="6" cy="6" r="3.5" fill="none" stroke="currentColor" />
+            <circle cx="6" cy="6" r="1" fill="currentColor" />
+            <path d="M6 0 V2 M6 10 V12 M0 6 H2 M10 6 H12" stroke="currentColor" />
+          </svg>
+        </button>
         <DockToggle />
         <button
           ref={button}

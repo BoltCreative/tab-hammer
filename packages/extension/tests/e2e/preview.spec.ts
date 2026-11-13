@@ -118,7 +118,7 @@ test('hovering a tab shows its captured preview in the panel; an uncapturable pa
   await expect(panel.locator('.preview-image-favicon')).toBeVisible();
 
   // Moving off the outline keeps the last hovered tab rather than going blank.
-  await view.getByRole('searchbox').hover();
+  await view.getByRole('combobox').hover();
   await expect(panel).toContainText('about:blank');
   await expect(panel).not.toContainText('Hover over a tab');
 
@@ -257,21 +257,14 @@ test('the preview panel sits below the outline; its collapse and height survive 
   expect(Math.abs((await panel.boundingBox())!.height - resized)).toBeLessThanOrEqual(1);
 });
 
-test('Clear previews deletes every stored preview', async ({ context, sw, view }) => {
-  await servePages(context);
-  const url = `${ORIGIN}/clearme`;
-  const windowId = await sw.evaluate(
-    async (u) => (await chrome.windows.create({ url: u }))!.id!,
-    url,
-  );
-  await expect.poll(() => hasPreview(sw, url)).toBe(true);
-  // A page Chrome won't capture never triggers an on-demand capture, so it shows
-  // exactly what is stored: seed a preview for it straight into the store (the view shares the
-  // extension's origin).
+test('Clear previews deletes every stored preview', async ({ sw, view }) => {
+  // Nothing here is captured for real, so no capture can land after the clear: the startup
+  // window's about:blank tab is a page Chrome won't capture (and never triggers an on-demand
+  // capture), so a preview and an outcome seeded for it are all there is. The view shares the
+  // extension's origin, so it seeds the preview store directly.
   const blankId = await sw.evaluate(
-    async (windowId) =>
-      (await chrome.tabs.create({ windowId, url: 'about:blank', active: false })).id!,
-    windowId,
+    async () =>
+      (await chrome.tabs.query({ windowType: 'normal' })).find((t) => t.url === 'about:blank')!.id!,
   );
   await view.evaluate(async () => {
     const canvas = new OffscreenCanvas(640, 360);
@@ -296,33 +289,31 @@ test('Clear previews deletes every stored preview', async ({ context, sw, view }
     });
     db.close();
   });
-  await expect
-    .poll(() =>
-      sw.evaluate(async (id) => {
-        const { captureOutcomes } = await chrome.storage.session.get('captureOutcomes');
-        return (captureOutcomes as Record<string, { outcome: string }> | undefined)?.[id]?.outcome;
-      }, windowId),
-    )
-    .toBe('saved');
-  const row = liveRow(view, 'tab', blankId);
+  // Only on-demand tab captures write this key, and none runs here.
+  const tabOutcome = () =>
+    sw.evaluate(async (id) => {
+      const { tabCaptureOutcomes } = await chrome.storage.session.get('tabCaptureOutcomes');
+      return (tabCaptureOutcomes as Record<string, unknown> | undefined)?.[id];
+    }, blankId);
+  await sw.evaluate(
+    (id) =>
+      chrome.storage.session.set({
+        tabCaptureOutcomes: { [id]: { at: Date.now(), outcome: 'saved', url: 'about:blank' } },
+      }),
+    blankId,
+  );
+  expect(await tabOutcome()).toBeDefined();
+
   const panel = view.getByTestId('preview-panel');
-  await row.hover();
+  await liveRow(view, 'tab', blankId).hover();
   await expect(panel.locator('.preview-shot')).toHaveCount(1);
 
   await runMenuAction(view, 'Clear previews');
-  await expect(view.getByRole('status').filter({ hasText: 'Cleared' })).toBeVisible();
-  expect(await hasPreview(sw, url)).toBe(false);
-  // The window's 'saved' outcome is gone too (other windows may record new ones meanwhile).
-  expect(
-    await sw.evaluate(async (id) => {
-      const { captureOutcomes } = await chrome.storage.session.get('captureOutcomes');
-      return (captureOutcomes as Record<string, unknown> | undefined)?.[id];
-    }, windowId),
-  ).toBeUndefined();
-
-  // The panel still shows that tab, and looks its preview up again.
+  // The panel looks the tab's preview up again once the clear is done, and finds none.
   await expect(panel).toContainText('No preview yet');
   await expect(panel.locator('.preview-shot')).toHaveCount(0);
+  expect(await hasPreview(sw, 'about:blank')).toBe(false);
+  expect(await tabOutcome()).toBeUndefined();
 });
 
 test('Capture missing captures background tabs without switching to them', async ({

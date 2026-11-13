@@ -6,6 +6,7 @@ import { crx } from '@crxjs/vite-plugin';
 import manifest from './src/manifest.ts';
 import { faviconPassthrough } from './build/faviconPassthrough.ts';
 import { holdBrokenReloads } from './build/holdBrokenReloads.ts';
+import { mcpAutodeploy } from './build/mcpAutodeploy.ts';
 
 // `npm run dev` writes to one fixed folder outside the repo, shared by the root checkout and every
 // worktree. Chrome loads it once; switching trees is just restarting the dev server in another tree
@@ -20,6 +21,7 @@ export default defineConfig(({ command }) => ({
     crx({ manifest }),
     faviconPassthrough(),
     holdBrokenReloads(path.resolve(import.meta.dirname, 'src/background/index.ts')),
+    mcpAutodeploy(),
   ],
   build: {
     ...(command === 'serve' && { outDir: DEV_OUT_DIR, emptyOutDir: true }),

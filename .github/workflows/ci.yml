@@ -8,8 +8,8 @@ name: CI
 # because a workflow skipped by a path filter never reports its checks, and a required check that
 # never reports blocks the PR forever.
 #
-# No secrets are used here, and pull requests (forks included) run with a read-only token. The
-# Chrome Web Store upload is store.yml, which runs after this workflow succeeds on main.
+# No secrets are used here, and pull requests (forks included) run with a read-only token. Nothing
+# deploys from here: releases are the manual Release workflow (release.yml).
 
 on:
   pull_request:
@@ -21,8 +21,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # A newer push to a PR supersedes the run in flight. Every commit on main runs to the end: the
-  # store upload waits on it.
+  # A newer push to a PR supersedes the run in flight. Pushes to main and dev run to the end.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -144,6 +144,7 @@ export function DevicesPanel({ state, current, onPick, onClose }: Props & { onCl
   return (
     <div
       className="devices-panel"
+      data-own-keys // its own Escape closes it; the outline's keys stay out
       ref={ref}
       role="region"
       aria-label="Other devices"

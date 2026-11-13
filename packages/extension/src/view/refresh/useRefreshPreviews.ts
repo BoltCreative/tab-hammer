@@ -1,3 +1,4 @@
+import { limitMs } from '../../shared/e2eBuild';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   previewCapturedAt,
@@ -12,7 +13,7 @@ import {
   type RefreshProgress,
 } from './refreshRun';
 
-const SUMMARY_MS = 4000;
+const SUMMARY_MS = limitMs(4000);
 
 export type RefreshState =
   | { phase: 'idle' }

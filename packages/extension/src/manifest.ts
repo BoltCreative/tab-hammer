@@ -21,7 +21,7 @@ const OAUTH_CLIENT_ID = STORE ? STORE_GOOGLE_OAUTH_CLIENT_ID : GOOGLE_OAUTH_CLIE
 // The release version, bumped by `npm run release` (scripts/release.ts at the repo root), together
 // with every package.json.
 const RELEASE = '0.1.0';
-// CI's store uploads (.github/workflows/store.yml) add a fourth part, TAB_HAMMER_BUILD: main's
+// CI's store uploads (.github/workflows/release.yml) add a fourth part, TAB_HAMMER_BUILD: main's
 // commit count, so every upload is above the last one (the store refuses a reused version) without
 // a commit to bump it. Chrome allows each part 0 to 65535.
 const BUILD = process.env.TAB_HAMMER_BUILD;
@@ -102,6 +102,16 @@ export default defineManifest({
   // Rendered from icons/icon.svg by scripts/render-icons.ts.
   icons: ICONS,
   action: { default_title: 'Open Tab Hammer', default_icon: ICONS },
+  // A keyboard shortcut for the toolbar click: it opens or focuses the standalone window, or,
+  // docked, opens the side panel in the current window (openPanelOnActionClick covers it too).
+  // Alt+Shift+T would be Chrome's own focus-the-toolbar key on Windows and Linux, where Chrome leaves
+  // a clashing shortcut unset. Rebindable at chrome://extensions/shortcuts.
+  commands: {
+    _execute_action: {
+      suggested_key: { default: 'Alt+Shift+H' },
+      description: 'Open Tab Hammer, or bring it to the front',
+    },
+  },
   // The same view, docked (src/view/panel.html marks it as the panel surface).
   side_panel: { default_path: 'src/view/panel.html' },
 });

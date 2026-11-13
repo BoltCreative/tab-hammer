@@ -5,7 +5,7 @@ import { connectBridge } from './bridge';
 import { registerDock } from './dock';
 import { registerOutline } from './outline/outlineOwner';
 import { OUTLINE_SCHEMA_VERSION } from './outline/outlineStore';
-import { registerPreviewCapture, viewWindows } from './previews';
+import { capturesPending, registerPreviewCapture, viewWindows } from './previews';
 import { registerSync } from './sync/registerSync';
 import { createPreviewPruner } from './previewPrune';
 import { prunePreviews } from '../shared/previewStore';
@@ -13,6 +13,7 @@ import type { SyncPickerState } from '../shared/syncMessages';
 import { setWindowCreator } from './tabCommands';
 import { openingBounds, trackViewBounds } from './viewBounds';
 import { ensureViewWindow, pingView, viewUrl, type ViewWindowDeps } from './viewWindow';
+import { E2E_BUILD } from '../shared/e2eBuild';
 
 const viewWindowDeps: ViewWindowDeps = {
   viewTabs: viewWindows.viewTabs,
@@ -64,6 +65,9 @@ const outline = registerOutline({
     syncHandle.noteChange();
     previewPruner.schedule();
   },
+  // The e2e build has no quiet period: a test settles restored windows (the settle hook) once
+  // Chrome has finished restoring them, so a slow machine can't match a half-restored window.
+  ...(E2E_BUILD && { settleQuietMs: null }),
 });
 const syncHandle = registerSync(outline);
 // Previews live exactly as long as a window record (live, hibernated, or trashed) has a tab at
@@ -87,14 +91,21 @@ chrome.runtime.onInstalled.addListener(() => void ensureViewWindow(viewWindowDep
 connectBridge();
 
 // Test hooks: Playwright can't click the toolbar icon, so E2E calls openOrFocus directly, and
-// waits on hasPreview for a background capture to land in the store. readOutline returns the
-// worker's full in-memory records (Chrome IDs included) once its queued work is done. useTestSync,
-// syncNow, and syncState drive the sync engine against a test-served fake Drive.
+// waits on hasPreview for a background capture to land in the store (and on capturesPending for
+// none to be due). readOutline returns the
+// worker's full in-memory records (Chrome IDs included) once its queued work is done; settle
+// matches the windows waiting to be re-linked (the e2e build has no quiet period). useTestSync,
+// syncNow, and syncState drive the sync engine against a test-served fake Drive. focusWindow is
+// Chrome's window focus event, which headless Chromium doesn't send on macOS; it resolves once the
+// outline has taken it in.
 export interface TestHooks {
   openOrFocus: () => Promise<void>;
   hasPreview: (url: string) => Promise<boolean>;
+  capturesPending: () => boolean;
   readOutline: () => Promise<{ schemaVersion: number; windows: WindowRec[] }>;
+  settle: () => Promise<void>;
   outlineCommand: (c: OutlineCommand) => Promise<void>;
+  focusWindow: (windowId: number) => Promise<void>;
   useTestSync: (opts: { apiBase: string; token: string }) => Promise<void>;
   syncNow: () => Promise<void>;
   syncState: () => Promise<SyncPickerState>;
@@ -104,12 +115,18 @@ export interface TestHooks {
 (globalThis as unknown as { tabHammer: TestHooks }).tabHammer = {
   openOrFocus,
   hasPreview: async (url) => (await getPreview(url)) !== undefined,
+  capturesPending,
   readOutline: async () => {
     await outline.idle();
     return { schemaVersion: OUTLINE_SCHEMA_VERSION, windows: outline.outline().windows };
   },
+  settle: () => outline.settle(),
   outlineCommand: async (c) => {
     await outline.command(c);
+  },
+  focusWindow: async (windowId) => {
+    outline.focusChanged(windowId);
+    await outline.idle();
   },
   // Points sync at a fake Drive served by the test (never Google), then syncs.
   useTestSync: async ({ apiBase, token }) => {

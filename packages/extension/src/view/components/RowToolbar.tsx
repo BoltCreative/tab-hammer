@@ -33,7 +33,7 @@ export function RowToolbar({ actions }: { actions: RowAction[] }) {
         <button
           key={a.label}
           type="button"
-          tabIndex={-1} // reached by mouse; the keyboard has Delete and Enter
+          tabIndex={-1} // reached by mouse; the keyboard has ⌘⌫ and Enter
           aria-label={a.label}
           title={a.label}
           onClick={(e) => {

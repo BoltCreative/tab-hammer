@@ -16,6 +16,7 @@ import {
   type CaptureTabReply,
 } from '../shared/messages';
 import { clearPreviews, putPreview } from '../shared/previewStore';
+import { limitMs } from '../shared/e2eBuild';
 import { browserSession } from './session';
 import { createViewWindowFinder } from './viewWindow';
 import { createCaptureQueue } from './captureQueue';
@@ -27,7 +28,12 @@ import {
   message,
   type Shot,
 } from './captureWindow';
-import { SCREENSHOT_PARAMS, createTabCapturer } from './debuggerCapture';
+import {
+  LOAD_TIMEOUT_MS,
+  SCREENSHOT_PARAMS,
+  SCREENSHOT_TIMEOUT_MS,
+  createTabCapturer,
+} from './debuggerCapture';
 
 // About 2× the card's ~404 CSS px width, so previews stay sharp on Retina displays.
 const PREVIEW_WIDTH = 640;
@@ -100,7 +106,7 @@ const scheduler = createCaptureScheduler<CaptureOutcome>({
   // Chrome allows 2 captureVisibleTab calls per second; leave a little headroom.
   minIntervalMs: 550,
   // Well past a normal capture (a screenshot, a downscale, a save).
-  captureTimeoutMs: 10_000,
+  captureTimeoutMs: limitMs(10_000),
   capture: captureWindow,
 });
 
@@ -154,6 +160,8 @@ const captureTab = createTabCapturer({
   // To be confirmed in real Chrome: reloading a sleeping background tab (lazily restored, or
   // discarded) loads it without activating it, and keeps its tab ID.
   reload: (tabId) => chrome.tabs.reload(tabId),
+  timeoutMs: limitMs(SCREENSHOT_TIMEOUT_MS),
+  loadTimeoutMs: limitMs(LOAD_TIMEOUT_MS),
 });
 
 /**
@@ -191,7 +199,7 @@ const tabQueue = createCaptureQueue<TabCaptureKey, CaptureOutcome>({
   maxWaiting: 3,
   // Well past a normal run: up to 8s waiting for the tab to load, a 5s screenshot limit, and a few
   // tab calls.
-  runTimeoutMs: 20_000,
+  runTimeoutMs: limitMs(20_000),
 });
 
 /**
@@ -204,6 +212,9 @@ async function clearAll(): Promise<void> {
 }
 
 const quietly = (p: Promise<unknown>) => void p.catch(() => {});
+
+/** A window capture is due or running (test hook: wait it out before asserting on the store). */
+export const capturesPending = (): boolean => scheduler.pending();
 
 /** Registers the capture listeners. Must run synchronously at service worker top level. */
 export function registerPreviewCapture(): void {

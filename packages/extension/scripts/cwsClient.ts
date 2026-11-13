@@ -1,6 +1,6 @@
 // A small client for the Chrome Web Store API v2 (https://developer.chrome.com/docs/webstore/api):
 // upload a package to the item's draft, and submit the draft for review. CI runs it through
-// scripts/cws.ts (.github/workflows/store.yml and release.yml). Plain Node: fetch and node:crypto.
+// scripts/cws.ts (.github/workflows/release.yml). Plain Node: fetch and node:crypto.
 import { createSign } from 'node:crypto';
 
 export const SCOPE = 'https://www.googleapis.com/auth/chromewebstore';
@@ -159,7 +159,7 @@ export class Cws {
         done: false,
         message:
           `Not uploaded: version ${pending} is waiting on review, and the store takes no new ` +
-          `package until that review ends. Run the Store upload workflow again afterwards, or ` +
+          `package until that review ends. Run the Release workflow again afterwards, or ` +
           `cancel the review in the developer dashboard first.`,
       };
 
@@ -186,9 +186,17 @@ export class Cws {
     throw new CwsError(`The store rejected the upload (upload state ${state ?? 'missing'}).`);
   }
 
-  /** Submits the current draft for review. */
-  async publish(): Promise<Outcome> {
-    const pending = pendingReview(await this.status());
+  /**
+   * Submits the current draft for review. Given the draft's `version`, a submission or release
+   * that already holds it counts as done, so running Release again changes nothing.
+   */
+  async publish(version?: string): Promise<Outcome> {
+    const status = await this.status();
+    const pending = pendingReview(status);
+    if (version && pending === version)
+      return { done: true, message: `${version} is already submitted and waiting on review.` };
+    if (version && versionOf(status.publishedItemRevisionStatus) === version)
+      return { done: true, message: `${version} is already published.` };
     if (pending)
       return {
         done: false,

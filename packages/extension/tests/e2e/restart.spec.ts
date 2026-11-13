@@ -6,10 +6,12 @@ import type { WindowRec } from '../../src/model/outline/types';
 import {
   expect,
   launchWithExtension,
+  loadedTabUrls,
   outlineCommand,
   readOutline,
   relaunch,
   serviceWorkerOf,
+  settle,
   startPageServer,
   test,
   type PageServer,
@@ -19,9 +21,9 @@ import {
 // detected here through onInstalled('install') (--load-extension reinstalls on each launch);
 // onStartup and chrome_update are covered by the browserSession unit tests.
 
-// A restored window settles (1.5s of quiet) before it is matched, after Chrome has started and
-// restored every tab: allow for that on top of the default.
-const RESTORE_TIMEOUT = 15_000;
+// A restored window is matched once it settles. The e2e build has no quiet period for that: each
+// test waits until Chrome has restored (and loaded) what it expects, then settles explicitly, so a
+// slow machine can't have a half-restored window matched.
 
 /** A temp profile and page server, removed after `body` however it ends. */
 async function withProfile(body: (dir: string, pages: PageServer) => Promise<void>) {
@@ -116,19 +118,24 @@ test('a browser restart re-links restored windows to their rows', async () => {
     try {
       sw = second.sw;
       await expect
-        .poll(async () => [await comeback(sw, recA.id), await comeback(sw, recB.id)], {
-          timeout: RESTORE_TIMEOUT,
-        })
-        .toEqual([
-          {
-            state: 'live',
-            name: 'Work',
-            tabs: liveTabs(recA),
-            groups: [{ id: groupA, title: 'Group', live: true }],
-            holders: 1,
-          },
-          { state: 'live', name: undefined, tabs: liveTabs(recB), groups: [], holders: 1 },
-        ]);
+        .poll(() => loadedTabUrls(sw))
+        .toEqual(
+          expect.arrayContaining([['A1', 'A2', 'A3'].map(pages.url), ['B1', 'B2'].map(pages.url)]),
+        );
+      await expect
+        .poll(() => sw.evaluate(async () => (await chrome.tabGroups.query({})).map((g) => g.title)))
+        .toEqual(['Group']);
+      await settle(sw);
+      expect([await comeback(sw, recA.id), await comeback(sw, recB.id)]).toEqual([
+        {
+          state: 'live',
+          name: 'Work',
+          tabs: liveTabs(recA),
+          groups: [{ id: groupA, title: 'Group', live: true }],
+          holders: 1,
+        },
+        { state: 'live', name: undefined, tabs: liveTabs(recB), groups: [], holders: 1 },
+      ]);
       expect(await ownRecords(sw)).toEqual({ records: 2, trashed: 0 });
     } finally {
       await second.context.close();
@@ -157,8 +164,16 @@ test('a restored window with a hibernated tab re-links, and that tab stays hiber
     try {
       sw = second.sw;
       await expect
-        .poll(async () => comeback(sw, recD.id), { timeout: RESTORE_TIMEOUT })
-        .toEqual({ state: 'live', name: undefined, tabs, groups: [], holders: 1 });
+        .poll(() => loadedTabUrls(sw))
+        .toEqual(expect.arrayContaining([['D1', 'D3'].map(pages.url)]));
+      await settle(sw);
+      expect(await comeback(sw, recD.id)).toEqual({
+        state: 'live',
+        name: undefined,
+        tabs,
+        groups: [],
+        holders: 1,
+      });
       expect(await ownRecords(sw)).toEqual({ records: 1, trashed: 0 });
     } finally {
       await second.context.close();
@@ -208,3 +223,90 @@ test('a rename survives a service-worker restart', async ({ context, sw, view })
     .toEqual({ state: 'live', name: 'Reading', chromeWindowId: a, trashed: 0 });
   await expect(header.locator('.title')).toHaveText('Reading');
 });
+
+/**
+ * Kills every Chromium process running on `dir` with SIGKILL, the way the OS kills a browser that
+ * runs the machine out of memory: no window closes, no event fires, nothing shuts down.
+ */
+async function killChromium(dir: string): Promise<void> {
+  const { execFileSync } = await import('node:child_process');
+  const pids = execFileSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.includes(`--user-data-dir=${dir}`))
+    .map((line) => Number.parseInt(line.trim(), 10));
+  expect(pids.length).toBeGreaterThan(0);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // Already gone with its parent.
+    }
+  }
+  await expect
+    .poll(
+      () =>
+        pids.filter((pid) => {
+          try {
+            process.kill(pid, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        }).length,
+    )
+    .toBe(0);
+}
+
+/**
+ * Relaunches Chromium on `dir` without restoring anything (no "Continue where you left off", or a
+ * declined "Restore pages?" bubble), and settles its startup window (about:blank) once it's open.
+ */
+async function relaunchWithoutRestore(dir: string) {
+  const context = await launchWithExtension(dir);
+  const sw = await serviceWorkerOf(context);
+  await expect.poll(() => loadedTabUrls(sw)).toEqual([['about:blank']]);
+  await settle(sw);
+  expect((await readOutline(sw)).windows.some((w) => w.provisional)).toBe(false);
+  return { context, sw };
+}
+
+/** Each record's state, by ID. */
+async function states(sw: Worker, ids: string[]) {
+  const { windows } = await readOutline(sw);
+  return ids.map((id) => windows.find((w) => w.id === id)?.state);
+}
+
+for (const [how, stop] of [
+  ['the browser is killed (out of memory)', (ctx: { dir: string }) => killChromium(ctx.dir)],
+  [
+    'the browser quits',
+    (ctx: { dir: string; context: { close(): Promise<void> } }) => ctx.context.close(),
+  ],
+] as const) {
+  test(`windows Chrome doesn't restore after ${how} stay as hibernated windows, not trash`, async () => {
+    await withProfile(async (dir, pages) => {
+      const first = await launchWithExtension(dir);
+      let sw = await serviceWorkerOf(first);
+      const a = await openWindow(sw, ['A1', 'A2'].map(pages.url));
+      const b = await openWindow(sw, ['B1', 'B2', 'B3'].map(pages.url));
+      const recA = await loadedRecord(sw, a, ['A1', 'A2']);
+      const recB = await loadedRecord(sw, b, ['B1', 'B2', 'B3']);
+      await outlineCommand(sw, { cmd: 'rename', windowId: recA.id, name: 'Work' });
+      await expect.poll(async () => (await comeback(sw, recA.id)).name).toBe('Work');
+      await stop({ dir, context: first });
+      if (how.includes('killed')) await first.close().catch(() => undefined);
+
+      const second = await relaunchWithoutRestore(dir);
+      try {
+        sw = second.sw;
+        expect(await states(sw, [recA.id, recB.id])).toEqual(['hibernated', 'hibernated']);
+        const back = await comeback(sw, recA.id);
+        expect(back.name).toBe('Work');
+        expect(back.tabs).toEqual(recA.tabs.map((t) => ({ id: t.id, live: false })));
+        expect((await ownRecords(sw)).trashed).toBe(0);
+      } finally {
+        await second.context.close();
+      }
+    });
+  });
+}
