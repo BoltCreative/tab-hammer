@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "make:chrome-launcher": "scripts/make-chrome-launcher.sh",
-    "render-icons": "node scripts/render-icons.ts"
+    "render-icons": "node scripts/render-icons.ts",
+    "store-assets": "npm run build:e2e && node scripts/store-assets.ts"
   },
   "dependencies": {
     "@tab-hammer/protocol": "*",

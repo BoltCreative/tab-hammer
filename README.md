@@ -1,3 +1,5 @@
+<img src="packages/extension/icons/icon-128.png" width="96" height="96" alt="Tab Hammer icon: a cream claw hammer on an indigo tile">
+
 # Tab Hammer
 
 Tab Hammer is a Chrome extension that shows every open Chrome window, tab group, and tab as a live
@@ -5,6 +7,8 @@ outline, in its own window or docked in Chrome's side panel. You can rename, rea
 the outline, see a screenshot preview of any tab before switching to it, carry your outline across
 computers through your own Google Drive, and let an AI agent like Claude Code organize your tabs
 through its MCP server.
+
+![Tab Hammer beside a browser window: four named windows with coloured headers, tab groups, and a preview of the hovered tab](docs/store/images/screenshot-1-outline.png)
 
 ## Tab Hammer and Tabs Outliner
 
