@@ -8,6 +8,8 @@ the outline, see a screenshot preview of any tab before switching to it, carry y
 computers through your own Google Drive, and let an AI agent like Claude Code organize your tabs
 through its MCP server.
 
+![Tab Hammer beside a browser window: four named windows with coloured headers, tab groups, and a preview of the hovered tab](docs/store/images/screenshot-1-outline.png)
+
 ## Tab Hammer and Tabs Outliner
 
 Tab Hammer is a spiritual successor to
