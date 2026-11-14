@@ -3,7 +3,7 @@
 An MCP server that lets AI agents list, group, move, focus, open, and close browser tabs through
 the [Tab Hammer](https://github.com/BoltCreative/tab-hammer) browser extension.
 
-With the extension installed, run (Node 20 or newer):
+With the extension installed, run (Node 22 or newer):
 
 ```
 npx tab-hammer-mcp install

@@ -67,11 +67,11 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.config.outputs.ready == 'true'
         with:
           fetch-depth: 0 # the commit count, and the store tags
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.config.outputs.ready == 'true'
         with:
           node-version: '22.x'
@@ -147,7 +147,7 @@ jobs:
       contents: read
       id-token: write # npm trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Is this version on npm yet?
         id: check
@@ -164,12 +164,14 @@ jobs:
 
       # Trusted publishing needs Node 22.14+ and npm 11.5.1+ (docs.npmjs.com/trusted-publishers).
       # registry-url writes the .npmrc; npm uses the job's OIDC token instead of NODE_AUTH_TOKEN.
-      # No npm cache in a release build.
-      - uses: actions/setup-node@v4
+      # No npm cache in a release build: setup-node turns one on by itself if package.json ever names
+      # npm in packageManager, so it's switched off explicitly.
+      - uses: actions/setup-node@v7
         if: steps.check.outputs.publish == 'true'
         with:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
       - name: npm 11.5.1 or newer
         if: steps.check.outputs.publish == 'true'
         run: |
@@ -207,7 +209,7 @@ jobs:
       # Pinned and verified against its Sigstore bundle; bump it deliberately.
       MCP_PUBLISHER_VERSION: v1.8.4
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Is this version in the MCP registry yet?
         id: check

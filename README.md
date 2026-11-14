@@ -81,7 +81,7 @@ Then in Chrome: `chrome://extensions` → enable Developer mode → **Load unpac
 Tab Hammer includes an MCP server, so an AI agent (Claude Code, Claude Desktop, Codex, Cursor, VS
 Code, Windsurf, or any other MCP client) can see every open window, group, and tab and rearrange
 them: "group my research tabs", "close the duplicates", "move everything about the trip into its
-own window". With the extension installed, set it up with one command (Node 20 or newer):
+own window". With the extension installed, set it up with one command (Node 22 or newer):
 
 ```
 npx tab-hammer-mcp install
