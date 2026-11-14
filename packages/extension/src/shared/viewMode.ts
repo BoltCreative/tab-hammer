@@ -1,10 +1,10 @@
 // Where the Tab Hammer view lives: its own standalone window ('float'), or Chrome's side panel in
-// every browser window ('dock'). Remembered in chrome.storage.local; the service worker makes the
-// toolbar icon follow it.
+// every browser window ('dock', the default). Remembered in chrome.storage.local; the service
+// worker makes the toolbar icon follow it.
 
 export type ViewMode = 'float' | 'dock';
 export const VIEW_MODE_KEY = 'viewMode';
-export const DEFAULT_VIEW_MODE: ViewMode = 'float';
+export const DEFAULT_VIEW_MODE: ViewMode = 'dock';
 
 /**
  * Where the user picks which side Chrome shows side panels on: one Chrome-wide setting, for every
