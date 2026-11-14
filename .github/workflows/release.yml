@@ -201,7 +201,7 @@ jobs:
   registry:
     needs: npm
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write # mcp-publisher login github-oidc
@@ -225,6 +225,26 @@ jobs:
             404) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::The MCP registry answered $code when asked for $name $version."; exit 1 ;;
           esac
+
+      # The registry refuses a version npm doesn't serve yet, and a fresh npm publish can take a few
+      # minutes to appear, so wait for it (up to 10 minutes) instead of failing the first time.
+      - name: Wait for npm to serve this version
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          package=$(jq -r .name packages/mcp/package.json)
+          version=$(jq -r .version packages/mcp/package.json)
+          url="https://registry.npmjs.org/$package/$version"
+          for attempt in $(seq 1 40); do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' "$url")
+            if [ "$code" = 200 ]; then
+              echo "npm serves $package@$version."
+              exit 0
+            fi
+            echo "npm answered $code for $package@$version (attempt $attempt of 40); checking again in 15s."
+            sleep 15
+          done
+          echo "::error::npm still doesn't serve $package@$version after 10 minutes. Re-run this job once it does."
+          exit 1
 
       - name: Install cosign
         if: steps.check.outputs.publish == 'true'
