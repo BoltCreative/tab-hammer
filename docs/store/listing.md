@@ -71,8 +71,8 @@ Workflow & Planning (alternative: Tools).
   sync, through the Google account already signed in to Chrome. Nothing is requested until the
   user turns sync on.
 - **alarms:** Checks the user's Drive every 5 minutes for their other computers' outlines.
-- **sidePanel:** Shows the outline docked in Chrome's side panel, when the user chooses docked mode
-  instead of the floating window.
+- **sidePanel:** Shows the outline docked in Chrome's side panel, the default, unless the user pops
+  it out to its own window.
 - **contextMenus:** Adds "Side panel: left or right…" to the toolbar icon's right-click menu, which
   opens Chrome's own side-panel setting.
 

@@ -69,7 +69,8 @@ test('Dock opens the side panel in every browser window and closes the standalon
   view,
 }) => {
   await openWindows(sw, 2);
-  expect(await stored(sw)).toEqual({ mode: undefined, toolbarOpensPanel: false });
+  // Nothing stored yet: docked is the default, which the worker applies to the toolbar on start.
+  await expect.poll(() => stored(sw)).toEqual({ mode: undefined, toolbarOpensPanel: true });
 
   await dock(view);
 
