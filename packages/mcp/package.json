@@ -1,6 +1,6 @@
 {
   "name": "tab-hammer-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "description": "MCP server that lets AI agents list, group, move, focus, open, and close browser tabs through the Tab Hammer extension. One command installs it for every Chromium browser and agent harness.",
   "mcpName": "io.github.BoltCreative/tab-hammer",
