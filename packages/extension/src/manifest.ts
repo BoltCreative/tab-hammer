@@ -20,7 +20,7 @@ const OAUTH_CLIENT_ID = STORE ? STORE_GOOGLE_OAUTH_CLIENT_ID : GOOGLE_OAUTH_CLIE
 
 // The release version, bumped by `npm run release` (scripts/release.ts at the repo root), together
 // with every package.json.
-const RELEASE = '0.1.0';
+const RELEASE = '0.1.1';
 // CI's store uploads (.github/workflows/release.yml) add a fourth part, TAB_HAMMER_BUILD: main's
 // commit count, so every upload is above the last one (the store refuses a reused version) without
 // a commit to bump it. Chrome allows each part 0 to 65535.
