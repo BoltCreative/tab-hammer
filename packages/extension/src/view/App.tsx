@@ -9,7 +9,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { emptySelection, selectionReducer } from '../model/selection';
-import type { GroupNode, OutlineView, TabNode, WindowNode } from '../model/types';
+import type { GroupNode, TabNode, WindowNode } from '../model/types';
 import { findDuplicates } from '../model/duplicates';
 import { countTabs, filterTree, queryTerms } from '../model/filterTree';
 import { currentTabsNavRows, currentTabsTree, recenterTarget } from '../model/currentTabs';
@@ -25,13 +25,18 @@ import {
 import { shortcutOf } from '../model/shortcuts';
 import {
   EXPAND_ALL,
+  NO_LOCAL_EXPANSION,
   allRowKeys,
-  discardStaleOverrides,
-  toggleGroup,
-  type CollapseState,
+  isGroupCollapsed,
+  pruneCollapse,
+  setGroupCollapsed,
+  setWindowCollapsed,
+  withLocalExpansion,
+  type LocalExpansion,
 } from '../model/visibleRows';
 import { draggedTabIds, planDrop } from '../model/moveSelection';
 import { activateTab, applyMoveOps, closeTabs, focusWindow } from './chrome/chromeSource';
+import { useCollapseSetting } from './chrome/collapseSetting';
 import { useCurrentTabsSetting } from './chrome/currentTabsSetting';
 import { dockInto, useHostWindowId } from './chrome/dock';
 import { sendOutlineCommand, useOutline } from './chrome/outlineClient';
@@ -71,15 +76,26 @@ export function App() {
     state: syncState,
     onBack: useCallback(() => setRemoteSource(null), []),
   });
-  const [collapse, setCollapse] = useState<CollapseState>({
-    collapsedWindows: new Set(),
-    groupOverrides: new Map(),
-  });
+  // Which windows and groups are collapsed: remembered, and shared by every view (setCollapse
+  // saves). Over it, this view's own expansions (a docked panel opening on its window), which
+  // aren't saved; `collapse` is what the outline shows outside a search.
+  const [sharedCollapse, setCollapse, collapseLoaded] = useCollapseSetting();
+  const [localExpansion, setLocalExpansion] = useState<LocalExpansion>(NO_LOCAL_EXPANSION);
+  const collapse = useMemo(
+    () => withLocalExpansion(sharedCollapse, localExpansion),
+    [sharedCollapse, localExpansion],
+  );
   // The worker's outline, re-rendered on every broadcast. Moves and other Chrome actions show up
   // through it, so nothing here re-reads Chrome after acting.
-  const { windows: tree, trash } = useOutline(
-    useCallback((v: OutlineView) => setCollapse((c) => discardStaleOverrides(v.windows, c)), []),
-  );
+  const [outlineArrived, setOutlineArrived] = useState(false);
+  const { windows: tree, trash } = useOutline(useCallback(() => setOutlineArrived(true), []));
+  // Collapsed windows and groups the outline no longer holds anywhere (live, hibernated, or in
+  // the trash) are forgotten, as are group choices Chrome's own flag has since overruled.
+  useEffect(() => {
+    if (outlineArrived && collapseLoaded) {
+      setCollapse((c) => pruneCollapse([...tree, ...trash], c));
+    }
+  }, [outlineArrived, collapseLoaded, tree, trash, setCollapse]);
 
   // The search box narrows what the outline shows (`shown`), expanded so every match is visible.
   // Moves still plan against the whole tree.
@@ -327,23 +343,29 @@ export function App() {
       .catch((err: unknown) => console.error('Tab Hammer: copying URLs failed', err));
   };
 
-  const onToggleWindow = (key: string) =>
-    setCollapse((c) => {
-      const next = new Set(c.collapsedWindows);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return { ...c, collapsedWindows: next };
-    });
+  // A toggle flips what this view shows, and saves the result for every view (dropping this
+  // view's own expansion of the row, if it had one).
+  const onToggleWindow = (key: string) => {
+    const collapsed = !collapse.collapsedWindows.has(key);
+    if (localExpansion.windows.has(key)) {
+      setLocalExpansion((l) => ({ ...l, windows: without(l.windows, key) }));
+    }
+    setCollapse((c) => setWindowCollapsed(c, key, collapsed));
+  };
 
-  const onToggleGroup = useCallback(
-    (key: string) =>
-      setCollapse((c) => {
-        const group = tree.flatMap((w) => w.children).find((x) => x.key === key);
-        if (!group || group.kind !== 'group') return c;
-        return toggleGroup(group, c);
-      }),
-    [tree],
-  );
+  const onToggleGroup = (key: string) => {
+    const group = tree.flatMap((w) => w.children).find((x) => x.key === key);
+    if (!group || group.kind !== 'group') return;
+    const collapsed = !isGroupCollapsed(group, collapse);
+    if (localExpansion.groups.has(key)) {
+      setLocalExpansion((l) => {
+        const groups = new Map(l.groups);
+        groups.delete(key);
+        return { ...l, groups };
+      });
+    }
+    setCollapse((c) => setGroupCollapsed(c, group, collapsed));
+  };
 
   // ⌥↑ / ⌥↓: moves the window holding the cursor (or the selected windows) one place.
   const stepWindows = (key: string, delta: -1 | 1) => {
@@ -384,17 +406,24 @@ export function App() {
   // Leaves any search, since it's about the whole outline. State only, so a docked panel's first
   // render can do it too.
   const [centerOn, setCenterOn] = useState<{ key: string; n: number } | null>(null);
-  const planRecenter = (win: WindowNode) => {
+  // `local`: the expansion is this view's own, not saved for every view (a docked panel opening).
+  const planRecenter = (win: WindowNode, local = false) => {
     const target = recenterTarget(win, collapse);
-    if (target.expandWindow || target.expandGroup) {
+    const group = target.expandGroup;
+    if (local && (target.expandWindow || group)) {
+      setLocalExpansion((l) => ({
+        windows: target.expandWindow ? new Set([...l.windows, win.key]) : l.windows,
+        groups: group
+          ? new Map([
+              ...l.groups,
+              [group.key, { collapsed: false, chromeCollapsed: group.chromeCollapsed }],
+            ])
+          : l.groups,
+      }));
+    } else if (target.expandWindow || group) {
       setCollapse((c) => {
-        let next = c;
-        if (target.expandWindow) {
-          const windows = new Set(next.collapsedWindows);
-          windows.delete(win.key);
-          next = { ...next, collapsedWindows: windows };
-        }
-        return target.expandGroup ? toggleGroup(target.expandGroup, next) : next;
+        const next = target.expandWindow ? setWindowCollapsed(c, win.key, false) : c;
+        return group ? setGroupCollapsed(next, group, false) : next;
       });
     }
     if (query !== '') setQuery('');
@@ -408,14 +437,15 @@ export function App() {
     if (key.startsWith('t:')) showPreview(key);
     focusSearch();
   };
-  // Once, when a docked panel opens: recenter on the browser window it sits in, as soon as both
-  // that window and the outline are known.
+  // Once, when a docked panel opens: recenter on the browser window it sits in, as soon as that
+  // window, the outline, and the collapsed rows are known. Whatever it expands stays this panel's
+  // own, so opening a panel doesn't expand that window in every view.
   const [centeredOnHost, setCenteredOnHost] = useState(false);
-  if (!centeredOnHost && hostWindowId !== undefined) {
+  if (!centeredOnHost && hostWindowId !== undefined && collapseLoaded) {
     const host = tree.find((w) => w.windowId === hostWindowId);
     if (host) {
       setCenteredOnHost(true);
-      planRecenter(host);
+      planRecenter(host, true);
     }
   }
   // After the render that shows the target row: center it in the list (clear of the sticky window
@@ -689,6 +719,12 @@ export function App() {
       )}
     </div>
   );
+}
+
+function without(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
+  const next = new Set(set);
+  next.delete(key);
+  return next;
 }
 
 function logActionError(err: unknown) {

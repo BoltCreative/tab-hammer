@@ -5,6 +5,8 @@ export interface MenuItem {
   onSelect: () => void;
   disabled?: boolean;
   title?: string; // tooltip
+  /** A setting that's on or off: shown with a check mark when on. */
+  checked?: boolean;
 }
 
 interface Props {
@@ -21,6 +23,7 @@ interface Props {
   align?: 'left' | 'right';
 }
 
+const MENU_ITEMS = '[role="menuitem"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)';
 const EDGE = 4; // keep the menu this far inside the viewport
 
 /**
@@ -50,7 +53,7 @@ export function ContextMenu({
       left: Math.max(EDGE, Math.min(left, window.innerWidth - width - EDGE)),
       top: Math.max(EDGE, Math.min(y, window.innerHeight - height - EDGE)),
     });
-    if (autoFocus) el.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    if (autoFocus) el.querySelector<HTMLElement>(MENU_ITEMS)?.focus();
   }, [x, y, autoFocus, align]);
 
   useEffect(() => {
@@ -65,9 +68,7 @@ export function ContextMenu({
         anchor?.current?.focus();
       }
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      const enabled = [
-        ...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []),
-      ];
+      const enabled = [...(ref.current?.querySelectorAll<HTMLElement>(MENU_ITEMS) ?? [])];
       if (enabled.length === 0) return;
       e.preventDefault();
       const at = enabled.indexOf(document.activeElement as HTMLElement);
@@ -102,7 +103,8 @@ export function ContextMenu({
         <button
           key={item.label}
           type="button"
-          role="menuitem"
+          role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+          aria-checked={item.checked}
           className="context-menu-item"
           disabled={item.disabled}
           title={item.title}

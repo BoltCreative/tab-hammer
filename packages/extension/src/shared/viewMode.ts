@@ -7,6 +7,24 @@ export const VIEW_MODE_KEY = 'viewMode';
 export const DEFAULT_VIEW_MODE: ViewMode = 'dock';
 
 /**
+ * Docked, where the panel opens: 'every' window (the default: a click in any panel opens it in
+ * the windows that have none, less those where the user closed it), or only 'here', the windows
+ * the user opens it in themselves (the toolbar icon). Remembered in chrome.storage.local.
+ */
+export type PanelOpensIn = 'every' | 'here';
+export const PANEL_OPENS_IN_KEY = 'panelOpensIn';
+export const DEFAULT_PANEL_OPENS_IN: PanelOpensIn = 'every';
+
+export function readPanelOpensIn(stored: unknown): PanelOpensIn {
+  return stored === 'here' || stored === 'every' ? stored : DEFAULT_PANEL_OPENS_IN;
+}
+
+export async function loadPanelOpensIn(): Promise<PanelOpensIn> {
+  const { [PANEL_OPENS_IN_KEY]: stored } = await chrome.storage.local.get(PANEL_OPENS_IN_KEY);
+  return readPanelOpensIn(stored);
+}
+
+/**
  * Where the user picks which side Chrome shows side panels on: one Chrome-wide setting, for every
  * window and every side panel (not just Tab Hammer's). Extensions can read it but not set it.
  */
@@ -43,7 +61,8 @@ export function isSetViewModeRequest(msg: unknown): msg is SetViewModeRequest {
 
 /**
  * Docked panel → service worker, on a click in the panel: which browser windows should get a panel
- * now. Those without one, less those where the user closed it; empty unless docked.
+ * now. Those without one, less those where the user closed it; empty unless docked with the panel
+ * opening in every window.
  */
 export const MISSING_PANELS = 'tabHammer.missingPanels' as const;
 export interface MissingPanelsRequest {

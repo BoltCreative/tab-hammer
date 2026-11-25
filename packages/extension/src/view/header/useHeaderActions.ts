@@ -1,7 +1,7 @@
 import { limitMs } from '../../shared/e2eBuild';
 import { useEffect, useRef, useState } from 'react';
 import { clearAllPreviews } from '../chrome/captureOutcome';
-import { openSidePanelSettings, surface } from '../chrome/dock';
+import { openSidePanelSettings, surface, usePanelOpensIn } from '../chrome/dock';
 import type { MenuItem } from '../components/ContextMenu';
 import { keysLabel } from '../../model/shortcuts';
 import { IS_MAC } from '../platform';
@@ -43,8 +43,8 @@ export interface HeaderActions {
 
 /**
  * The view's bulk actions (New window, Other devices, Close duplicates, Capture missing, Refresh
- * all, Panel side when docked, Keyboard shortcuts, Clear previews) and their live
- * state. Owned by App, so the header's menu and the outline's background menu run the same ones.
+ * all, Panel side and Open in every window when docked, Keyboard shortcuts, Clear previews) and
+ * their live state. Owned by App, so the header's menu and the outline's background menu run the same ones.
  */
 export function useHeaderActions(opts: {
   onPreviewsChanged: () => void;
@@ -66,6 +66,7 @@ export function useHeaderActions(opts: {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const refresh = useRefreshPreviews(onPreviewsChanged);
+  const [panelOpensIn, setPanelOpensIn] = usePanelOpensIn();
   const refreshing = refresh.state.phase === 'running';
 
   // A debug tool, so no confirmation dialog.
@@ -135,6 +136,15 @@ export function useHeaderActions(opts: {
             title:
               "Open Chrome's Appearance settings, where Side panel puts it on the left or right in every window",
             onSelect: openSidePanelSettings,
+          },
+          // On (the default), a click in any panel opens the panel in every window that has none,
+          // less those it was closed in; off, it opens only where the user opens it.
+          {
+            label: 'Open in every window',
+            title:
+              'On: a click in any Tab Hammer panel opens it in your other windows too. Off: it opens only in windows where you open it yourself',
+            checked: panelOpensIn === 'every',
+            onSelect: () => setPanelOpensIn(panelOpensIn === 'every' ? 'here' : 'every'),
           },
         ]
       : []),

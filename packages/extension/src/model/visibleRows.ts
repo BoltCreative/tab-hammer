@@ -1,6 +1,9 @@
 import type { GroupNode, WindowNode } from './types';
 
-/** A display-only collapse choice, remembered with the Chrome value it was made against. */
+/**
+ * A collapse choice the view makes for a group without touching Chrome's, remembered with the
+ * Chrome value it was made against.
+ */
 export interface GroupOverride {
   collapsed: boolean;
   chromeCollapsed: boolean;
@@ -38,22 +41,112 @@ export function toggleGroup(g: GroupNode, c: CollapseState): CollapseState {
   return { ...c, groupOverrides: next };
 }
 
+/** Collapses or expands a window; `c` itself when it already is. */
+export function setWindowCollapsed(
+  c: CollapseState,
+  key: string,
+  collapsed: boolean,
+): CollapseState {
+  if (c.collapsedWindows.has(key) === collapsed) return c;
+  const windows = new Set(c.collapsedWindows);
+  if (collapsed) windows.add(key);
+  else windows.delete(key);
+  return { ...c, collapsedWindows: windows };
+}
+
+/** Collapses or expands a group without touching Chrome's; `c` itself when it already is. */
+export function setGroupCollapsed(
+  c: CollapseState,
+  g: GroupNode,
+  collapsed: boolean,
+): CollapseState {
+  const o = c.groupOverrides.get(g.key);
+  if (o?.collapsed === collapsed && o.chromeCollapsed === g.chromeCollapsed) return c;
+  const groups = new Map(c.groupOverrides);
+  groups.set(g.key, { collapsed, chromeCollapsed: g.chromeCollapsed });
+  return { ...c, groupOverrides: groups };
+}
+
 /**
- * Drops overrides that Chrome has since superseded, so they cannot revive if Chrome's flag
- * later flips back. Returns `c` itself when nothing changed.
+ * Drops what no longer applies: windows and groups the outline no longer holds anywhere (pass its
+ * windows and its trash), and overrides Chrome has since superseded, so they cannot revive if
+ * Chrome's flag later flips back. Returns `c` itself when nothing changed.
  */
-export function discardStaleOverrides(tree: WindowNode[], c: CollapseState): CollapseState {
+export function pruneCollapse(windows: WindowNode[], c: CollapseState): CollapseState {
+  const windowKeys = new Set(windows.map((w) => w.key));
   const groups = new Map<string, GroupNode>();
-  for (const w of tree) for (const x of w.children) if (x.kind === 'group') groups.set(x.key, x);
-  let next: Map<string, GroupOverride> | null = null;
+  for (const w of windows) for (const x of w.children) if (x.kind === 'group') groups.set(x.key, x);
+  let nextWindows: Set<string> | null = null;
+  for (const key of c.collapsedWindows) {
+    if (windowKeys.has(key)) continue;
+    nextWindows ??= new Set(c.collapsedWindows);
+    nextWindows.delete(key);
+  }
+  let nextGroups: Map<string, GroupOverride> | null = null;
   for (const [key, o] of c.groupOverrides) {
     const g = groups.get(key);
-    if (g && o.chromeCollapsed !== g.chromeCollapsed) {
-      next ??= new Map(c.groupOverrides);
-      next.delete(key);
+    if (g && o.chromeCollapsed === g.chromeCollapsed) continue;
+    nextGroups ??= new Map(c.groupOverrides);
+    nextGroups.delete(key);
+  }
+  if (!nextWindows && !nextGroups) return c;
+  return {
+    ...c,
+    collapsedWindows: nextWindows ?? c.collapsedWindows,
+    groupOverrides: nextGroups ?? c.groupOverrides,
+  };
+}
+
+/**
+ * Expansions shown in one view only, over the shared collapse state: a docked panel opening
+ * recentered on its own window expands that window or group there, without changing it for every
+ * other view.
+ */
+export interface LocalExpansion {
+  windows: ReadonlySet<string>;
+  groups: ReadonlyMap<string, GroupOverride>;
+}
+
+export const NO_LOCAL_EXPANSION: LocalExpansion = { windows: new Set(), groups: new Map() };
+
+/** What the view shows: the shared state with this view's own expansions laid over it. */
+export function withLocalExpansion(c: CollapseState, local: LocalExpansion): CollapseState {
+  if (local.windows.size === 0 && local.groups.size === 0) return c;
+  const windows = new Set(c.collapsedWindows);
+  for (const key of local.windows) windows.delete(key);
+  return {
+    ...c,
+    collapsedWindows: windows,
+    groupOverrides: new Map([...c.groupOverrides, ...local.groups]),
+  };
+}
+
+/** The shared collapse state as stored in chrome.storage.local (JSON). */
+export interface StoredCollapse {
+  windows: string[];
+  groups: Record<string, GroupOverride>;
+}
+
+export function toStoredCollapse(c: CollapseState): StoredCollapse {
+  return { windows: [...c.collapsedWindows], groups: Object.fromEntries(c.groupOverrides) };
+}
+
+/** Reads what toStoredCollapse wrote, leaving out anything malformed. */
+export function fromStoredCollapse(v: unknown): CollapseState {
+  const s = (typeof v === 'object' && v !== null ? v : {}) as Partial<Record<string, unknown>>;
+  const windows = Array.isArray(s.windows)
+    ? s.windows.filter((k): k is string => typeof k === 'string')
+    : [];
+  const groups = new Map<string, GroupOverride>();
+  if (typeof s.groups === 'object' && s.groups !== null) {
+    for (const [key, o] of Object.entries(s.groups)) {
+      const { collapsed, chromeCollapsed } = (o ?? {}) as Partial<GroupOverride>;
+      if (typeof collapsed === 'boolean' && typeof chromeCollapsed === 'boolean') {
+        groups.set(key, { collapsed, chromeCollapsed });
+      }
     }
   }
-  return next ? { ...c, groupOverrides: next } : c;
+  return { collapsedWindows: new Set(windows), groupOverrides: groups };
 }
 
 export function visibleRowKeys(tree: WindowNode[], c: CollapseState): string[] {
