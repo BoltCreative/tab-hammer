@@ -1,5 +1,7 @@
+import type { WindowRec } from '../model/outline/types';
 import {
   isMissingPanelsRequest,
+  loadPanelOpensIn,
   isSetViewModeRequest,
   PANEL_PORT,
   readViewMode,
@@ -20,8 +22,12 @@ import {
  *   itself opens the panel in the clicked window (openPanelOnActionClick, so action.onClicked
  *   doesn't fire); floating, the click opens the standalone window.
  * - which windows show a panel (each docked panel holds a port open) and which ones the user
- *   closed it in, so a click elsewhere doesn't reopen it there. Kept in chrome.storage.session to
- *   outlive a worker restart; a browser restart forgets them.
+ *   closed it in, so a click elsewhere doesn't reopen it there. Those are kept in
+ *   chrome.storage.local by the windows' Tab Hammer IDs, so they outlive a browser restart (a
+ *   restored window is re-linked to its record), and forgotten once a window leaves the outline
+ *   for good, or the mode changes.
+ * - with the panel set to open only where the user opens it (PANEL_OPENS_IN_KEY), no click in a
+ *   panel opens it anywhere else.
  */
 
 const DECLINED_KEY = 'dockDeclined';
@@ -34,6 +40,8 @@ export interface DockDeps {
   closeStandalone: () => Promise<void>;
   /** A docked panel connected (the toolbar's other job: waking the Claude bridge). */
   onPanelConnect: () => void;
+  /** The outline's window records (live, hibernated, and trashed), once its queued work is done. */
+  outlineWindows: () => Promise<WindowRec[]>;
 }
 
 export function registerDock(deps: DockDeps): {
@@ -48,19 +56,51 @@ export function registerDock(deps: DockDeps): {
       .setPanelBehavior({ openPanelOnActionClick: mode === 'dock' })
       .catch((err: unknown) => console.error('[dock] setPanelBehavior', err));
 
-  async function declined(): Promise<Set<number>> {
-    const { [DECLINED_KEY]: ids } = await chrome.storage.session.get(DECLINED_KEY);
-    return new Set(Array.isArray(ids) ? (ids as number[]) : []);
+  /** The stored declined windows' Tab Hammer IDs, less those the outline no longer holds. */
+  async function storedDeclined(windows: WindowRec[]): Promise<Set<string>> {
+    const { [DECLINED_KEY]: stored } = await chrome.storage.local.get(DECLINED_KEY);
+    const known = new Set(windows.map((w) => w.id));
+    return new Set(
+      (Array.isArray(stored) ? stored : []).filter(
+        (id): id is string => typeof id === 'string' && known.has(id),
+      ),
+    );
   }
-  async function updateDeclined(change: (ids: Set<number>) => void): Promise<void> {
-    const ids = await declined();
-    change(ids);
-    await chrome.storage.session.set({ [DECLINED_KEY]: [...ids] });
+  /** The Chrome window IDs of the open windows the user closed the panel in. */
+  async function declinedChromeIds(): Promise<Set<number>> {
+    const windows = await deps.outlineWindows();
+    const ids = await storedDeclined(windows);
+    return new Set(
+      windows.flatMap((w) =>
+        ids.has(w.id) && w.state === 'live' && w.chromeWindowId !== undefined
+          ? [w.chromeWindowId]
+          : [],
+      ),
+    );
+  }
+  // Changes to the declined list run one at a time, so two can't read the same list and lose one.
+  let declinedQueue: Promise<unknown> = Promise.resolve();
+  /** Marks (or unmarks) the window shown in Chrome window `windowId` as declined. */
+  function setDeclined(windowId: number, on: boolean): Promise<void> {
+    const run = declinedQueue.then(async () => {
+      const windows = await deps.outlineWindows();
+      const rec = windows.find((w) => w.state === 'live' && w.chromeWindowId === windowId);
+      const ids = await storedDeclined(windows);
+      if (rec) {
+        if (on) ids.add(rec.id);
+        else ids.delete(rec.id);
+      }
+      await chrome.storage.local.set({ [DECLINED_KEY]: [...ids] });
+    });
+    declinedQueue = run.catch(() => undefined);
+    return run;
   }
 
   async function setMode(mode: ViewMode): Promise<void> {
     await chrome.storage.local.set({ [VIEW_MODE_KEY]: mode });
-    await chrome.storage.session.remove(DECLINED_KEY);
+    const cleared = declinedQueue.then(() => chrome.storage.local.remove(DECLINED_KEY));
+    declinedQueue = cleared.catch(() => undefined);
+    await cleared;
     await applyToolbar(mode);
     if (mode === 'dock') {
       await deps.closeStandalone();
@@ -80,9 +120,9 @@ export function registerDock(deps: DockDeps): {
   }
 
   async function missingPanels(): Promise<number[]> {
-    if ((await readViewMode()) !== 'dock') return [];
+    if ((await readViewMode()) !== 'dock' || (await loadPanelOpensIn()) !== 'every') return [];
     const showing = new Set(panels.values());
-    const skip = await declined();
+    const skip = await declinedChromeIds();
     const windows = await chrome.windows.getAll({ windowTypes: ['normal'] });
     return windows.flatMap((w) =>
       w.id === undefined || showing.has(w.id) || skip.has(w.id) ? [] : [w.id],
@@ -95,7 +135,9 @@ export function registerDock(deps: DockDeps): {
       const windowId = (msg as Partial<PanelHello> | null)?.windowId;
       if (typeof windowId !== 'number') return;
       panels.set(port, windowId);
-      void updateDeclined((ids) => ids.delete(windowId));
+      void setDeclined(windowId, false).catch((err: unknown) =>
+        console.error('[dock] forgetting a closed panel', err),
+      );
       deps.onPanelConnect();
     });
     port.onDisconnect.addListener(() => {
@@ -110,13 +152,9 @@ export function registerDock(deps: DockDeps): {
           () => false,
           () => true,
         );
-        if (!windowGone) await updateDeclined((ids) => ids.add(windowId));
-      })();
+        if (!windowGone) await setDeclined(windowId, true);
+      })().catch((err: unknown) => console.error('[dock] remembering a closed panel', err));
     });
-  });
-
-  chrome.windows.onRemoved.addListener((windowId) => {
-    void updateDeclined((ids) => ids.delete(windowId));
   });
 
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse) => {

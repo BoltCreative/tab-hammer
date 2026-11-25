@@ -49,6 +49,11 @@ const dock = registerDock({
   openStandalone: openOrFocus,
   closeStandalone,
   onPanelConnect: connectBridge,
+  // Called from Chrome events only, after `outline` below is set.
+  outlineWindows: async () => {
+    await outline.idle();
+    return outline.outline().windows;
+  },
 });
 
 // Docked, Chrome opens the side panel on a toolbar click itself and this doesn't fire; the mode
